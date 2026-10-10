@@ -789,7 +789,7 @@ func (x *Service) RunAgenticDispatch(ctx context.Context, spec dispatch.Spec, se
 			}
 			text := handoff + "\n" + location
 			emitDispatchProgress(spec.Emit, agenttools.ProgressEvent{SubAgentID: subConvID, Kind: "error", Text: text, IsError: true})
-			return dispatch.Result{Text: text, SubConversationID: subID, Model: model, Provider: provider, IsCloud: sel.IsCloud, InputTokens: res.InputTokens, OutputTokens: res.OutputTokens, GrantedTools: granted, IgnoredTools: ignored}, fmt.Errorf("%w\n%s", err, text)
+			return dispatch.Result{Text: text, SubConversationID: subID, Model: model, Provider: provider, Tier: string(spec.Tier), IsCloud: sel.IsCloud, InputTokens: res.InputTokens, OutputTokens: res.OutputTokens, GrantedTools: granted, IgnoredTools: ignored}, fmt.Errorf("%w\n%s", err, text)
 		}
 
 		return dispatch.Result{}, err

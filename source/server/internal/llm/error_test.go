@@ -221,3 +221,9 @@ func indexFold(s, sub string) int {
 	}
 	return -1
 }
+
+func TestOutputTruncatedIsTerminal(t *testing.T) {
+	if Retryable(ErrOutputTruncated) || Failoverable(ErrOutputTruncated, &Error{Class: ErrOutputTruncated}) || FailoverableToWindow(ErrOutputTruncated, &Error{Class: ErrOutputTruncated}, 100, 200, true) {
+		t.Fatal("output truncation must not automatically retry or fail over")
+	}
+}

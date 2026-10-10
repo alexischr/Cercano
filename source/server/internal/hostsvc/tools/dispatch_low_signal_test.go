@@ -256,3 +256,24 @@ func TestRunAgenticDispatch_SuspiciousNoOpStillLoggedDegraded(t *testing.T) {
 		}
 	}
 }
+
+func TestRunAgenticDispatch_TruncatedFinalPreservesPartialText(t *testing.T) {
+	svc := New(nil, nil, nil, nil)
+	svc.SetRegistry(regWith(permStub{"Read", agenttools.PermR}))
+	p := &turnsProvider{name: "partial-final", turns: [][]llm.StreamEvent{{
+		{Type: llm.EventMessageStart},
+		{Type: llm.EventTextDelta, TextDelta: "Partial finding: the archive"},
+		{Type: llm.EventMessageStop, StopReason: llm.StopReasonLength},
+	}}}
+	res, err := svc.RunAgenticDispatch(t.Context(), dispatch.Spec{Mode: dispatch.Agentic, Task: "inspect", Tools: []string{"Read"}, MaxIterations: 4, ConversationID: "parent"}, inference.Selection{Provider: p}, "fixture")
+	var le *llm.Error
+	if !errors.As(err, &le) || le.Class != llm.ErrOutputTruncated {
+		t.Fatalf("want typed truncation: %v", err)
+	}
+	if !strings.Contains(res.Text, "Partial finding: the archive") || !strings.Contains(res.Text, "transcript") || res.Suspicious {
+		t.Fatalf("lost partial work: %+v", res)
+	}
+	if p.calls != 1 {
+		t.Fatalf("unexpected retry: %d", p.calls)
+	}
+}
