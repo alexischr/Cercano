@@ -1222,7 +1222,22 @@ func RunToolLoop(ctx context.Context, in ToolLoopInput) (returned ToolLoopResult
 				// the unexecuted calls are exactly what did not run. The
 				// handoff names the work that DID complete before the abort,
 				// so prior writes are not lost alongside the failure.
-				abortText := progress.handoff(toolCalls)
+				// Filter toolCalls to only include unexecuted (rejected) calls
+				unexecutedToolCalls := []llm.Block{}
+				for _, tc := range toolCalls {
+					// Check if this tool call was rejected (not in executed results)
+					executed := false
+					for _, r := range results {
+						if r.ToolUseRef == tc.ToolUseID && !r.IsError {
+							executed = true
+							break
+						}
+					}
+					if !executed {
+						unexecutedToolCalls = append(unexecutedToolCalls, tc)
+					}
+				}
+				abortText := progress.handoff(unexecutedToolCalls)
 				if strings.TrimSpace(finalText) != "" {
 					abortText = finalText + "\n\n" + abortText
 				}
@@ -1240,14 +1255,15 @@ func RunToolLoop(ctx context.Context, in ToolLoopInput) (returned ToolLoopResult
 					return res, &llm.Error{
 						Class:    llm.ErrOutputTruncated,
 						Provider: in.Provider.Name(),
-						Err: fmt.Errorf("aborted: 3 consecutive iterations of tool calls cut off at the output-token limit — %d calls were requested but never executed because their arguments were too large to emit in one call",
-							toolCallCount),
+						Err: fmt.Errorf("aborted: 3 consecutive iterations of tool calls cut off at the output-token limit — %d consecutive calls were rejected because their arguments were too large to emit in one call",
+							consecutiveTruncationErrors),
 					}
 				}
 				return res, fmt.Errorf("aborted: 3 consecutive iterations of tool errors")
 			}
 		default:
 			consecutiveErrors = 0
+			consecutiveTruncationErrors = 0
 		}
 	}
 	// Reached the iteration cap with tools still pending. Rather than erroring
