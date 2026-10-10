@@ -168,11 +168,11 @@ func TestRunAgenticDispatch_LowSignalUsesCalledToolsNotFlattenedHistory(t *testi
 		}
 	})
 
-	if !strings.Contains(out, "subagent low-signal run:") {
-		t.Fatalf("expected low-signal diagnostic for one-call read-only dispatch, got:\n%s", out)
+	if !strings.Contains(out, "subagent read-only run:") {
+		t.Fatalf("expected neutral read-only diagnostic for one-call read-only dispatch, got:\n%s", out)
 	}
 	if !strings.Contains(out, "called=[r_read]") {
-		t.Fatalf("expected low-signal diagnostic to name the real called tool, got:\n%s", out)
+		t.Fatalf("expected read-only diagnostic to name the real called tool, got:\n%s", out)
 	}
 	if strings.Contains(out, "called=[]") {
 		t.Fatalf("diagnostic re-derived from flattened History and lost the tool call:\n%s", out)
@@ -269,8 +269,8 @@ func TestRunAgenticDispatch_NoToolCallsLowSignalRemainsNoTool(t *testing.T) {
 		}
 	})
 
-	if !strings.Contains(out, "subagent low-signal run:") {
-		t.Fatalf("expected low-signal diagnostic for read-only no-tool dispatch, got:\n%s", out)
+	if !strings.Contains(out, "subagent read-only run:") {
+		t.Fatalf("expected neutral read-only diagnostic for read-only no-tool dispatch, got:\n%s", out)
 	}
 	if !strings.Contains(out, "called=[]") {
 		t.Fatalf("true no-tool dispatch should log called=[], got:\n%s", out)

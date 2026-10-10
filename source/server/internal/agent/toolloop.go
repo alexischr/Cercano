@@ -265,6 +265,13 @@ type ToolLoopResult struct {
 	// ran without re-deriving it from History, which in the sub-agent flatten
 	// path no longer carries BlockToolUse blocks.
 	CalledTools []string
+	// ToolCallCount is the total number of tool calls the model emitted across
+	// the whole loop, counting every BlockToolUse block (duplicates included,
+	// unlike the deduplicated CalledTools names). Distinct from invocations that
+	// completed: malformed or truncated calls are rejected before execution and
+	// still count here, so terminal-failure reporting can truthfully separate
+	// "the model asked for N calls" from "N tools actually ran".
+	ToolCallCount int
 }
 
 // MaxToolLoopIterations caps the LLM round-trips per turn when no explicit
@@ -525,9 +532,19 @@ func RunToolLoop(ctx context.Context, in ToolLoopInput) (returned ToolLoopResult
 	// flatten rewrite. Surfaced on ToolLoopResult.CalledTools.
 	var calledTools []string
 	calledSeen := map[string]bool{}
+	// toolCallCount counts EVERY BlockToolUse the model emitted (deduplicated
+	// only by nothing — every call counts), including malformed or truncated
+	// calls that are rejected before execution. Surfaced on
+	// ToolLoopResult.ToolCallCount so callers can distinguish requested calls
+	// from executed ones without re-deriving from History.
+	toolCallCount := 0
 	recordCalled := func(blocks []llm.Block) {
 		for _, b := range blocks {
-			if b.Type == llm.BlockToolUse && b.ToolName != "" && !calledSeen[b.ToolName] {
+			if b.Type != llm.BlockToolUse {
+				continue
+			}
+			toolCallCount++
+			if b.ToolName != "" && !calledSeen[b.ToolName] {
 				calledSeen[b.ToolName] = true
 				calledTools = append(calledTools, b.ToolName)
 			}
@@ -555,6 +572,12 @@ func RunToolLoop(ctx context.Context, in ToolLoopInput) (returned ToolLoopResult
 	}
 
 	consecutiveErrors := 0
+	// consecutiveTruncationErrors mirrors consecutiveErrors but only counts
+	// iterations whose every error result was a length-truncation rejection
+	// (no generic tool failure among them). At the terminal abort it lets
+	// the loop tell "the model kept emitting oversized calls" apart from
+	// "the tools themselves kept failing".
+	consecutiveTruncationErrors := 0
 	var lastIn, lastOut int
 
 	// seenToolUse tracks every tool_use id already emitted in this conversation
@@ -651,7 +674,7 @@ func RunToolLoop(ctx context.Context, in ToolLoopInput) (returned ToolLoopResult
 		preserveTail := preservedLoopTail(hist, priorHistoryCount, protectedPrefix)
 		beforeTrim := len(hist)
 		if tokenBudget.Exhausted() {
-			return ToolLoopResult{FinalText: progress.handoff(nil), Iterations: iter, History: hist, InputTokens: lastIn, OutputTokens: lastOut, CalledTools: calledTools}, tokenBudget.Err()
+			return ToolLoopResult{FinalText: progress.handoff(nil), Iterations: iter, History: hist, InputTokens: lastIn, OutputTokens: lastOut, CalledTools: calledTools, ToolCallCount: toolCallCount}, tokenBudget.Err()
 		}
 		trimmed, budget := TrimMessagesToBudget(RequestBudgetInput{
 			System:          effectiveSystem,
@@ -674,7 +697,7 @@ func RunToolLoop(ctx context.Context, in ToolLoopInput) (returned ToolLoopResult
 		}
 		if !budget.Fits {
 			log.Printf("[tool-loop] context budget overflow before provider call: conv=%s provider=%s model=%s iter=%d estimated_tokens=%d tool_tokens=%d output_reserve=%d limit=%d budget=%d messages=%d tools=%d", in.ConversationID, in.Provider.Name(), in.Model, iter+1, budget.EstimatedUsed, budget.ToolTokens, budget.OutputReserve, budget.Limit, budget.PromptBudget, len(hist), len(catalog))
-			return ToolLoopResult{Iterations: iter + 1, History: hist, InputTokens: lastIn, OutputTokens: lastOut, LastRequestBudget: budget}, budget.OverflowError()
+			return ToolLoopResult{Iterations: iter + 1, History: hist, InputTokens: lastIn, OutputTokens: lastOut, LastRequestBudget: budget, CalledTools: calledTools, ToolCallCount: toolCallCount}, budget.OverflowError()
 		}
 		emit(LoopEvent{
 			Kind:  LoopRequestAccounting,
@@ -718,7 +741,7 @@ func RunToolLoop(ctx context.Context, in ToolLoopInput) (returned ToolLoopResult
 		rdr, err := in.Provider.StreamChat(ctx, req)
 		if err != nil {
 			tr.ModelResponse(iter+1, in.Provider.Name(), in.Model, llm.ChatResponse{}, err)
-			return ToolLoopResult{Iterations: iter + 1, History: hist, InputTokens: lastIn, OutputTokens: lastOut, LastRequestBudget: budget}, err
+			return ToolLoopResult{Iterations: iter + 1, History: hist, InputTokens: lastIn, OutputTokens: lastOut, LastRequestBudget: budget, CalledTools: calledTools, ToolCallCount: toolCallCount}, err
 		}
 		resp, err := collectStream(ctx, rdr, in.OnTextDelta, noticeSink(in))
 		rdr.Close()
@@ -740,7 +763,7 @@ func RunToolLoop(ctx context.Context, in ToolLoopInput) (returned ToolLoopResult
 			if resp.OutputTokens > 0 {
 				providerOutput = resp.OutputTokens
 			}
-			return ToolLoopResult{Iterations: iter + 1, History: hist, InputTokens: providerInput, OutputTokens: providerOutput, LastRequestBudget: budget}, err
+			return ToolLoopResult{Iterations: iter + 1, History: hist, InputTokens: providerInput, OutputTokens: providerOutput, LastRequestBudget: budget, CalledTools: calledTools, ToolCallCount: toolCallCount}, err
 		}
 		lastIn, lastOut = resp.InputTokens, resp.OutputTokens
 		tokenBudget.AddUsage(resp.Usage, resp.InputTokens, resp.OutputTokens)
@@ -775,7 +798,7 @@ func RunToolLoop(ctx context.Context, in ToolLoopInput) (returned ToolLoopResult
 			log.Printf("[tool-loop] token budget exhausted: conv=%s provider=%s model=%s iter=%d spent=%d budget=%d pending_tool_calls=%d",
 				in.ConversationID, in.Provider.Name(), in.Model, iter+1, tokenBudget.Spent, tokenBudget.Limit, len(toolCalls))
 			emit(LoopEvent{Kind: LoopNotice, Summary: fmt.Sprintf("dispatch stopped: token budget exhausted (~%d of %d tokens)", tokenBudget.Spent, tokenBudget.Limit)})
-			return ToolLoopResult{FinalText: progress.handoff(toolCalls), Iterations: iter + 1, History: hist, InputTokens: lastIn, OutputTokens: lastOut, CalledTools: calledTools, LastRequestBudget: budget}, tokenBudget.Err()
+			return ToolLoopResult{FinalText: progress.handoff(toolCalls), Iterations: iter + 1, History: hist, InputTokens: lastIn, OutputTokens: lastOut, CalledTools: calledTools, ToolCallCount: toolCallCount, LastRequestBudget: budget}, tokenBudget.Err()
 		}
 		if len(toolCalls) == 0 {
 			if in.WatchdogTurnEnd != nil && strings.TrimSpace(finalText) != "" {
@@ -805,11 +828,29 @@ func RunToolLoop(ctx context.Context, in ToolLoopInput) (returned ToolLoopResult
 					// fall through to return
 				}
 			}
+			// A final reply that hit the output-token cap is explicitly
+			// incomplete: return everything gathered (text, blocks, history,
+			// usage, call accounting) but classify the turn as
+			// ErrOutputTruncated so callers never mistake a severed answer
+			// for a completed one.
+			if llm.IsLengthTruncation(resp.StopReason) {
+				return ToolLoopResult{
+						FinalText: finalText, FinalBlocks: resp.Blocks,
+						Iterations: iter + 1, History: hist,
+						InputTokens: lastIn, OutputTokens: lastOut,
+						CalledTools: calledTools, ToolCallCount: toolCallCount,
+					}, &llm.Error{
+						Class:    llm.ErrOutputTruncated,
+						Provider: in.Provider.Name(),
+						Err: fmt.Errorf("the final reply was cut off at the output-token limit (stop reason %q) — the text is explicitly incomplete",
+							resp.StopReason),
+					}
+			}
 			return ToolLoopResult{
 				FinalText: finalText, FinalBlocks: resp.Blocks,
 				Iterations: iter + 1, History: hist,
 				InputTokens: lastIn, OutputTokens: lastOut,
-				CalledTools: calledTools,
+				CalledTools: calledTools, ToolCallCount: toolCallCount,
 			}, nil
 		}
 
@@ -819,6 +860,11 @@ func RunToolLoop(ctx context.Context, in ToolLoopInput) (returned ToolLoopResult
 		}
 
 		results := make([]llm.Block, 0, len(toolCalls))
+		// truncRejections counts this iteration's tool calls rejected before
+		// execution because length truncation sliced their arguments mid-JSON.
+		// It feeds the consecutive-error abort below, which classifies a run of
+		// truncation rejections distinctly from generic tool failures.
+		truncRejections := 0
 
 		type pendingCall struct {
 			block llm.Block
@@ -841,8 +887,12 @@ func RunToolLoop(ctx context.Context, in ToolLoopInput) (returned ToolLoopResult
 				// call. Telling the model to "resend valid JSON" here makes it
 				// resend the same oversized call and truncate again (an infinite
 				// retry). Instead, name the truncation and tell it to chunk.
+				truncatedInput := llm.IsLengthTruncation(resp.StopReason)
+				if truncatedInput {
+					truncRejections++
+				}
 				var content string
-				if llm.IsLengthTruncation(resp.StopReason) {
+				if truncatedInput {
 					content = fmt.Sprintf("this tool call was cut off at the output-token limit — the arguments are incomplete because the payload was too large to emit in one call, not because the JSON was malformed. Do NOT resend the same call. If you are writing a file, split it into several smaller Write/Edit calls (write part, then append the rest with additional Edit calls). Raw (truncated) input received: %s", truncateForError(raw))
 				} else {
 					content = fmt.Sprintf("tool input was not valid JSON — resend the call with arguments as a single valid JSON object. Raw input received: %s", truncateForError(raw))
@@ -1042,7 +1092,7 @@ func RunToolLoop(ctx context.Context, in ToolLoopInput) (returned ToolLoopResult
 						Content: "no permission requester wired", IsError: true,
 					})
 					appendTurn(llm.Message{Role: llm.RoleUser, Blocks: results})
-					return ToolLoopResult{FinalText: finalText, Iterations: iter + 1, History: hist, InputTokens: lastIn, OutputTokens: lastOut, CalledTools: calledTools}, nil
+					return ToolLoopResult{FinalText: finalText, Iterations: iter + 1, History: hist, InputTokens: lastIn, OutputTokens: lastOut, CalledTools: calledTools, ToolCallCount: toolCallCount}, nil
 				}
 				destructive := agenttools.IsDestructive(pc.tool)
 				emit(LoopEvent{Kind: LoopPermissionRequired, ToolUseID: pc.block.ToolUseID, ToolName: pc.block.ToolName, ArgsJSON: string(pc.block.ToolInput), Tier: string(pc.tier), Destructive: destructive})
@@ -1061,7 +1111,7 @@ func RunToolLoop(ctx context.Context, in ToolLoopInput) (returned ToolLoopResult
 					})
 					if IsSessionControlTool(pc.block.ToolName) {
 						appendTurn(llm.Message{Role: llm.RoleUser, Blocks: results})
-						return ToolLoopResult{FinalText: finalText, Iterations: iter + 1, History: hist, InputTokens: lastIn, OutputTokens: lastOut, CalledTools: calledTools}, nil
+						return ToolLoopResult{FinalText: finalText, Iterations: iter + 1, History: hist, InputTokens: lastIn, OutputTokens: lastOut, CalledTools: calledTools, ToolCallCount: toolCallCount}, nil
 					}
 					continue
 				}
@@ -1074,7 +1124,7 @@ func RunToolLoop(ctx context.Context, in ToolLoopInput) (returned ToolLoopResult
 						Content: "user denied execution", IsError: true,
 					})
 					appendTurn(llm.Message{Role: llm.RoleUser, Blocks: results})
-					return ToolLoopResult{FinalText: finalText, Iterations: iter + 1, History: hist, InputTokens: lastIn, OutputTokens: lastOut, CalledTools: calledTools}, nil
+					return ToolLoopResult{FinalText: finalText, Iterations: iter + 1, History: hist, InputTokens: lastIn, OutputTokens: lastOut, CalledTools: calledTools, ToolCallCount: toolCallCount}, nil
 				}
 			}
 			execCtx := agenttools.WithProgressEmitter(ctx, func(progress agenttools.ProgressEvent) {
@@ -1091,7 +1141,7 @@ func RunToolLoop(ctx context.Context, in ToolLoopInput) (returned ToolLoopResult
 				results = append(results, out)
 				if IsSessionControlTool(pc.block.ToolName) {
 					appendTurn(llm.Message{Role: llm.RoleUser, Blocks: results})
-					return ToolLoopResult{FinalText: finalText, Iterations: iter + 1, History: hist, InputTokens: lastIn, OutputTokens: lastOut, CalledTools: calledTools}, nil
+					return ToolLoopResult{FinalText: finalText, Iterations: iter + 1, History: hist, InputTokens: lastIn, OutputTokens: lastOut, CalledTools: calledTools, ToolCallCount: toolCallCount}, nil
 				}
 			} else {
 				// Last-resort ceiling before the result enters history. The
@@ -1156,11 +1206,45 @@ func RunToolLoop(ctx context.Context, in ToolLoopInput) (returned ToolLoopResult
 			// consecutive-error abort (else strict-mode blocking could kill a turn).
 		case allErrored:
 			consecutiveErrors++
+			// An iteration whose error results are ALL truncation rejections is
+			// a size problem, not a tool problem; mixed or generic failures
+			// keep the generic count reset so neither is mislabeled.
+			if truncRejections > 0 && truncRejections == len(results) {
+				consecutiveTruncationErrors++
+			} else {
+				consecutiveTruncationErrors = 0
+			}
 			if consecutiveErrors >= 3 {
-				return ToolLoopResult{
-					FinalText: finalText, Iterations: iter + 1, History: hist,
+				// Preserve everything gathered: the partial final text, the
+				// full history (completed tool results included), and the
+				// truthful call accounting — ToolCallCount counts every call
+				// the model emitted, CalledTools the names it asked for, while
+				// the unexecuted calls are exactly what did not run. The
+				// handoff names the work that DID complete before the abort,
+				// so prior writes are not lost alongside the failure.
+				abortText := progress.handoff(toolCalls)
+				if strings.TrimSpace(finalText) != "" {
+					abortText = finalText + "\n\n" + abortText
+				}
+				res := ToolLoopResult{
+					FinalText: abortText, Iterations: iter + 1, History: hist,
 					InputTokens: lastIn, OutputTokens: lastOut,
-				}, fmt.Errorf("aborted: 3 consecutive iterations of tool errors")
+					CalledTools: calledTools, ToolCallCount: toolCallCount,
+				}
+				if consecutiveTruncationErrors == consecutiveErrors {
+					// Repeated output truncation: the model kept emitting calls
+					// too large for the output-token limit and none of them
+					// executed. Classify distinctly from a generic execution
+					// failure — a retry on this or any other provider repeats
+					// the same truncation.
+					return res, &llm.Error{
+						Class:    llm.ErrOutputTruncated,
+						Provider: in.Provider.Name(),
+						Err: fmt.Errorf("aborted: 3 consecutive iterations of tool calls cut off at the output-token limit — %d calls were requested but never executed because their arguments were too large to emit in one call",
+							toolCallCount),
+					}
+				}
+				return res, fmt.Errorf("aborted: 3 consecutive iterations of tool errors")
 			}
 		default:
 			consecutiveErrors = 0
@@ -1184,7 +1268,7 @@ func RunToolLoop(ctx context.Context, in ToolLoopInput) (returned ToolLoopResult
 			MaxTokens: maxTokens, ContextWindow: in.ContextWindow,
 		}, preservedLoopTail(hist, priorHistoryCount, protectedPrefix))
 		if !budget.Fits {
-			return ToolLoopResult{Iterations: maxIters, History: hist, InputTokens: lastIn, OutputTokens: lastOut, LastRequestBudget: budget, CalledTools: calledTools}, budget.OverflowError()
+			return ToolLoopResult{Iterations: maxIters, History: hist, InputTokens: lastIn, OutputTokens: lastOut, LastRequestBudget: budget, CalledTools: calledTools, ToolCallCount: toolCallCount}, budget.OverflowError()
 		}
 	}
 	finalReq := llm.ChatRequest{Model: in.Model, Tier: in.Tier, FallbackTier: in.FallbackTier, System: in.System, Messages: hist, MaxTokens: maxTokens, Temperature: in.Temperature}
@@ -1194,7 +1278,7 @@ func RunToolLoop(ctx context.Context, in ToolLoopInput) (returned ToolLoopResult
 	rdr, err := in.Provider.StreamChat(ctx, finalReq)
 	if err != nil {
 		finalBudget := EstimateRequestBudget(RequestBudgetInput{System: in.System, Messages: hist, MaxTokens: maxTokens, ContextWindow: in.ContextWindow})
-		return ToolLoopResult{Iterations: maxIters, History: hist, InputTokens: lastIn, OutputTokens: lastOut, LastRequestBudget: finalBudget}, err
+		return ToolLoopResult{Iterations: maxIters, History: hist, InputTokens: lastIn, OutputTokens: lastOut, LastRequestBudget: finalBudget, CalledTools: calledTools, ToolCallCount: toolCallCount}, err
 	}
 	resp, err := collectStream(ctx, rdr, in.OnTextDelta, noticeSink(in))
 	rdr.Close()
@@ -1209,7 +1293,7 @@ func RunToolLoop(ctx context.Context, in ToolLoopInput) (returned ToolLoopResult
 			providerOutput = resp.OutputTokens
 		}
 		finalBudget := EstimateRequestBudget(RequestBudgetInput{System: in.System, Messages: hist, MaxTokens: maxTokens, ContextWindow: in.ContextWindow})
-		return ToolLoopResult{Iterations: maxIters, History: hist, InputTokens: providerInput, OutputTokens: providerOutput, LastRequestBudget: finalBudget}, err
+		return ToolLoopResult{Iterations: maxIters, History: hist, InputTokens: providerInput, OutputTokens: providerOutput, LastRequestBudget: finalBudget, CalledTools: calledTools, ToolCallCount: toolCallCount}, err
 	}
 	var finalText string
 	for _, b := range resp.Blocks {
@@ -1219,12 +1303,30 @@ func RunToolLoop(ctx context.Context, in ToolLoopInput) (returned ToolLoopResult
 	}
 	noteAssembledTurn(in.ConversationID, resp.Blocks, seenToolUse)
 	hist = append(hist, llm.Message{Role: llm.RoleAssistant, Blocks: resp.Blocks})
+	// The iteration-cap degradation pass is still a reply the caller treats as
+	// final; if the provider cut it at the output-token cap, classify it as
+	// explicitly incomplete instead of handing back a severed answer as a
+	// success.
+	if llm.IsLengthTruncation(resp.StopReason) {
+		return ToolLoopResult{
+				FinalText: finalText, FinalBlocks: resp.Blocks,
+				Iterations: maxIters, History: hist,
+				InputTokens: resp.InputTokens, OutputTokens: resp.OutputTokens,
+				LastRequestBudget: EstimateRequestBudget(RequestBudgetInput{System: in.System, Messages: hist, MaxTokens: maxTokens, ContextWindow: in.ContextWindow}),
+				CalledTools:       calledTools, ToolCallCount: toolCallCount,
+			}, &llm.Error{
+				Class:    llm.ErrOutputTruncated,
+				Provider: in.Provider.Name(),
+				Err: fmt.Errorf("the iteration-cap final answer was cut off at the output-token limit (stop reason %q) — the text is explicitly incomplete",
+					resp.StopReason),
+			}
+	}
 	return ToolLoopResult{
 		FinalText: finalText, FinalBlocks: resp.Blocks,
 		Iterations: maxIters, History: hist,
 		InputTokens: resp.InputTokens, OutputTokens: resp.OutputTokens,
 		LastRequestBudget: EstimateRequestBudget(RequestBudgetInput{System: in.System, Messages: hist, MaxTokens: maxTokens, ContextWindow: in.ContextWindow}),
-		CalledTools:       calledTools,
+		CalledTools:       calledTools, ToolCallCount: toolCallCount,
 	}, nil
 }
 
