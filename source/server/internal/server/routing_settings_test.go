@@ -27,6 +27,7 @@ func TestRoutingSettingsAtomicPresence(t *testing.T) {
 	if _, callErr := s.providerSvc.Cloud().Chat(context.Background(), inference.Call{Tier: "most_capable"}); llm.ClassOf(callErr) != llm.ErrAuth {
 		t.Fatalf("credential failure was hidden: %v", callErr)
 	}
+	// Update stale comment: default dispatch changed from Premium to Standard in cc813c80
 	view, err := s.GetCloudProviders(context.Background(), &proto.GetCloudProvidersRequest{})
 	if err != nil || view.GetAssignments().GetSecondaryBackup() != "sb" {
 		t.Fatalf("view: %v %v", view, err)
