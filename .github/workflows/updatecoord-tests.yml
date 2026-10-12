@@ -3,6 +3,8 @@ on:
   push:
     branches: [feat/cross-platform-updates]
     paths:
+      - 'source/clients/cli/**'
+      - '.gitattributes'
       - 'source/server/internal/updatecoord/**'
       - 'source/server/pkg/update/**'
       - 'source/server/internal/server/**'
