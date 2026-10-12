@@ -15,6 +15,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"cercano/source/clients/cli/internal/tuirestart"
 	cliui "cercano/source/clients/cli/internal/ui"
 	"cercano/source/server/pkg/agentclient"
 	"cercano/source/server/pkg/config"
@@ -23,6 +24,7 @@ import (
 // version is set at build time via -ldflags "-X main.version=...".
 // Falls back to "dev" for local builds.
 var version = "dev"
+var inheritedTUI *tuirestart.State
 
 func init() {
 	// Normalize: strip leading "v" so the print format "v%s" doesn't double up.
@@ -30,6 +32,7 @@ func init() {
 }
 
 func main() {
+	handoffFD := flag.Int("internal-tui-handoff-fd", -1, "Private TUI restart descriptor")
 	resumeShort := flag.Bool("r", false, "Open the conversation history picker on launch (alias for --resume)")
 	resumeLong := flag.Bool("resume", false, "Open the conversation history picker on launch")
 	setupShort := flag.Bool("s", false, "Open the setup wizard on launch (alias for --setup)")
@@ -39,10 +42,22 @@ func main() {
 	flag.Parse()
 
 	if *showVersion {
+		if len(flag.Args()) == 1 && flag.Arg(0) == "tui-handoff-protocol" {
+			fmt.Println(tuirestart.Protocol)
+			return
+		}
 		fmt.Printf("cercano-cli v%s\n", version)
 		return
 	}
 
+	if *handoffFD != -1 {
+		state, e := tuirestart.ReadInherited(*handoffFD)
+		if e != nil {
+			fmt.Fprintln(os.Stderr, "cercano: invalid TUI handoff; refusing to connect")
+			os.Exit(1)
+		}
+		inheritedTUI = &state
+	}
 	// Config is shared with the server (pkg/config); the CLI needs the port to
 	// dial the agent.
 	cfg, err := config.Load(config.DefaultPath())
@@ -82,6 +97,10 @@ func runCLI(cfg config.Config, openHistoryOnStart, openWizardOnStart bool, seedD
 	}
 
 	m := cliui.New(ag, openHistoryOnStart)
+	if inheritedTUI != nil {
+		m = m.RestoreTUI(*inheritedTUI)
+		openWizardOnStart = false
+	}
 	if openWizardOnStart {
 		m = m.OpenWizardOnStart()
 	}

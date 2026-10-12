@@ -109,8 +109,11 @@ type Model struct {
 	theme   theme.Theme
 	themes  *theme.Registry
 
-	agent  *agentclient.Client
-	convID string
+	agent              *agentclient.Client
+	convID             string
+	tuiUpdateAvailable bool
+	tuiRestartTarget   string
+	restartInit        tea.Cmd
 
 	registry *slash.Registry
 
@@ -447,6 +450,7 @@ func New(ag *agentclient.Client, openHistoryOnStart bool) Model {
 	slash.RegisterDev(reg)
 	slash.RegisterModel(reg)
 	slash.RegisterRestartAgent(reg)
+	slash.RegisterRestart(reg)
 	slash.RegisterSettings(reg)
 	slash.RegisterSetup(reg)
 	slash.RegisterTheme(reg)
@@ -559,7 +563,7 @@ func (m *Model) applyTheme(t theme.Theme) {
 
 // Init is called by Bubble Tea once at startup.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.input.Focus(), m.splash.Init(), fetchConfigCmd(m.agent), fetchToolsCmd(m.agent), fetchPermissionModeCmd(m.agent), fetchOpenRuntimeStatusCmd(m.agent), fetchVisionCmd(m.agent), subscribeEventsCmd(m.agent), subscribeConnStateCmd(m.agent))
+	return tea.Batch(m.restartInit, m.input.Focus(), m.splash.Init(), fetchConfigCmd(m.agent), fetchToolsCmd(m.agent), fetchPermissionModeCmd(m.agent), fetchOpenRuntimeStatusCmd(m.agent), fetchVisionCmd(m.agent), subscribeEventsCmd(m.agent), subscribeConnStateCmd(m.agent))
 }
 
 // permissionModeMsg carries the result of the startup GetPermissionMode RPC.
@@ -1020,6 +1024,18 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
+	case TUIUpdateAppliedMsg:
+		m.tuiUpdateAvailable = true
+		m.tuiRestartTarget = msg.Target
+		if m.pendingConfirm == nil && !m.streaming && !m.resumeHydrating && !m.compacting {
+			return m.requestTUIRestart()
+		}
+		return m.restartNotice("An update to the TUI has been applied. Use /restart when ready; the agent is unchanged.")
+	case tuiRestartFailedMsg:
+		if msg.err != nil {
+			return m.restartNotice("TUI restart failed; this client is still open: " + msg.err.Error())
+		}
+		return m, nil
 
 	case tea.ColorProfileMsg:
 		// TEMPORARY INSTRUMENTATION: record each color-profile change so we can
@@ -3211,6 +3227,8 @@ func (m Model) runSlash(line string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m.submit(kickoff, nil)
+	case slash.ResultRestartTUI:
+		return m.requestTUIRestart()
 	case slash.ResultRestartAgent:
 		m.mainChat().AppendNotice(&Entry{Role: RoleSystem, Content: "↻ restarting agent — the connection will drop and reconnect momentarily…"})
 		m.refreshViewport()
