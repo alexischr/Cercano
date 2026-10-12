@@ -1405,11 +1405,18 @@ func (c *Client) StreamRuntimeLogs(ctx context.Context, tail int, source string)
 // zero / nil). Err is set if the stream itself failed and is the terminal
 // event on this channel.
 type AgentEvent struct {
+	TUIUpdate         *TUIUpdateInstalled
 	Mode              string                 // populated by PermissionModeChanged events
 	OpenRuntimeStatus *OpenRuntimeStatus     // populated by OpenRuntimeStatusChanged events
 	ConfigChanged     *ConfigChanged         // populated by ConfigChanged events
 	SessionProfile    *SessionProfileChanged // populated by SessionProfileChanged events
 	Err               error
+}
+
+// TUIUpdateInstalled is notification data only, never an executable path.
+type TUIUpdateInstalled struct {
+	Version     string
+	OperationID int64
 }
 
 // ConfigChanged mirrors proto.ConfigChanged in the client SDK.
@@ -1519,6 +1526,10 @@ func (c *Client) drainSubscribeEvents(ctx context.Context, stream proto.Agent_Su
 			}
 			out <- AgentEvent{Err: err}
 			return
+		}
+		if update := ev.GetTuiUpdateInstalled(); update != nil {
+			out <- AgentEvent{TUIUpdate: &TUIUpdateInstalled{Version: update.GetVersion(), OperationID: update.GetOperationId()}}
+			continue
 		}
 		if pm := ev.GetPermissionModeChanged(); pm != nil {
 			out <- AgentEvent{Mode: pm.GetMode()}

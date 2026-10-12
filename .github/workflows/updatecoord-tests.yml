@@ -91,6 +91,9 @@ jobs:
       - name: Private updater early-entry fixtures
         working-directory: source/server
         run: go test -count=1 -timeout=2m -run 'TestDispatchPrivateUpdate|TestUpdaterProtocol|TestMainSubprocess' ./cmd/cercano
+      - name: TUI installed-update event transport
+        working-directory: source/server
+        run: go test -count=1 -timeout=2m -run 'TestTUIUpdate|TestEventHub' ./internal/server ./pkg/agentclient
       - name: TUI restart and local handoff fixtures
         working-directory: source/clients/cli
         run: go test -count=1 -timeout=2m -run 'TestTUI|TestState|TestRestart|TestOwnedProcessHandoff|TestUnsupportedOldClient|TestInherited' ./internal/tuirestart ./internal/ui ./internal/slash
@@ -98,6 +101,9 @@ jobs:
         if: runner.os != 'Windows'
         working-directory: source/clients/cli
         run: go test -race -count=1 -timeout=2m -run 'TestTUI|TestState|TestRestart|TestOwnedProcessHandoff|TestUnsupportedOldClient|TestInherited' ./internal/tuirestart ./internal/ui ./internal/slash
+      - name: Full CLI suite
+        working-directory: source/clients/cli
+        run: go test -count=1 -timeout=3m ./...
       - name: CLI protocol compatibility compilation
         working-directory: source/clients/cli
         run: go test -run '^$' ./...

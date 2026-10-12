@@ -64,6 +64,9 @@ func subscribeEventsCmd(ag *agentclient.Client) tea.Cmd {
 			if !ok || ev.Err != nil {
 				return nil // stream ended; stop draining
 			}
+			if ev.TUIUpdate != nil {
+				return tuiUpdateNoticeMsg{version: ev.TUIUpdate.Version, operationID: ev.TUIUpdate.OperationID, next: wait}
+			}
 			if ev.OpenRuntimeStatus != nil {
 				return openRuntimeStatusChangedMsg{status: ev.OpenRuntimeStatus, next: wait}
 			}
@@ -117,4 +120,11 @@ func subscribeConnStateCmd(ag *agentclient.Client) tea.Cmd {
 		}
 		return wait()
 	}
+}
+
+// Installed metadata only: no executable path or instruction from the stream.
+type tuiUpdateNoticeMsg struct {
+	version     string
+	operationID int64
+	next        tea.Cmd
 }

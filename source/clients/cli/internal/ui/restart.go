@@ -55,7 +55,7 @@ func (m Model) requestTUIRestart() (Model, tea.Cmd) {
 			dir, _ = os.Getwd()
 		}
 		snapshot := tuirestart.State{ConversationID: m.convID, WorkingDirectory: dir, Draft: m.input.Value()}
-		return m, tea.Exec(&tuiRestartExec{target: target, state: snapshot}, func(e error) tea.Msg { return tuiRestartFailedMsg{err: e} })
+		return m, tea.Exec(&tuiRestartExec{target: target, state: snapshot, expectedVersion: m.tuiExpectedVersion}, func(e error) tea.Msg { return tuiRestartFailedMsg{err: e} })
 	}, onNo: func(m Model) (Model, tea.Cmd) {
 		m.pendingConfirm = nil
 		return m.restartNotice("TUI restart deferred. Use /restart when ready.")
@@ -66,11 +66,12 @@ func (m Model) requestTUIRestart() (Model, tea.Cmd) {
 }
 
 type tuiRestartExec struct {
-	target string
-	state  tuirestart.State
+	target          string
+	state           tuirestart.State
+	expectedVersion string
 }
 
-func (c *tuiRestartExec) Run() error        { return tuirestart.Replace(c.target, c.state) }
+func (c *tuiRestartExec) Run() error        { return tuirestart.Replace(c.target, c.state, c.expectedVersion) }
 func (*tuiRestartExec) SetStdin(io.Reader)  {}
 func (*tuiRestartExec) SetStdout(io.Writer) {}
 func (*tuiRestartExec) SetStderr(io.Writer) {}
@@ -94,4 +95,28 @@ func (m Model) RestoreTUI(s tuirestart.State) Model {
 
 func (m Model) restartBusy() bool {
 	return m.streaming || m.resumeHydrating || m.compacting || m.content != nil || m.authLogin != nil || m.composeToolUseID != "" || len(m.confirmQueue) != 0
+}
+
+func (m Model) WithTUIVersion(version string) Model { m.tuiCurrentVersion = version; return m }
+func (m Model) applyTUIUpdateNotice(version string, operationID int64) (Model, tea.Cmd) {
+	if operationID <= 0 || operationID <= m.tuiUpdateOperation || len(version) == 0 || len(version) > 128 {
+		return m, nil
+	}
+	for _, c := range version {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '.' || c == '-' || c == '+' || c == '_') {
+			return m, nil
+		}
+	}
+	m.tuiUpdateOperation = operationID
+	if version == m.tuiCurrentVersion {
+		return m, nil
+	}
+	m.tuiExpectedVersion = version
+	m.tuiUpdateAvailable = true
+	// Never use a path from this remote notification or a previous update.
+	m.tuiRestartTarget = ""
+	if m.pendingConfirm == nil && !m.restartBusy() {
+		return m.requestTUIRestart()
+	}
+	return m.restartNotice("An update to the TUI has been applied. Use /restart when ready; other terminals and the agent stay running.")
 }

@@ -112,6 +112,9 @@ type Model struct {
 	agent              *agentclient.Client
 	convID             string
 	tuiUpdateAvailable bool
+	tuiCurrentVersion  string
+	tuiExpectedVersion string
+	tuiUpdateOperation int64
 	tuiRestartTarget   string
 	restartInit        tea.Cmd
 
@@ -1024,6 +1027,9 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
+	case tuiUpdateNoticeMsg:
+		next, cmd := m.applyTUIUpdateNotice(msg.version, msg.operationID)
+		return next, tea.Batch(cmd, msg.next)
 	case TUIUpdateAppliedMsg:
 		m.tuiUpdateAvailable = true
 		m.tuiRestartTarget = msg.Target

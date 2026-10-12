@@ -1264,7 +1264,15 @@ message ClientEvent {
     ConfigChanged config_changed = 2;
     OpenRuntimeStatusChanged open_runtime_status_changed = 4;
     SessionProfileChanged session_profile_changed = 5;
+    TuiUpdateInstalled tui_update_installed = 6;
   }
+}
+
+// Notification only: never a remote executable path or restart instruction.
+// The local client verifies its installed replacement and asks for confirmation.
+message TuiUpdateInstalled {
+  string version = 1;
+  int64 operation_id = 2;
 }
 
 // PermissionModeChanged carries the new active mode. Clients update their

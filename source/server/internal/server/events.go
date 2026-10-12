@@ -19,14 +19,16 @@ import (
 // eventHub fans server-originated ClientEvents out to all open subscriber
 // streams. Safe for concurrent Subscribe / broadcast / unsubscribe.
 type eventHub struct {
-	mu      sync.Mutex
-	next    int
-	subs    map[int]chan *proto.ClientEvent
-	onEmpty func()
+	mu         sync.Mutex
+	next       int
+	subs       map[int]chan *proto.ClientEvent
+	onEmpty    func()
+	latestTUI  *proto.ClientEvent
+	tuiChanged chan struct{}
 }
 
 func newEventHub() *eventHub {
-	return &eventHub{subs: make(map[int]chan *proto.ClientEvent)}
+	return &eventHub{subs: make(map[int]chan *proto.ClientEvent), tuiChanged: make(chan struct{})}
 }
 
 // subscribe registers a new subscriber and returns its event channel plus an
@@ -105,8 +107,20 @@ func (s *Server) SubscribeEvents(_ *proto.SubscribeEventsRequest, stream proto.A
 	defer unsubscribe()
 
 	ctx := stream.Context()
+	var lastTUI int64
 	for {
+		s.events.mu.Lock()
+		latest, changed := s.events.latestTUI, s.events.tuiChanged
+		s.events.mu.Unlock()
+		if latest != nil && latest.GetTuiUpdateInstalled().GetOperationId() > lastTUI {
+			if err := stream.Send(latest); err != nil {
+				return err
+			}
+			lastTUI = latest.GetTuiUpdateInstalled().GetOperationId()
+		}
 		select {
+		case <-changed:
+			continue
 		case <-ctx.Done():
 			return ctx.Err()
 		case ev, ok := <-ch:

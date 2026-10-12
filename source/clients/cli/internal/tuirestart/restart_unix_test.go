@@ -15,6 +15,10 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		fmt.Println("cercano-cli fixture-1")
+		os.Exit(0)
+	}
 	if len(os.Args) == 3 && os.Args[1] == "--version" && os.Args[2] == "tui-handoff-protocol" {
 		fmt.Println(Protocol)
 		os.Exit(0)
@@ -88,5 +92,18 @@ func TestInheritedStandardStreamsRefused(t *testing.T) {
 		if _, e := ReadInherited(fd); e == nil {
 			t.Fatal("standard stream accepted")
 		}
+	}
+}
+
+func TestRestartRequiresAnnouncedInstalledVersion(t *testing.T) {
+	exe, e := os.Executable()
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = CheckTarget(exe, "fixture-1"); e != nil {
+		t.Fatal(e)
+	}
+	if e = CheckTarget(exe, "fixture-2"); e == nil {
+		t.Fatal("stale installed target accepted")
 	}
 }

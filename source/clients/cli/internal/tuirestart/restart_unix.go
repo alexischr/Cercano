@@ -28,7 +28,7 @@ func Target() (string, error) {
 	p = strings.TrimSuffix(p, " (deleted)")
 	return p, nil
 }
-func CheckTarget(path string) error {
+func CheckTarget(path string, expectedVersion ...string) error {
 	if !filepath.IsAbs(path) {
 		return errors.New("restart target must be absolute")
 	}
@@ -49,6 +49,17 @@ func CheckTarget(path string) error {
 	if e = cmd.Run(); e != nil || out.text != Protocol+"\n" || out.exceeded {
 		return errors.New("installed TUI does not support safe session handoff; restart manually")
 	}
+	if len(expectedVersion) > 0 && expectedVersion[0] != "" {
+		versionCmd := exec.CommandContext(ctx, path, "--version")
+		versionCmd.WaitDelay = 100 * time.Millisecond
+		value := &boundedOutput{}
+		versionCmd.Stdout = value
+		versionCmd.Stderr = &boundedOutput{}
+		if e = versionCmd.Run(); e != nil || value.exceeded || strings.TrimSpace(value.text) != "cercano-cli "+expectedVersion[0] {
+			return errors.New("installed TUI path does not match the announced update; restart manually using the updated installation")
+		}
+	}
+
 	return nil
 }
 
@@ -66,12 +77,12 @@ func (b *boundedOutput) Write(p []byte) (int, error) {
 	}
 	return n, nil
 }
-func Replace(path string, s State) error {
+func Replace(path string, s State, expectedVersion ...string) error {
 	data, e := Encode(s)
 	if e != nil {
 		return e
 	}
-	if e = CheckTarget(path); e != nil {
+	if e = CheckTarget(path, expectedVersion...); e != nil {
 		return e
 	}
 	f, e := os.CreateTemp("", "cercano-tui-handoff-")
