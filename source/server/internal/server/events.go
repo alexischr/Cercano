@@ -19,12 +19,13 @@ import (
 // eventHub fans server-originated ClientEvents out to all open subscriber
 // streams. Safe for concurrent Subscribe / broadcast / unsubscribe.
 type eventHub struct {
-	mu         sync.Mutex
-	next       int
-	subs       map[int]chan *proto.ClientEvent
-	onEmpty    func()
-	latestTUI  *proto.ClientEvent
-	tuiChanged chan struct{}
+	mu           sync.Mutex
+	next         int
+	subs         map[int]chan *proto.ClientEvent
+	onEmpty      func()
+	latestTUI    *proto.ClientEvent
+	tuiInstallID string
+	tuiChanged   chan struct{}
 }
 
 func newEventHub() *eventHub {
