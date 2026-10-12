@@ -17,12 +17,15 @@ var onePxPNG = []byte{
 
 func TestParseImagePathsQuotingAndEscapes(t *testing.T) {
 	cases := map[string][]string{
-		`/a/b.png`:           {`/a/b.png`},
-		`'/a/b c.png'`:       {`/a/b c.png`},
-		`"/a/b c.png"`:       {`/a/b c.png`},
-		`/a/b\ c.png`:        {`/a/b c.png`},
-		"/a/x.png /a/y.png":  {`/a/x.png`, `/a/y.png`},
-		"/a/x.png\n/a/y.png": {`/a/x.png`, `/a/y.png`},
+		`C:\Users\someone\shot.png`:  {`C:\Users\someone\shot.png`},
+		`\\server\share\shot.png`:    {`\\server\share\shot.png`},
+		`"C:\Users\someone\a b.png"`: {`C:\Users\someone\a b.png`},
+		`/a/b.png`:                   {`/a/b.png`},
+		`'/a/b c.png'`:               {`/a/b c.png`},
+		`"/a/b c.png"`:               {`/a/b c.png`},
+		`/a/b\ c.png`:                {`/a/b c.png`},
+		"/a/x.png /a/y.png":          {`/a/x.png`, `/a/y.png`},
+		"/a/x.png\n/a/y.png":         {`/a/x.png`, `/a/y.png`},
 	}
 	for in, want := range cases {
 		got := parseImagePaths(in)

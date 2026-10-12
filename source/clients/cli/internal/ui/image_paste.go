@@ -34,10 +34,12 @@ func parseImagePaths(pasted string) []string {
 	var paths []string
 	var cur strings.Builder
 	var quote rune
+	windowsPath := false
 	flush := func() {
 		if cur.Len() > 0 {
 			paths = append(paths, cur.String())
 			cur.Reset()
+			windowsPath = false
 		}
 	}
 	runes := []rune(s)
@@ -52,6 +54,9 @@ func parseImagePaths(pasted string) []string {
 			}
 		case r == '\'' || r == '"':
 			quote = r
+		case r == '\\' && (windowsPath || (cur.Len() == 2 && cur.String()[1] == ':' && ((cur.String()[0] >= 'A' && cur.String()[0] <= 'Z') || (cur.String()[0] >= 'a' && cur.String()[0] <= 'z'))) || (cur.Len() == 0 && i+1 < len(runes) && runes[i+1] == '\\')):
+			windowsPath = true
+			cur.WriteRune(r)
 		case r == '\\' && i+1 < len(runes):
 			i++
 			cur.WriteRune(runes[i]) // unescape (e.g. "\ " -> " ")

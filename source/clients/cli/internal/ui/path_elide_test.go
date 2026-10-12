@@ -1,9 +1,13 @@
 package ui
 
-import "testing"
+import (
+	"path/filepath"
+	"runtime"
+	"testing"
+)
 
 func TestPrettifyPath_WorkspaceRelative(t *testing.T) {
-	got := prettifyPath(
+	got := fixturePrettifyPath(
 		"/Users/bryan/git_repos/Cercano/source/server/internal/server/server.go",
 		"/Users/bryan/git_repos/Cercano",
 		"/Users/bryan",
@@ -16,7 +20,7 @@ func TestPrettifyPath_WorkspaceRelative(t *testing.T) {
 }
 
 func TestPrettifyPath_HomeRelativeWhenOutsideWorkspace(t *testing.T) {
-	got := prettifyPath(
+	got := fixturePrettifyPath(
 		"/Users/bryan/dotfiles/.config/nvim/init.lua",
 		"/Users/bryan/git_repos/Cercano",
 		"/Users/bryan",
@@ -29,19 +33,23 @@ func TestPrettifyPath_HomeRelativeWhenOutsideWorkspace(t *testing.T) {
 }
 
 func TestPrettifyPath_AbsolutePassThroughWhenNoMatch(t *testing.T) {
-	got := prettifyPath(
+	got := fixturePrettifyPath(
 		"/etc/hosts",
 		"/Users/bryan/git_repos/Cercano",
 		"/Users/bryan",
 		100,
 	)
-	if got != "/etc/hosts" {
-		t.Errorf("no-match: got %q want /etc/hosts", got)
+	want := "/etc/hosts"
+	if runtime.GOOS == "windows" {
+		want = "C:/etc/hosts"
+	}
+	if got != want {
+		t.Errorf("no-match: got %q want %q", got, want)
 	}
 }
 
 func TestPrettifyPath_SegmentElideWhenWorkspaceRelStillTooLong(t *testing.T) {
-	got := prettifyPath(
+	got := fixturePrettifyPath(
 		"/Users/bryan/git_repos/Cercano/source/server/internal/meridian/manager.go",
 		"/Users/bryan",
 		"/Users/bryan",
@@ -64,7 +72,7 @@ func TestPrettifyPath_SegmentElideWhenWorkspaceRelStillTooLong(t *testing.T) {
 func TestPrettifyPath_SegmentElidePreservesLeadingAndTrailing(t *testing.T) {
 	// Workspace-rel'd path is "internal/meridian/manager.go" — already short
 	// and fits. Force elision by passing zero cwd/home and tight budget.
-	got := prettifyPath(
+	got := fixturePrettifyPath(
 		"git_repos/bryancostanich/Cercano/source/server/internal/meridian/manager.go",
 		"",
 		"",
@@ -87,13 +95,13 @@ func TestPrettifyPath_BudgetZeroReturnsUnelided(t *testing.T) {
 	// Budget 0 = no width constraint; workspace/home rels still apply, but
 	// no segment elision happens regardless of length.
 	long := "/Users/bryan/git_repos/Cercano/source/server/internal/meridian/manager.go"
-	got := prettifyPath(long, "/Users/bryan/git_repos/Cercano", "/Users/bryan", 0)
+	got := fixturePrettifyPath(long, "/Users/bryan/git_repos/Cercano", "/Users/bryan", 0)
 	want := "source/server/internal/meridian/manager.go"
 	if got != want {
 		t.Errorf("budget=0 workspace-rel: got %q want %q", got, want)
 	}
 	// Outside cwd → ~/... — still no elision at budget 0.
-	got = prettifyPath(long, "/some/other/dir", "/Users/bryan", 0)
+	got = fixturePrettifyPath(long, "/some/other/dir", "/Users/bryan", 0)
 	want = "~/git_repos/Cercano/source/server/internal/meridian/manager.go"
 	if got != want {
 		t.Errorf("budget=0 home-rel: got %q want %q", got, want)
@@ -101,7 +109,7 @@ func TestPrettifyPath_BudgetZeroReturnsUnelided(t *testing.T) {
 }
 
 func TestPrettifyPath_EmptyInputReturnsEmpty(t *testing.T) {
-	if got := prettifyPath("", "/cwd", "/home", 80); got != "" {
+	if got := fixturePrettifyPath("", "/cwd", "/home", 80); got != "" {
 		t.Errorf("empty in, got %q", got)
 	}
 }
@@ -110,7 +118,7 @@ func TestPrettifyPath_RelativePathPassesThrough(t *testing.T) {
 	// Relative paths shouldn't get cwd/home stripped — they're already short
 	// and we don't want false positives that mangle "source/foo.go" because
 	// it happens to share a prefix with cwd.
-	got := prettifyPath("source/server.go", "/Users/bryan/Cercano", "/Users/bryan", 100)
+	got := fixturePrettifyPath("source/server.go", "/Users/bryan/Cercano", "/Users/bryan", 100)
 	if got != "source/server.go" {
 		t.Errorf("got %q want unchanged", got)
 	}
@@ -134,4 +142,18 @@ func contains(s, sub string) bool {
 		}
 	}
 	return false
+}
+
+// Preserve the display cases while giving filepath native absolute inputs.
+func fixturePrettifyPath(p, cwd, home string, budget int) string {
+	native := func(s string) string {
+		if runtime.GOOS == "windows" {
+			if len(s) > 0 && s[0] == '/' {
+				s = "C:" + s
+			}
+			return filepath.FromSlash(s)
+		}
+		return s
+	}
+	return prettifyPath(native(p), native(cwd), native(home), budget)
 }

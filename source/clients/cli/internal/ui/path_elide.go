@@ -35,6 +35,7 @@ func prettifyPath(p, cwd, home string, budget int) string {
 	}
 	p = workspaceRelative(p, cwd)
 	p = homeRelative(p, home)
+	p = filepath.ToSlash(p)
 	if budget <= 0 || lipgloss.Width(p) <= budget {
 		return p
 	}

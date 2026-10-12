@@ -24,7 +24,7 @@ func (m Model) requestTUIRestart() (Model, tea.Cmd) {
 		return m.restartNotice("Finish the pending decision before restarting this TUI.")
 	}
 	if m.restartBusy() {
-		return m.restartNotice("This terminal has active work. Finish or interrupt it before /restart. The shared agent will not be restarted.")
+		return m.restartNotice("This terminal has active work. Finish or interrupt it, and clear attached images or queued messages, before /restart. The shared agent will not be restarted.")
 	}
 	title := "Restart this TUI now?"
 	if m.tuiUpdateAvailable {
@@ -94,7 +94,7 @@ func (m Model) RestoreTUI(s tuirestart.State) Model {
 }
 
 func (m Model) restartBusy() bool {
-	return m.streaming || m.resumeHydrating || m.compacting || m.content != nil || m.authLogin != nil || m.composeToolUseID != "" || len(m.confirmQueue) != 0
+	return len(m.input.Attachments()) != 0 || len(m.mainChat().Queued()) != 0 || m.streaming || m.resumeHydrating || m.compacting || m.content != nil || m.authLogin != nil || m.composeToolUseID != "" || len(m.confirmQueue) != 0
 }
 
 func (m Model) WithTUIVersion(version string) Model { m.tuiCurrentVersion = version; return m }

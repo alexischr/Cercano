@@ -1,0 +1,2 @@
+# Render goldens are byte comparisons; checkout must not rewrite newlines.
+*.golden text eol=lf

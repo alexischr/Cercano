@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -78,7 +79,8 @@ func TestConversationSearchTraceLifecycleAndPrivacy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm()&0077 != 0 {
+	// Mode bits prove Unix permissions only, not Windows ACL protection.
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
 		t.Fatal("trace file is readable by other users")
 	}
 }

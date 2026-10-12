@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -79,5 +81,26 @@ func TestTUIRestartRestoresDraftWithoutSubmission(t *testing.T) {
 	m = m.RestoreTUI(s)
 	if m.input.Value() != s.Draft || m.workDirOverride != s.WorkingDirectory || m.streaming {
 		t.Fatal("restore changed draft semantics")
+	}
+}
+
+func TestTUIRestartRetainsAttachmentsAndQueuedTurns(t *testing.T) {
+	m := New(nil, false)
+	img := filepath.Join(t.TempDir(), "draft.png")
+	if e := os.WriteFile(img, onePxPNG, 0600); e != nil {
+		t.Fatal(e)
+	}
+	if !m.handleImagePaste(img) {
+		t.Fatal("image fixture not attached")
+	}
+	m, cmd := m.requestTUIRestart()
+	if cmd != nil || m.pendingConfirm != nil || len(m.input.Attachments()) != 1 {
+		t.Fatal("attachment could be lost during restart")
+	}
+	n := New(nil, false)
+	n.mainChat().Enqueue("queued unsent", nil)
+	n, cmd = n.requestTUIRestart()
+	if cmd != nil || n.pendingConfirm != nil || len(n.mainChat().Queued()) != 1 {
+		t.Fatal("queued turn could be lost during restart")
 	}
 }

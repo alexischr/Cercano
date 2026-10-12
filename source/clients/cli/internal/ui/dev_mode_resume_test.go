@@ -134,9 +134,10 @@ func TestFreshCLIRehydratesDevModeFromPersistedConversation(t *testing.T) {
 func TestProgressiveDevModeMetadataIgnoresStaleConversation(t *testing.T) {
 	m := New(nil, false)
 	m.resumeGen = 2
-	m.restoreDevMode("/tmp/current")
+	current := t.TempDir()
+	m.restoreDevMode(current)
 	m, _ = m.applyProgressiveResumeEvent(resumeViewportStreamMsg{gen: 1, event: agentclient.ResumeViewportEvent{Kind: agentclient.ResumeViewportEventTail, DevWorkDir: "/tmp/old"}})
-	if m.workDirOverride != "/tmp/current" {
+	if m.workDirOverride != current {
 		t.Fatal("stale resume changed dev mode")
 	}
 	m.restoreDevMode("relative/path")
