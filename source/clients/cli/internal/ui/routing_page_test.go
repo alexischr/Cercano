@@ -116,7 +116,7 @@ func TestRoutingFailedSaveAndUnavailableAgentRetainDraft(t *testing.T) {
 		t.Fatal("discard after save restored old baseline")
 	}
 }
-func TestRoutingNavigationCancellationAndEighthTab(t *testing.T) {
+func TestRoutingNavigationCancellationAndFinalTabs(t *testing.T) {
 	sp := draftTestPage()
 	sp.scope = scopeRouting
 	sp.onCommit("routing-task-review-quality", "economy")
@@ -129,11 +129,23 @@ func TestRoutingNavigationCancellationAndEighthTab(t *testing.T) {
 	if m.configSurface.active != configTabRouting || !sp.routingDirty {
 		t.Fatal("cancel lost Routing draft")
 	}
-	// The eighth keyboard destination remains addressable; do not build it
-	// while a dirty page still owns navigation.
-	m, _, _ = m.handleConfigSurfaceKey(tea.KeyPressMsg{Code: '8', Text: "8"})
-	if m.configSurface.pendingTab == nil || *m.configSurface.pendingTab != configTabContext {
-		t.Fatal("eighth tab navigation missing")
+	// Token Metrics is eighth and Context ninth. Both destinations must remain
+	// addressable without discarding the dirty Routing page during navigation.
+	for _, dest := range []struct {
+		key rune
+		tab configTab
+	}{{'8', configTabMetrics}, {'9', configTabContext}} {
+		m, _, _ = m.handleConfigSurfaceKey(tea.KeyPressMsg{Code: dest.key, Text: string(dest.key)})
+		if m.configSurface.pendingTab == nil || *m.configSurface.pendingTab != dest.tab {
+			t.Fatalf("key %c did not request %s", dest.key, dest.tab.label())
+		}
+		if m.configSurface.active != configTabRouting || m.content != sp || !sp.routingDirty {
+			t.Fatal("navigation discarded draft before confirmation")
+		}
+		m, _, _ = m.handleConfigSurfaceKey(tea.KeyPressMsg{Code: 'n', Text: "n"})
+		if m.configSurface.pendingTab != nil || m.configSurface.active != configTabRouting || !sp.routingDirty {
+			t.Fatal("cancellation lost routing draft")
+		}
 	}
 }
 
