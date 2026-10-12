@@ -229,6 +229,12 @@ func TestResumeHydrationErrorReleasesOnce(t *testing.T) {
 	if err == nil {
 		t.Fatal("StreamResumeConversationViewportFirst() = nil, want hydration error")
 	}
+	// The error travels on a buffered channel before the worker's deferred
+	// release executes. RPC completion alone is not the worker-release signal.
+	deadline := time.Now().Add(2 * time.Second)
+	for admission.releasedCount() == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
 	if acquired, released := admission.snapshot(); acquired != 1 || released != 1 {
 		t.Fatalf("admission acquired=%d released=%d, want 1/1", acquired, released)
 	}
