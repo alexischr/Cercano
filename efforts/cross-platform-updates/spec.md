@@ -108,6 +108,8 @@ The user approved extending the existing SQLite updater store for authoritative 
 
 The user approved restoring explicit prior absence after a failed first activation: remove only the exact selection created by that operation, under installation exclusion and after proving the owned candidate has stopped. Do not delete version directories or user data. Record distinct absence-restoration intent and completion; mismatches or uncertain process ownership must refuse automatic removal.
 
+The user approved an installer-owned installation identity file beside the stable launcher for explicitly enrolled self-managed installations. Reading must not enroll, infer identity from layout, repair permissions, or override package-manager ownership. Initial implementation is per-user; machine/package-managed ownership remains independently corroborated. No development checkout is enrolled by this approval.
+
 Power loss and process termination must leave a recoverable state. A selection file alone is not proof of a crash-safe transaction on Windows. Define durable journal/selection behavior, single-writer exclusion, startup reconciliation, and cleanup of abandoned stages, then verify them with fault injection and native tests.
 
 ## Trust model
