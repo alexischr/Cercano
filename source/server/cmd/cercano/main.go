@@ -642,6 +642,8 @@ func startGRPCServer(cfg config.Config, bindAddr string, events *crashlog.Writer
 	srv.SelectExecutionMode()
 
 	proto.RegisterAgentServer(s, srv)
+	stopTUINotices := startInstalledTUINotices(srv)
+	defer stopTUINotices()
 
 	go func() {
 		if err := s.Serve(lis); err != nil {
@@ -650,6 +652,7 @@ func startGRPCServer(cfg config.Config, bindAddr string, events *crashlog.Writer
 	}()
 
 	cleanup := func() {
+		stopTUINotices()
 		// Drain before teardown: in-flight turns still need the MCP manager
 		// and providers, so those stop only after the streams finish. The
 		// standing SubscribeEvents streams must end first or GracefulStop
