@@ -110,6 +110,8 @@ The user approved restoring explicit prior absence after a failed first activati
 
 The user approved an installer-owned installation identity file beside the stable launcher for explicitly enrolled self-managed installations. Reading must not enroll, infer identity from layout, repair permissions, or override package-manager ownership. Initial implementation is per-user; machine/package-managed ownership remains independently corroborated. No development checkout is enrolled by this approval.
 
+The user approved an explicit force-update choice that interrupts proven agent-owned commands and workers across connected terminals. Warn about partial file/external effects, preserve interrupted work, never automatically replay commands, and never signal unrelated or unproven processes. An accepted stop request is not process-exit or installation proof. Ordinary shutdown remains graceful; this is not permission for silent automatic interruption.
+
 Power loss and process termination must leave a recoverable state. A selection file alone is not proof of a crash-safe transaction on Windows. Define durable journal/selection behavior, single-writer exclusion, startup reconciliation, and cleanup of abandoned stages, then verify them with fault injection and native tests.
 
 ## Trust model

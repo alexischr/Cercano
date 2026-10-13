@@ -197,9 +197,11 @@ type Server struct {
 	// to its normal drain-and-exit path (see safe_stop.go) WITHOUT
 	// self-signaling; the safe-stop handler refuses to act when it is not
 	// configured — it never falls back to sending itself a signal.
-	safeStopMu           sync.Mutex
-	safeStopCommitted    bool
-	processStopRequester func(reason string)
+	safeStopMu                sync.Mutex
+	safeStopCommitted         bool
+	processStopRequester      func(reason string)
+	forceStopCommitted        bool // guarded by safeStopMu; not a proof of idle/exit
+	processForceStopRequester func(reason string)
 	// injectMu guards the test-injectable tracking-error fields: in production
 	// they are written once at startup, but the injection seams allow tests to
 	// mutate them while a waiter runs.

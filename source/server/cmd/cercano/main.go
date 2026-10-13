@@ -20,6 +20,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -659,7 +660,13 @@ func startGRPCServer(cfg config.Config, bindAddr string, events *crashlog.Writer
 		// standing SubscribeEvents streams must end first or GracefulStop
 		// waits on attached clients forever.
 		srv.BeginShutdown()
-		server.DrainThenStop(s, drainGrace)
+		if stopRequest.isForce() {
+			if !server.StopWithoutDrain(s) {
+				log.Print("force update: transport shutdown incomplete; process exit still requires verification")
+			}
+		} else {
+			server.DrainThenStop(s, drainGrace)
+		}
 		mcpCancel()
 		mcpMgr.Stop()
 		srv.Shutdown()
@@ -1796,15 +1803,18 @@ func generateSessionID() string {
 // surface: the channel lives entirely inside the process, and the API RPCs
 // that feed it were already authenticated entry points.
 type processStopRequest struct {
-	ch chan struct{}
+	force atomic.Bool
+	ch    chan struct{}
 }
 
 func configureProcessStopRequester(srv *server.Server, owner *processStopRequest) {
 	if owner == nil {
 		srv.SetProcessStopRequester(nil)
+		srv.SetProcessForceStopRequester(nil)
 		return
 	}
 	srv.SetProcessStopRequester(owner.request)
+	srv.SetProcessForceStopRequester(owner.requestForce)
 }
 
 func newProcessStopRequest() *processStopRequest {
@@ -1820,6 +1830,11 @@ func (r *processStopRequest) request(reason string) {
 	default: // a stop request is already pending; coalesce
 	}
 }
+
+// requestForce preserves explicit force intent before waking the owner. It
+// never signals any PID and cannot be downgraded by an ordinary repeated stop.
+func (r *processStopRequest) requestForce(reason string) { r.force.Store(true); r.request(reason) }
+func (r *processStopRequest) isForce() bool              { return r != nil && r.force.Load() }
 
 // wait is the channel the serve loop selects on alongside OS signals.
 func (r *processStopRequest) wait() <-chan struct{} { return r.ch }
@@ -1897,9 +1912,13 @@ func runServerMode(cfg config.Config) {
 			crashWriter.LogSignal(sig.String(), map[string]any{"stage": "runServerMode", "graceful": true})
 		}
 	case <-stopRequest.wait():
-		fmt.Printf("Stop requested — draining in-flight requests (signal to force quit)...\n")
+		if stopRequest.isForce() {
+			fmt.Println("Force update requested — interrupting owned work; no automatic replay.")
+		} else {
+			fmt.Printf("Stop requested — draining in-flight requests (signal to force quit)...\n")
+		}
 		if crashWriter != nil {
-			crashWriter.LogSignal("process-stop-request", map[string]any{"stage": "runServerMode", "graceful": true})
+			crashWriter.LogSignal("process-stop-request", map[string]any{"stage": "runServerMode", "graceful": !stopRequest.isForce()})
 		}
 	}
 	go func() {

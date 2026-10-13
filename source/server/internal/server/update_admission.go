@@ -77,6 +77,23 @@ func (g *updateAdmission) pauseWhenIdle(ctx context.Context) (func(), error) {
 	}
 }
 
+// sealForForce refuses new work immediately without pretending active work is
+// idle. It is permanent for process shutdown; canceled pre-commit requests and
+// competing gate owners leave admission unchanged.
+func (g *updateAdmission) sealForForce(ctx context.Context) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if g.paused {
+		return errUpdateAdmissionPaused
+	}
+	g.paused = true
+	g.notifyLocked()
+	return nil
+}
+
 func (s *Server) admitUpdateWork() (func(), error) {
 	release, err := s.updateWork.enter()
 	if err != nil {

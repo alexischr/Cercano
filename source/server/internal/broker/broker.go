@@ -62,8 +62,9 @@ type turnHandle struct {
 // Broker is the per-conversation turn registry, fan-out hub, and replay buffer.
 // The zero value is not usable; call New.
 type Broker struct {
-	mu    sync.Mutex
-	convs map[string]*convState
+	shutdownInterrupted bool // permanent; guarded by mu
+	mu                  sync.Mutex
+	convs               map[string]*convState
 }
 
 // New returns a ready-to-use Broker.
@@ -93,6 +94,8 @@ func (b *Broker) convLocked(conv string) *convState {
 // release func the caller must defer. The fence helpers (IsCurrent) gate
 // persistence/emission on the returned gen.
 //
+// After shutdown interruption BeginTurn returns an already-canceled context,
+// generation zero (never current), and a no-op release without registration.
 // BeginTurn resets the per-conversation replay buffer (fresh turn = empty
 // replay for any mid-turn joiner). Existing subscribers are kept attached
 // across the turn boundary; they will see the old turn's events stop and the
@@ -100,6 +103,11 @@ func (b *Broker) convLocked(conv string) *convState {
 func (b *Broker) BeginTurn(parent context.Context, conv string) (context.Context, uint64, func()) {
 	ctx, cancel := context.WithCancel(parent)
 	b.mu.Lock()
+	if b.shutdownInterrupted {
+		b.mu.Unlock()
+		cancel()
+		return ctx, 0, func() {}
+	}
 	cs := b.convLocked(conv)
 	if cs.handle != nil {
 		cs.handle.cancel() // supersede the turn already running on this conversation
@@ -128,6 +136,9 @@ func (b *Broker) BeginTurn(parent context.Context, conv string) (context.Context
 // fence that gates a turn's persistence and event emission. A superseded turn
 // fails this and goes quiet.
 func (b *Broker) IsCurrent(conv string, gen uint64) bool {
+	if gen == 0 {
+		return false
+	} // reserved rejected/no-turn generation
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	cs, ok := b.convs[conv]
@@ -172,6 +183,25 @@ func (b *Broker) CancelAllTurns() {
 	}
 }
 
+// InterruptActiveTurns cancels registered, broker-owned contexts without
+// superseding their generation, clearing replay or claiming they have exited.
+// Shutdown callers MUST seal work admission first. Keeping the current generation
+// lets runners persist/emit interrupted terminal results before release. This is
+// a cancellation request, not process-completion proof or permission to replay.
+func (b *Broker) InterruptActiveTurns() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.shutdownInterrupted = true
+	count := 0
+	for _, cs := range b.convs {
+		if cs.handle != nil {
+			cs.handle.cancel()
+			count++
+		}
+	}
+	return count
+}
+
 // HasActiveTurn reports whether a turn is currently registered for conv (test
 // seam for the release-on-return invariant).
 func (b *Broker) HasActiveTurn(conv string) bool {
@@ -200,6 +230,9 @@ func (b *Broker) HasActiveTurn(conv string) bool {
 // registered its channel before Publish ran). No event can be in both places
 // or in neither.
 func (b *Broker) Publish(conv string, gen uint64, ev runner.Event) {
+	if gen == 0 {
+		return
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	cs, ok := b.convs[conv]

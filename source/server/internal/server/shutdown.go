@@ -113,3 +113,19 @@ func DrainThenStop(gs *grpc.Server, grace time.Duration) bool {
 	}
 	return false
 }
+
+// StopWithoutDrain closes RPC transports for explicitly approved forced stop.
+// Unlike DrainThenStop it never starts GracefulStop or waits for normal work
+// completion. This only stops the server transports; the lifecycle owner must
+// still stop/reap owned workers/providers and preserve interrupted-work state.
+// A false result reports incomplete transport shutdown, never process exit proof.
+func StopWithoutDrain(gs *grpc.Server) bool {
+	stopped := make(chan struct{})
+	go func() { gs.Stop(); close(stopped) }()
+	select {
+	case <-stopped:
+		return true
+	case <-time.After(stopBackstop):
+		return false
+	}
+}
