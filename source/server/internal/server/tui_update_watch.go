@@ -26,9 +26,14 @@ func (s *Server) watchEnrolledTUIUpdates(ctx context.Context, launcher, stateRoo
 		}
 		return
 	}
+	forceOwner, forceErr := s.newForceLocalOwner()
+	if forceErr != nil && diagnostic != nil {
+		diagnostic(forceErr)
+	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	lastError := ""
+	lastControlError := ""
 	for {
 		probe, cancel := context.WithTimeout(ctx, 2*time.Second)
 		current, e := enrollment.DiscoverStableLauncher(probe, launcher)
@@ -36,6 +41,21 @@ func (s *Server) watchEnrolledTUIUpdates(ctx context.Context, launcher, stateRoo
 			cancel()
 			return
 		} // never silently rebind identity
+		if e == nil && forceOwner != nil {
+			stopped, controlErr := forceOwner.poll(probe, s, stateRoot, enrolled.InstallID)
+			if stopped {
+				cancel()
+				return
+			}
+			if controlErr != nil {
+				if diagnostic != nil && controlErr.Error() != lastControlError {
+					diagnostic(controlErr)
+				}
+				lastControlError = controlErr.Error()
+			} else {
+				lastControlError = ""
+			}
+		}
 		if e == nil {
 			_, e = s.SyncEnrolledTUIUpdate(probe, launcher, stateRoot)
 		}

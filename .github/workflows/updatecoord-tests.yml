@@ -78,11 +78,11 @@ jobs:
         run: go test -count=1 -timeout=2m ./internal/hostsvc/persistence
       - name: Owned-turn and force-stop fixtures
         working-directory: source/server
-        run: go test -count=1 -timeout=2m -run 'TestShutdownInterruption|TestForceStop' ./internal/broker ./internal/server
+        run: go test -count=1 -timeout=2m -run 'TestShutdownInterruption|TestForceStop|TestLocalForce|TestForceLocalObserver' ./internal/broker ./internal/server
       - name: Force interruption race checks
         if: runner.os != 'Windows'
         working-directory: source/server
-        run: go test -race -count=1 -timeout=2m -run 'TestShutdownInterruption|TestForceStop' ./internal/broker ./internal/server
+        run: go test -race -count=1 -timeout=2m -run 'TestShutdownInterruption|TestForceStop|TestLocalForce|TestForceLocalObserver' ./internal/broker ./internal/server
       - name: Process stop ownership fixtures
         working-directory: source/server
         run: go test -count=1 -timeout=2m -run 'Test.*Stop|Test.*Shutdown|TestTUIObserverLivesUntilReturnedAgentCleanup' ./cmd/cercano

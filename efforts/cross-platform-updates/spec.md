@@ -112,6 +112,8 @@ The user approved an installer-owned installation identity file beside the stabl
 
 The user approved an explicit force-update choice that interrupts proven agent-owned commands and workers across connected terminals. Warn about partial file/external effects, preserve interrupted work, never automatically replay commands, and never signal unrelated or unproven processes. An accepted stop request is not process-exit or installation proof. Ordinary shutdown remains graceful; this is not permission for silent automatic interruption.
 
+The user approved authorizing force interruption through protected local installation-bound update records, not an unauthenticated network RPC. Requests require separate explicit force consent, current prepared operation, exact per-agent-lifetime identity and freshness; consume once before requesting process-local shutdown. Consumed intent is not exit proof. Startup may publish its own local control identity only into existing current updater state; schema upgrades remain explicit installer/updater work.
+
 Power loss and process termination must leave a recoverable state. A selection file alone is not proof of a crash-safe transaction on Windows. Define durable journal/selection behavior, single-writer exclusion, startup reconciliation, and cleanup of abandoned stages, then verify them with fault injection and native tests.
 
 ## Trust model

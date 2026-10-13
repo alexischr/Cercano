@@ -37,7 +37,14 @@ func CreatePrivateFile(path string) (*os.File, error) {
 	}
 	return os.NewFile(uintptr(h), path), nil
 }
-func OpenPrivateFile(path string) (*os.File, error) {
+func OpenPrivateFile(path string) (*os.File, error) { return openPrivateFile(path, true) }
+func OpenPrivateStateFile(path string) (*os.File, error) {
+	if e := VerifyExisting(filepath.Dir(path)); e != nil {
+		return nil, e
+	}
+	return openPrivateFile(path, false)
+}
+func openPrivateFile(path string, protected bool) (*os.File, error) {
 	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
 		return nil, ErrInvalidPath
 	}
@@ -74,7 +81,7 @@ func OpenPrivateFile(path string) (*os.File, error) {
 	if e != nil || !policy.ownerTrusted(owner) {
 		return fail(ErrForeignOwner)
 	}
-	if e = policy.verifyDACL(sd); e != nil {
+	if e = policy.verifyDACLPolicy(sd, protected); e != nil {
 		return fail(e)
 	}
 	return f, nil

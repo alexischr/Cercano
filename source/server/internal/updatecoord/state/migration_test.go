@@ -168,7 +168,7 @@ func TestFreshDatabaseInitializesCurrentSchema(t *testing.T) {
 	}
 	db := rawDB(t, dbPath)
 	var meta string
-	if err := db.QueryRow(`SELECT value FROM state_meta WHERE key = ?`, metaKeySchemaVersion).Scan(&meta); err != nil || meta != "3" {
+	if err := db.QueryRow(`SELECT value FROM state_meta WHERE key = ?`, metaKeySchemaVersion).Scan(&meta); err != nil || meta != fmt.Sprint(SchemaVersion) {
 		t.Fatalf("fresh meta schema_version = %q %v", meta, err)
 	}
 	for _, table := range []string{"dismissal_records", "activation_journals"} {
@@ -202,7 +202,7 @@ func TestLegacyV1UpgradesPreservingRecordsCounterAndPolicy(t *testing.T) {
 	}
 	db := rawDB(t, dbPath)
 	var meta string
-	if err := db.QueryRow(`SELECT value FROM state_meta WHERE key = ?`, metaKeySchemaVersion).Scan(&meta); err != nil || meta != "3" {
+	if err := db.QueryRow(`SELECT value FROM state_meta WHERE key = ?`, metaKeySchemaVersion).Scan(&meta); err != nil || meta != fmt.Sprint(SchemaVersion) {
 		t.Fatalf("meta schema_version after upgrade = %q %v", meta, err)
 	}
 	var dismissed int
@@ -317,7 +317,7 @@ func TestConcurrentLegacyOpensBothSucceedAtCurrentSchema(t *testing.T) {
 	}
 	db := rawDB(t, dbPath)
 	var meta string
-	if err := db.QueryRow(`SELECT value FROM state_meta WHERE key = ?`, metaKeySchemaVersion).Scan(&meta); err != nil || meta != "3" {
+	if err := db.QueryRow(`SELECT value FROM state_meta WHERE key = ?`, metaKeySchemaVersion).Scan(&meta); err != nil || meta != fmt.Sprint(SchemaVersion) {
 		t.Fatalf("meta schema_version after concurrent upgrade = %q %v", meta, err)
 	}
 	for _, table := range []string{"dismissal_records", "activation_journals"} {

@@ -43,3 +43,11 @@ func OpenPrivateFile(path string) (*os.File, error) {
 	}
 	return f, nil
 }
+
+// OpenPrivateStateFile also verifies the protected database parent.
+func OpenPrivateStateFile(path string) (*os.File, error) {
+	if e := VerifyExisting(filepath.Dir(path)); e != nil {
+		return nil, e
+	}
+	return OpenPrivateFile(path)
+}

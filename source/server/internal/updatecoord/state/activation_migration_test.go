@@ -123,11 +123,11 @@ func legacyV2Database(t *testing.T, root, installID string) string {
 	return dbPath
 }
 
-// TestSchema2UpgradesToSchema3PreservingEverything proves the single
+// TestSchema2UpgradesToCurrentSchemaPreservingEverything proves the single
 // additive v2→v3 step: only activation_journals is created (empty), and
 // every schema-2 record — operation, counter, delegation, and dismissal —
 // keeps its exact semantics through the store's own APIs.
-func TestSchema2UpgradesToSchema3PreservingEverything(t *testing.T) {
+func TestSchema2UpgradesToCurrentSchemaPreservingEverything(t *testing.T) {
 	root := t.TempDir()
 	dbPath := legacyV2Database(t, root, "test-install")
 
@@ -143,7 +143,7 @@ func TestSchema2UpgradesToSchema3PreservingEverything(t *testing.T) {
 	}
 	db := rawDB(t, dbPath)
 	var meta string
-	if err := db.QueryRow(`SELECT value FROM state_meta WHERE key = ?`, metaKeySchemaVersion).Scan(&meta); err != nil || meta != "3" {
+	if err := db.QueryRow(`SELECT value FROM state_meta WHERE key = ?`, metaKeySchemaVersion).Scan(&meta); err != nil || meta != fmt.Sprint(SchemaVersion) {
 		t.Fatalf("meta schema_version after v2 upgrade = %q %v", meta, err)
 	}
 	var journals int
@@ -314,7 +314,7 @@ func TestConcurrentSchema2OpensBothSucceedAtCurrentSchema(t *testing.T) {
 	}
 	db := rawDB(t, dbPath)
 	var meta string
-	if err := db.QueryRow(`SELECT value FROM state_meta WHERE key = ?`, metaKeySchemaVersion).Scan(&meta); err != nil || meta != "3" {
+	if err := db.QueryRow(`SELECT value FROM state_meta WHERE key = ?`, metaKeySchemaVersion).Scan(&meta); err != nil || meta != fmt.Sprint(SchemaVersion) {
 		t.Fatalf("meta schema_version after concurrent v2 upgrade = %q %v", meta, err)
 	}
 	for _, table := range []string{"dismissal_records", "activation_journals"} {

@@ -21,6 +21,10 @@ var ErrReadNeedsUpgrade = errors.New("state: existing database needs installer i
 // not mean zero filesystem activity. Do not use immutable=1: it can miss WAL data.
 // Optional notification failure must never prevent ordinary agent startup.
 func OpenExistingReadOnly(parent context.Context, stateRoot, installID string) (*Store, error) {
+	return openExistingCurrent(parent, stateRoot, installID, true)
+}
+
+func openExistingCurrent(parent context.Context, stateRoot, installID string, readOnly bool) (*Store, error) {
 	if parent == nil {
 		return nil, ErrInvalidStateRoot
 	}
@@ -58,6 +62,18 @@ func OpenExistingReadOnly(parent context.Context, stateRoot, installID string) (
 		if !info.Mode().IsRegular() || (runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0) {
 			return nil, ErrUnsafePath
 		}
+		if !readOnly {
+			handle, e := privdir.OpenPrivateStateFile(path + suffix)
+			if e != nil {
+				return nil, e
+			}
+			opened, e := handle.Stat()
+			handle.Close()
+			if e != nil || !os.SameFile(info, opened) {
+				return nil, ErrUnsafePath
+			}
+		}
+
 	}
 	// Refuse obviously foreign/older main files before asking SQLite to coordinate.
 	// A newly initialized/migrated schema present only in WAL is conservatively
@@ -82,15 +98,21 @@ func OpenExistingReadOnly(parent context.Context, stateRoot, installID string) (
 	if version != SchemaVersion {
 		return nil, ErrReadNeedsUpgrade
 	}
-	db, e := sql.Open("sqlite", sqliteURI(path, "ro"))
+	mode := "ro"
+	if !readOnly {
+		mode = "rw"
+	}
+	db, e := sql.Open("sqlite", sqliteURI(path, mode))
 	if e != nil {
 		return nil, e
 	}
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 	fail := func(e error) (*Store, error) { db.Close(); return nil, e }
-	if _, e = db.ExecContext(ctx, "PRAGMA query_only=ON"); e != nil {
-		return fail(e)
+	if readOnly {
+		if _, e = db.ExecContext(ctx, "PRAGMA query_only=ON"); e != nil {
+			return fail(e)
+		}
 	}
 	conn, e := db.Conn(ctx)
 	if e != nil {

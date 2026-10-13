@@ -15,23 +15,10 @@ import (
 // is read or written.
 const AppID = 0x4352434E // 'C','R','C','N'
 
-// SchemaVersion is the recognized schema version. Version 3 adds ONLY the
-// activation_journals table — the first ADDITIVE step of the approved
-// SQLite activation-journal slice, mirroring the operation-record pattern
-// (keyed by operation identifier, installation-bound, revisioned, strict
-// JSON) so the next slice can attach a journal API without another schema
-// step; no journal write/read API or live data exists yet. Older
-// databases — version 1 and version 2, and ONLY those — are upgraded in
-// one immediate transaction inside Open after full revalidation: a
-// validated schema-1 database chains sequentially through every
-// intermediate version to the current one, and a validated schema-2
-// database takes the remaining single step. The exact legacy schema-1 and
-// schema-2 definitions are preserved for that validation and are never
-// treated as an unknown/empty database or overwritten by guessing. A
-// database with any other user_version (including a future one) is
-// refused without modification, and no destructive migration, table
-// drop, or reset exists.
-const SchemaVersion = 3
+// SchemaVersion4 adds installation-bound agent sessions and one-shot force
+// intents. Explicit Open alone migrates recognized exact legacy schemas through
+// additive steps; optional startup readers never migrate or initialize state.
+const SchemaVersion = 4
 
 // LegacySchemaVersion is the OLDEST schema version a database may carry to
 // be upgraded. Every version from here up to (but not including)
@@ -148,6 +135,29 @@ CREATE TABLE activation_journals (
 );
 `
 
+// Force-control records have fixed typed columns, not extensible command payloads.
+const schema4AddendumSQL = `
+CREATE TABLE force_agent_sessions (
+  install_id TEXT PRIMARY KEY,
+  boot_id TEXT NOT NULL,
+  pid INTEGER NOT NULL
+) WITHOUT ROWID;
+CREATE TABLE force_stop_intents (
+  op_id INTEGER PRIMARY KEY,
+  install_id TEXT NOT NULL,
+  boot_id TEXT NOT NULL,
+  pid INTEGER NOT NULL,
+  issued_ms INTEGER NOT NULL,
+  expires_ms INTEGER NOT NULL,
+  consumed INTEGER NOT NULL CHECK (consumed IN (0,1)),
+  confirmed INTEGER NOT NULL CHECK (confirmed=1)
+);
+`
+
+var schema4Tables = map[string]bool{
+	"state_meta": true, "install_state": true, "operation_records": true, "policy_records": true, "dismissal_records": true, "activation_journals": true, "force_agent_sessions": true, "force_stop_intents": true,
+}
+
 // schemaAddendumSQL returns the ONLY DDL the single migration step from the
 // given recognized version adds. Steps are additive: they append new
 // objects and never redefine or drop a version-1 or version-2 object.
@@ -157,6 +167,8 @@ func schemaAddendumSQL(from int64) string {
 		return schema2AddendumSQL
 	case 2:
 		return schema3AddendumSQL
+	case 3:
+		return schema4AddendumSQL
 	default:
 		return ""
 	}
@@ -171,6 +183,8 @@ func schemaSQLFor(version int64) string {
 		return schema1SQL + schema2AddendumSQL
 	case 3:
 		return schema1SQL + schema2AddendumSQL + schema3AddendumSQL
+	case 4:
+		return schema1SQL + schema2AddendumSQL + schema3AddendumSQL + schema4AddendumSQL
 	default:
 		return ""
 	}
@@ -185,6 +199,8 @@ func tablesFor(version int64) map[string]bool {
 		return schema2Tables
 	case 3:
 		return schema3Tables
+	case 4:
+		return schema4Tables
 	default:
 		return nil
 	}
@@ -250,7 +266,7 @@ func exec(ctx context.Context, db dbtx, query string) error {
 // validateExistingDB checks that an existing database is a dedicated,
 // recognized updater state database bound to installID. The WHOLE
 // recognized schema for the database's own version is validated: each
-// recognized version (1, 2, or 3) must match the exact definition for
+// recognized version (1 through 4) must match the exact definition for
 // that version — same version with unknown/extra/missing/altered objects
 // is refused. The exact legacy schema-1 and schema-2 definitions are
 // preserved verbatim, so an older database is never treated as an unknown
@@ -409,8 +425,7 @@ var migrationFault func() error
 // the database's own version under the SAME connection, then one
 // ADDITIVE step per intermediate version — happens in ONE BEGIN IMMEDIATE
 // transaction: a validated version-1 database chains SEQUENTIALLY through
-// version 2 to version 3, and a validated version-2 database takes the
-// remaining single step. Every step only appends new objects (no version-1
+// every intermediate version to the current schema. Every step only appends new objects (no version-1
 // or version-2 object is ever redefined, recreated, or dropped) and moves
 // the user_version and the state_meta schema_version marker together, so
 // every existing operation record, identifier counter, delegation record,

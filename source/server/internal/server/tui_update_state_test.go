@@ -16,21 +16,25 @@ import (
 	"cercano/source/server/internal/updatecoord/state"
 )
 
-func installedNoticeFixture(t *testing.T) (string, *state.Store, activation.Selection, int64) {
+func installedNoticeFixture(t *testing.T, ids ...string) (string, *state.Store, activation.Selection, int64) {
 	t.Helper()
+	installID := "notice-install"
+	if len(ids) > 0 {
+		installID = ids[0]
+	}
 	root := t.TempDir()
 	org := "Cercano"
 	if runtime.GOOS == "linux" {
 		org = "cercano"
 	}
 	dir := root
-	for _, part := range []string{org, "updater", "notice-install"} {
+	for _, part := range []string{org, "updater", installID} {
 		dir = filepath.Join(dir, part)
 		if _, e := privdir.Ensure(dir); e != nil {
 			t.Fatal(e)
 		}
 	}
-	store, e := state.Open(root, "notice-install")
+	store, e := state.Open(root, installID)
 	if e != nil {
 		t.Fatal(e)
 	}

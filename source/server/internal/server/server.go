@@ -106,6 +106,8 @@ type McpManager interface {
 
 // Server is the gRPC server for the Agent service.
 type Server struct {
+	localForceControl *forceLocalOwner // one instance-bound control owner, guarded by safeStopMu
+
 	authenticationWaiters sync.Map
 	proto.UnimplementedAgentServer
 	agent       *agent.Agent

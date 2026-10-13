@@ -4,6 +4,7 @@ package privdir
 
 import (
 	"golang.org/x/sys/windows"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -44,5 +45,36 @@ func TestPrivateFileRefusesUnsafeACLWithoutRepair(t *testing.T) {
 	}
 	if before.String() != after.String() {
 		t.Fatal("unsafe ACL was repaired")
+	}
+}
+
+func TestPrivateStateFileInheritedPolicyAndWorldRefusal(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "state")
+	if _, e := Ensure(dir); e != nil {
+		t.Fatal(e)
+	}
+	p := filepath.Join(dir, "state.db")
+	if e := os.WriteFile(p, []byte("inert"), 0600); e != nil {
+		t.Fatal(e)
+	}
+	f, e := OpenPrivateStateFile(p)
+	if e != nil {
+		t.Fatal("trusted inherited state file refused", e)
+	}
+	f.Close()
+	sd, e := windows.SecurityDescriptorFromString("D:P(A;;FA;;;WD)")
+	if e != nil {
+		t.Fatal(e)
+	}
+	acl, _, e := sd.DACL()
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = windows.SetNamedSecurityInfo(p, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, acl, nil); e != nil {
+		t.Fatal(e)
+	}
+	if f, e = OpenPrivateStateFile(p); e == nil {
+		f.Close()
+		t.Fatal("world-writable state file accepted")
 	}
 }

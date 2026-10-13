@@ -151,6 +151,12 @@ func (p accessPolicy) trusteeTrusted(sid *windows.SID) bool {
 // existing directory. Unknown or ambiguous input is REFUSED, never
 // repaired: this package never rewrites a DACL it did not create.
 func (p accessPolicy) verifyDACL(sd *windows.SECURITY_DESCRIPTOR) error {
+	return p.verifyDACLPolicy(sd, true)
+}
+
+// Unprotected file ACLs are allowed only for a caller-verified protected parent,
+// and every effective/inherited trustee must still pass the same trust policy.
+func (p accessPolicy) verifyDACLPolicy(sd *windows.SECURITY_DESCRIPTOR, protected bool) error {
 	control, _, err := sd.Control()
 	if err != nil {
 		return fmt.Errorf("%w: security descriptor control unreadable: %v", ErrUnsafeACL, err)
@@ -159,7 +165,7 @@ func (p accessPolicy) verifyDACL(sd *windows.SECURITY_DESCRIPTOR) error {
 		// A NULL DACL grants EVERYONE full access: maximally unsafe.
 		return fmt.Errorf("%w: no DACL present (world-accessible policy)", ErrUnsafeACL)
 	}
-	if control&windows.SE_DACL_PROTECTED == 0 {
+	if protected && control&windows.SE_DACL_PROTECTED == 0 {
 		// Unprotected: inherited ACEs from the parent are in force, and
 		// inherited read for untrusted principals cannot be ruled out.
 		// Refuse; the directory is left unchanged.
@@ -170,6 +176,10 @@ func (p accessPolicy) verifyDACL(sd *windows.SECURITY_DESCRIPTOR) error {
 		return fmt.Errorf("%w: DACL not present or empty", ErrUnsafeACL)
 	}
 	userWrite := false
+	allowedFlags := byte(windows.OBJECT_INHERIT_ACE | windows.CONTAINER_INHERIT_ACE | windows.INHERIT_ONLY_ACE)
+	if !protected {
+		allowedFlags |= windows.INHERITED_ACE
+	}
 	for i := uint32(0); i < uint32(dacl.AceCount); i++ {
 		var ace *windows.ACCESS_ALLOWED_ACE
 		if err := windows.GetAce(dacl, i, &ace); err != nil {
@@ -181,10 +191,10 @@ func (p accessPolicy) verifyDACL(sd *windows.SECURITY_DESCRIPTOR) error {
 			// refuse, do not guess.
 			return fmt.Errorf("%w: unsupported ACE type %d", ErrUnsafeACL, ace.Header.AceType)
 		}
-		if ace.Header.AceFlags&windows.INHERITED_ACE != 0 {
+		if protected && ace.Header.AceFlags&windows.INHERITED_ACE != 0 {
 			return fmt.Errorf("%w: inherited ACE present", ErrUnsafeACL)
 		}
-		if ace.Header.AceFlags&^(windows.OBJECT_INHERIT_ACE|windows.CONTAINER_INHERIT_ACE|windows.INHERIT_ONLY_ACE) != 0 {
+		if ace.Header.AceFlags & ^allowedFlags != 0 {
 			return fmt.Errorf("%w: unsupported ACE flags %#x", ErrUnsafeACL, ace.Header.AceFlags)
 		}
 		trustee := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
