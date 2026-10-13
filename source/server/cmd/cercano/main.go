@@ -642,8 +642,9 @@ func startGRPCServer(cfg config.Config, bindAddr string, events *crashlog.Writer
 	srv.SelectExecutionMode()
 
 	proto.RegisterAgentServer(s, srv)
+	// Ownership transfers to the returned cleanup; this function returns while
+	// the agent is still running, so cancellation must not be deferred here.
 	stopTUINotices := startInstalledTUINotices(srv)
-	defer stopTUINotices()
 
 	go func() {
 		if err := s.Serve(lis); err != nil {
