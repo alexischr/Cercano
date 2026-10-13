@@ -267,6 +267,13 @@ service Agent {
   // messages+subscription cloud profile.
   rpc StartClaudeLogin(StartClaudeLoginRequest) returns (stream StartClaudeLoginEvent);
 
+  // SubmitClaudeLoginCode completes an in-flight Claude sign-in (from
+  // StartClaudeLogin or ReauthenticateCloud) with a code the user pasted —
+  // the headless/SSH path where the browser cannot reach the loopback. The
+  // login stream still delivers the terminal frame; this reply only says
+  // whether the paste was accepted, so a rejected paste can be retried.
+  rpc SubmitClaudeLoginCode(SubmitClaudeLoginCodeRequest) returns (SubmitClaudeLoginCodeResponse);
+
   // Credential-only reauthentication of an existing subscription profile.
   // Separate from onboarding so an old server fails with Unimplemented rather
   // than ignoring a new flag and silently rewriting or activating a profile.
@@ -1590,14 +1597,28 @@ message StartClaudeLoginRequest {
   bool create_only = 4;    // adding an account must not replace an existing sign-in
 }
 // StartClaudeLoginEvent is one frame of the Claude sign-in stream. The first
-// frame carries the authorize URL to open in the browser; the terminal frame
-// (done=true) reports ok/error and the profile name.
+// frame carries the authorize URL to open in the browser, the manual URL to
+// show for copying to a browser on another machine, and the login id to submit
+// a pasted code under; the terminal frame (done=true) reports ok/error and the
+// profile name.
 message StartClaudeLoginEvent {
   string authorize_url = 1;
   bool done = 2;
   bool ok = 3;
   string error = 4;
   string profile_name = 5;
+  string manual_authorize_url = 6;
+  string login_id = 7;
+}
+
+message SubmitClaudeLoginCodeRequest {
+  string login_id = 1; // from the login stream's first frame
+  string code = 2;     // as pasted: "<code>#<state>" or the loopback callback URL
+}
+
+message SubmitClaudeLoginCodeResponse {
+  bool accepted = 1; // the sign-in completed; the stream's terminal frame follows
+  string error = 2;  // why the paste was rejected; the sign-in is still waiting
 }
 
 // AttachConversationRequest names the conversation to observe (see the
@@ -2134,6 +2155,9 @@ message CloudLoginEvent {
   bool done = 7;
   bool ok = 8;
   string error = 9;
+  // Claude only: see StartClaudeLoginEvent.
+  string manual_authorize_url = 10;
+  string login_id = 11;
 }
 
 

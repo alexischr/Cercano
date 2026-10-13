@@ -204,11 +204,8 @@ func (m Model) handleAuthenticationFrame(msg authenticationFrameMsg) (Model, tea
 	}
 	var open tea.Cmd
 	if m.claudeLoginModal != nil && f.AuthorizeURL != "" {
-		m.claudeLoginModal.setURL(f.AuthorizeURL)
-		if !m.claudeLoginModal.browserOpened {
-			m.claudeLoginModal.browserOpened = true
-			open = openBrowserCmd(f.AuthorizeURL)
-		}
+		m.claudeLoginModal.setURL(f.AuthorizeURL, f.ManualAuthorizeURL, f.LoginID)
+		open = m.claudeLoginModal.autoOpenBrowser()
 	}
 	if m.chatgptLoginModal != nil && f.VerificationURL != "" {
 		m.chatgptLoginModal.setCode(f.VerificationURL, f.UserCode)

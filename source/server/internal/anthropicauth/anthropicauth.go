@@ -41,6 +41,13 @@ const DefaultClientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 // DefaultAuthorizeURL is where the user approves the grant (verified live).
 const DefaultAuthorizeURL = "https://claude.ai/oauth/authorize"
 
+// DefaultManualRedirectURL is the hosted page that displays the authorization
+// code ("<code>#<state>") for the user to copy, instead of redirecting to a
+// loopback port. It is the redirect_uri of the manual sign-in URL used when the
+// browser cannot reach this machine (SSH, containers). Matches Claude Code's
+// MANUAL_REDIRECT_URL (read from the Claude Code 2.1.296 bundle, 2026-10-12).
+const DefaultManualRedirectURL = "https://platform.claude.com/oauth/code/callback"
+
 // DefaultTokenURL is the code-exchange / refresh endpoint. Verified live
 // 2026-07-13: this package's own PKCE flow exchanged a real authorization
 // code here and the resulting bearer returned HTTP 200 from /v1/messages.
@@ -101,6 +108,9 @@ type Flow struct {
 	Client       *http.Client // defaults to http.DefaultClient
 	ProfileURL   string       // optional override for the advisory account profile lookup
 	UserAgent    string       // defaults to "cercano"
+
+	// ManualRedirectURL defaults to DefaultManualRedirectURL.
+	ManualRedirectURL string
 }
 
 func (f Flow) clientID() string {
@@ -115,6 +125,13 @@ func (f Flow) authorizeBase() string {
 		return f.AuthorizeURL
 	}
 	return DefaultAuthorizeURL
+}
+
+func (f Flow) manualRedirectURL() string {
+	if f.ManualRedirectURL != "" {
+		return f.ManualRedirectURL
+	}
+	return DefaultManualRedirectURL
 }
 
 func (f Flow) tokenURL() string {
@@ -172,9 +189,11 @@ func randomToken() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b[:]), nil
 }
 
-// authorizeURL builds the URL the user visits to approve the grant. code=true
-// asks the authorize page to also display the code on-screen, enabling the
-// manual-paste fallback for headless/SSH use where the loopback can't be hit.
+// authorizeURL builds the URL the user visits to approve the grant. The
+// redirect URI picks the variant: the loopback URI hands the code straight back
+// to this process, while the manual redirect URI lands on a hosted page that
+// displays the code for the user to paste. code=true is carried on both, as
+// Claude Code does.
 func (f Flow) authorizeURL(redirectURI, challenge, state string) string {
 	q := url.Values{
 		"code":                  {"true"},

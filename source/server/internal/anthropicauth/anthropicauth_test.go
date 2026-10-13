@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -194,7 +195,7 @@ func TestPending_Wait(t *testing.T) {
 	}
 	resCh := make(chan res, 1)
 	go func() {
-		ts, err := p.Wait(context.Background())
+		ts, err := p.Wait(context.Background(), nil)
 		resCh <- res{ts, err}
 	}()
 
@@ -247,7 +248,7 @@ func TestPending_WaitRejectsStateMismatch(t *testing.T) {
 
 	resCh := make(chan error, 1)
 	go func() {
-		_, err := p.Wait(context.Background())
+		_, err := p.Wait(context.Background(), nil)
 		resCh <- err
 	}()
 
@@ -262,19 +263,137 @@ func TestPending_WaitRejectsStateMismatch(t *testing.T) {
 	}
 }
 
-func TestPending_RedeemSplitsEmbeddedState(t *testing.T) {
-	var got map[string]string
-	srv := stubTokenServer(t, map[string]any{"access_token": "a", "expires_in": 3600}, &got)
-	defer srv.Close()
+func TestStart_BuildsManualAuthorizeURLForSameGrant(t *testing.T) {
+	p, err := Flow{}.Start(context.Background())
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer p.Close()
 
+	auto, _ := url.Parse(p.AuthorizeURL)
+	manual, err := url.Parse(p.ManualAuthorizeURL)
+	if err != nil {
+		t.Fatalf("parse ManualAuthorizeURL: %v", err)
+	}
+	if got := manual.Query().Get("redirect_uri"); got != DefaultManualRedirectURL {
+		t.Errorf("manual redirect_uri = %q, want %q", got, DefaultManualRedirectURL)
+	}
+	// Same grant: everything but the redirect is shared, so a code from either
+	// URL redeems against this attempt's verifier and state.
+	aq, mq := auto.Query(), manual.Query()
+	aq.Del("redirect_uri")
+	mq.Del("redirect_uri")
+	if aq.Encode() != mq.Encode() {
+		t.Errorf("manual URL differs beyond redirect_uri:\n auto   %s\n manual %s", aq.Encode(), mq.Encode())
+	}
+}
+
+// pendingWithStub starts a flow against a stub token endpoint and returns the
+// attempt's state alongside it.
+func pendingWithStub(t *testing.T, reply map[string]any, capture *map[string]string) (*Pending, string) {
+	t.Helper()
+	srv := stubTokenServer(t, reply, capture)
+	t.Cleanup(srv.Close)
 	p, err := Flow{TokenURL: srv.URL}.Start(context.Background())
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	if _, err := p.Redeem(context.Background(), "  code123#state456  "); err != nil {
+	u, _ := url.Parse(p.AuthorizeURL)
+	return p, u.Query().Get("state")
+}
+
+func TestPending_RedeemUsesManualRedirect(t *testing.T) {
+	var got map[string]string
+	p, state := pendingWithStub(t, map[string]any{"access_token": "a", "expires_in": 3600}, &got)
+	if _, err := p.Redeem(context.Background(), "  code123#"+state+"  "); err != nil {
 		t.Fatalf("Redeem: %v", err)
 	}
-	if got["code"] != "code123" || got["state"] != "state456" {
-		t.Errorf("redeem parsed code/state = %q/%q, want code123/state456", got["code"], got["state"])
+	if got["code"] != "code123" || got["state"] != state {
+		t.Errorf("redeem parsed code/state = %q/%q, want code123/%s", got["code"], got["state"], state)
+	}
+	if got["redirect_uri"] != DefaultManualRedirectURL {
+		t.Errorf("redeem redirect_uri = %q, want the manual redirect %q", got["redirect_uri"], DefaultManualRedirectURL)
+	}
+	if got["code_verifier"] == "" {
+		t.Error("redeem did not send code_verifier")
+	}
+}
+
+func TestPending_RedeemAcceptsBareCode(t *testing.T) {
+	var got map[string]string
+	p, state := pendingWithStub(t, map[string]any{"access_token": "a", "expires_in": 3600}, &got)
+	if _, err := p.Redeem(context.Background(), "code123"); err != nil {
+		t.Fatalf("Redeem: %v", err)
+	}
+	if got["code"] != "code123" || got["state"] != state {
+		t.Errorf("redeem code/state = %q/%q, want code123/%s", got["code"], got["state"], state)
+	}
+}
+
+// A browser that cannot reach the loopback still shows the callback address;
+// pasting it must redeem against the loopback redirect the code was issued for.
+func TestPending_RedeemAcceptsLoopbackCallbackURL(t *testing.T) {
+	var got map[string]string
+	p, state := pendingWithStub(t, map[string]any{"access_token": "a", "expires_in": 3600}, &got)
+	if _, err := p.Redeem(context.Background(), p.redirectURI+"?code=cb-code&state="+url.QueryEscape(state)); err != nil {
+		t.Fatalf("Redeem: %v", err)
+	}
+	if got["code"] != "cb-code" || got["redirect_uri"] != p.redirectURI {
+		t.Errorf("redeem code/redirect = %q/%q, want cb-code/%s", got["code"], got["redirect_uri"], p.redirectURI)
+	}
+}
+
+func TestPending_RedeemRejectsForeignOrEmptyValues(t *testing.T) {
+	var got map[string]string
+	p, state := pendingWithStub(t, map[string]any{"access_token": "a", "expires_in": 3600}, &got)
+	for _, v := range []string{"", "   ", "code#other-state", "#" + state, "two words#" + state, p.redirectURI + "?code=c&state=other"} {
+		if _, err := p.redeem(context.Background(), v); !errors.Is(err, ErrInvalidPastedCode) {
+			t.Errorf("redeem(%q) err = %v, want ErrInvalidPastedCode", v, err)
+		}
+	}
+	if got != nil {
+		t.Errorf("rejected pastes reached the token endpoint: %+v", got)
+	}
+	p.Close()
+}
+
+// A rejected paste reports its error and leaves the sign-in waiting; a good
+// paste then completes it.
+func TestPending_WaitRedeemsPastedCodeAfterRejection(t *testing.T) {
+	var got map[string]string
+	p, state := pendingWithStub(t, map[string]any{"access_token": "acc", "expires_in": 3600}, &got)
+
+	pasted := make(chan PastedCode)
+	resCh := make(chan *TokenSet, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		ts, err := p.Wait(context.Background(), pasted)
+		resCh <- ts
+		errCh <- err
+	}()
+
+	bad := make(chan error, 1)
+	pasted <- PastedCode{Code: "x#wrong", Result: bad}
+	if err := <-bad; !errors.Is(err, ErrInvalidPastedCode) {
+		t.Fatalf("bad paste result = %v, want ErrInvalidPastedCode", err)
+	}
+	good := make(chan error, 1)
+	pasted <- PastedCode{Code: "the-code#" + state, Result: good}
+	if err := <-good; err != nil {
+		t.Fatalf("good paste result = %v", err)
+	}
+	if err := <-errCh; err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if ts := <-resCh; ts == nil || ts.Access != "acc" {
+		t.Errorf("Wait token = %+v, want access acc", ts)
+	}
+	if got["code"] != "the-code" || got["redirect_uri"] != DefaultManualRedirectURL {
+		t.Errorf("exchange code/redirect = %q/%q", got["code"], got["redirect_uri"])
+	}
+	// The loopback listener is closed once Wait returns.
+	if resp, err := http.Get(p.redirectURI); err == nil {
+		resp.Body.Close()
+		t.Error("loopback still serving after Wait returned")
 	}
 }

@@ -320,6 +320,10 @@ func (m *mockAgentClient) StartClaudeLogin(ctx context.Context, in *proto.StartC
 	return nil, nil
 }
 
+func (m *mockAgentClient) SubmitClaudeLoginCode(ctx context.Context, in *proto.SubmitClaudeLoginCodeRequest, opts ...grpc.CallOption) (*proto.SubmitClaudeLoginCodeResponse, error) {
+	return nil, nil
+}
+
 func (m *mockAgentClient) RegenerateContext(ctx context.Context, in *proto.RegenerateContextRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[proto.RegenerateContextProgress], error) {
 	return nil, nil
 }

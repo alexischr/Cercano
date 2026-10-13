@@ -93,6 +93,7 @@ const (
 	Agent_ListCloudProfileModels_FullMethodName                = "/agent.Agent/ListCloudProfileModels"
 	Agent_StartChatGPTLogin_FullMethodName                     = "/agent.Agent/StartChatGPTLogin"
 	Agent_StartClaudeLogin_FullMethodName                      = "/agent.Agent/StartClaudeLogin"
+	Agent_SubmitClaudeLoginCode_FullMethodName                 = "/agent.Agent/SubmitClaudeLoginCode"
 	Agent_ReauthenticateCloud_FullMethodName                   = "/agent.Agent/ReauthenticateCloud"
 	Agent_ResolveAuthentication_FullMethodName                 = "/agent.Agent/ResolveAuthentication"
 	Agent_ExportImage_FullMethodName                           = "/agent.Agent/ExportImage"
@@ -320,6 +321,12 @@ type AgentClient interface {
 	// reports ok/error. On success the agent stores the token set and creates a
 	// messages+subscription cloud profile.
 	StartClaudeLogin(ctx context.Context, in *StartClaudeLoginRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StartClaudeLoginEvent], error)
+	// SubmitClaudeLoginCode completes an in-flight Claude sign-in (from
+	// StartClaudeLogin or ReauthenticateCloud) with a code the user pasted —
+	// the headless/SSH path where the browser cannot reach the loopback. The
+	// login stream still delivers the terminal frame; this reply only says
+	// whether the paste was accepted, so a rejected paste can be retried.
+	SubmitClaudeLoginCode(ctx context.Context, in *SubmitClaudeLoginCodeRequest, opts ...grpc.CallOption) (*SubmitClaudeLoginCodeResponse, error)
 	// Credential-only reauthentication of an existing subscription profile.
 	// Separate from onboarding so an old server fails with Unimplemented rather
 	// than ignoring a new flag and silently rewriting or activating a profile.
@@ -1180,6 +1187,16 @@ func (c *agentClient) StartClaudeLogin(ctx context.Context, in *StartClaudeLogin
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Agent_StartClaudeLoginClient = grpc.ServerStreamingClient[StartClaudeLoginEvent]
 
+func (c *agentClient) SubmitClaudeLoginCode(ctx context.Context, in *SubmitClaudeLoginCodeRequest, opts ...grpc.CallOption) (*SubmitClaudeLoginCodeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SubmitClaudeLoginCodeResponse)
+	err := c.cc.Invoke(ctx, Agent_SubmitClaudeLoginCode_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *agentClient) ReauthenticateCloud(ctx context.Context, in *CloudReauthenticationRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[CloudLoginEvent], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &Agent_ServiceDesc.Streams[11], Agent_ReauthenticateCloud_FullMethodName, cOpts...)
@@ -1441,6 +1458,12 @@ type AgentServer interface {
 	// reports ok/error. On success the agent stores the token set and creates a
 	// messages+subscription cloud profile.
 	StartClaudeLogin(*StartClaudeLoginRequest, grpc.ServerStreamingServer[StartClaudeLoginEvent]) error
+	// SubmitClaudeLoginCode completes an in-flight Claude sign-in (from
+	// StartClaudeLogin or ReauthenticateCloud) with a code the user pasted —
+	// the headless/SSH path where the browser cannot reach the loopback. The
+	// login stream still delivers the terminal frame; this reply only says
+	// whether the paste was accepted, so a rejected paste can be retried.
+	SubmitClaudeLoginCode(context.Context, *SubmitClaudeLoginCodeRequest) (*SubmitClaudeLoginCodeResponse, error)
 	// Credential-only reauthentication of an existing subscription profile.
 	// Separate from onboarding so an old server fails with Unimplemented rather
 	// than ignoring a new flag and silently rewriting or activating a profile.
@@ -1683,6 +1706,9 @@ func (UnimplementedAgentServer) StartChatGPTLogin(*StartChatGPTLoginRequest, grp
 }
 func (UnimplementedAgentServer) StartClaudeLogin(*StartClaudeLoginRequest, grpc.ServerStreamingServer[StartClaudeLoginEvent]) error {
 	return status.Error(codes.Unimplemented, "method StartClaudeLogin not implemented")
+}
+func (UnimplementedAgentServer) SubmitClaudeLoginCode(context.Context, *SubmitClaudeLoginCodeRequest) (*SubmitClaudeLoginCodeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SubmitClaudeLoginCode not implemented")
 }
 func (UnimplementedAgentServer) ReauthenticateCloud(*CloudReauthenticationRequest, grpc.ServerStreamingServer[CloudLoginEvent]) error {
 	return status.Error(codes.Unimplemented, "method ReauthenticateCloud not implemented")
@@ -2969,6 +2995,24 @@ func _Agent_StartClaudeLogin_Handler(srv interface{}, stream grpc.ServerStream) 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Agent_StartClaudeLoginServer = grpc.ServerStreamingServer[StartClaudeLoginEvent]
 
+func _Agent_SubmitClaudeLoginCode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SubmitClaudeLoginCodeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServer).SubmitClaudeLoginCode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Agent_SubmitClaudeLoginCode_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServer).SubmitClaudeLoginCode(ctx, req.(*SubmitClaudeLoginCodeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Agent_ReauthenticateCloud_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(CloudReauthenticationRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -3274,6 +3318,10 @@ var Agent_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListCloudProfileModels",
 			Handler:    _Agent_ListCloudProfileModels_Handler,
+		},
+		{
+			MethodName: "SubmitClaudeLoginCode",
+			Handler:    _Agent_SubmitClaudeLoginCode_Handler,
 		},
 		{
 			MethodName: "ResolveAuthentication",
