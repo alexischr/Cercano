@@ -3,11 +3,13 @@ package ui
 import (
 	"cercano/source/server/pkg/forcesave"
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
 
 type fakeForceSave struct {
+	err              error
 	calls            int
 	force, confirmed bool
 }
@@ -19,7 +21,7 @@ func (f *fakeForceSave) Decide(_ context.Context, _ forcesave.Receipt, force, co
 	f.calls++
 	f.force = force
 	f.confirmed = confirmed
-	return nil
+	return f.err
 }
 func TestForceSavePromptExplicitChoice(t *testing.T) {
 	for _, key := range []string{"f", "F", "c", "C", "n", "esc", "y", "enter"} {
@@ -85,5 +87,49 @@ func TestForceSavePromptWithdrawnWhenNoLongerPending(t *testing.T) {
 	m, _ = m.applyForceSavePoll(forceSavePollMsg{client: client})
 	if m.pendingConfirm != nil || client.calls != 0 {
 		t.Fatal("stale prompt retained or submitted")
+	}
+}
+
+func TestForceSaveSubmissionErrorDoesNotReplayConsent(t *testing.T) {
+	client := &fakeForceSave{err: errors.New("ambiguous commit fixture")}
+	msg := forceSavePollMsg{client, forcesave.Receipt{ID: "receipt", Expires: time.Now().Add(time.Minute)}, true}
+	m := Model{}
+	m, _ = m.applyForceSavePoll(msg)
+	m, cmd, handled := m.resolveConfirmHotkey("f")
+	if !handled || cmd == nil {
+		t.Fatal("missing explicit force submission")
+	}
+	result, ok := cmd().(forceSaveResultMsg)
+	if !ok || result.err == nil || !result.force || client.calls != 1 {
+		t.Fatal("lost submission uncertainty", result, client)
+	}
+	// An unchanged pending receipt after a response failure must not reopen the
+	// prompt or submit consent again automatically.
+	m, _ = m.applyForceSavePoll(msg)
+	if m.pendingConfirm != nil || client.calls != 1 {
+		t.Fatal("ambiguous response replayed consent")
+	}
+}
+
+func TestForceSaveReceiptExpiresWhilePromptOpen(t *testing.T) {
+	client := &fakeForceSave{}
+	deadline := time.Now().Add(50 * time.Millisecond)
+	m := Model{}
+	m, _ = m.applyForceSavePoll(forceSavePollMsg{client, forcesave.Receipt{ID: "receipt", Expires: deadline}, true})
+	if m.pendingConfirm == nil {
+		t.Fatal("prompt not presented before expiry")
+	}
+	time.Sleep(time.Until(deadline) + time.Millisecond)
+	// No new poll has yet cleared the gate: the key handler must independently
+	// refuse an expired receipt rather than rely solely on polling.
+	m, cmd, handled := m.resolveConfirmHotkey("f")
+	if !handled {
+		t.Fatal("force key not handled")
+	}
+	if cmd != nil {
+		cmd()
+	}
+	if m.pendingConfirm != nil || client.calls != 0 {
+		t.Fatal("expired consent was submitted")
 	}
 }
