@@ -106,6 +106,8 @@ type McpManager interface {
 
 // Server is the gRPC server for the Agent service.
 type Server struct {
+	forcePersistenceDeadline time.Time // shared bounded final-write window; guarded by safeStopMu
+
 	localForceControl *forceLocalOwner // one instance-bound control owner, guarded by safeStopMu
 
 	authenticationWaiters sync.Map
@@ -3456,10 +3458,7 @@ func (s *Server) streamProcessRequestWithToolLoop(req *proto.ProcessRequestReque
 	var persist runnersvc.PersistFunc
 	if convID != "" {
 		persist = func(m llm.Message) {
-			if !s.turnIsCurrent(convID, turnGen) {
-				return
-			}
-			s.persistTurn(ctx, convID, m)
+			s.persistCurrentTurn(ctx, convID, turnGen, m)
 		}
 	}
 

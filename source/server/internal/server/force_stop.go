@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"time"
 )
 
 var ErrForceConsent = errors.New("force update requires explicit interruption confirmation")
@@ -48,6 +49,7 @@ func (s *Server) RequestForceUpdateStop(ctx context.Context, expectedPID int64, 
 	}
 	// Once sealed, cancellation cannot reopen admission or undo interruption.
 	s.forceStopCommitted = true
+	s.forcePersistenceDeadline = time.Now().Add(forcePersistenceBudget)
 	if s.turnBroker != nil {
 		s.turnBroker.InterruptActiveTurns()
 	}
