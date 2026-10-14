@@ -123,6 +123,13 @@ func startH2RstServer(t *testing.T) string {
 			}
 			switch fr := frame.(type) {
 			case *http2.SettingsFrame:
+				// ACK only the client's settings, never its ACK of ours: an
+				// unsolicited SETTINGS ACK is a connection PROTOCOL_ERROR,
+				// which made this test fail whenever the client read it
+				// before the response headers.
+				if fr.IsAck() {
+					continue
+				}
 				if err := f.WriteSettingsAck(); err != nil {
 					return
 				}
