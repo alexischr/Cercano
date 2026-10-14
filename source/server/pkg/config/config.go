@@ -4,7 +4,6 @@ import (
 	"cercano/source/server/pkg/accountidentity"
 	"fmt"
 	"log"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -782,63 +781,6 @@ func legacyCloudProfileName(provider string) string {
 	}
 }
 
-// isMeridianDefaultURL reports whether raw points at Meridian's default local
-// address. The host must match exactly: a substring test also matched ports
-// 34560–34569 and wiped the BaseURL of any profile served there.
-func isMeridianDefaultURL(raw string) bool {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return false
-	}
-	return u.Host == "127.0.0.1:3456" || u.Host == "localhost:3456"
-}
-
-// migrateMeridianToSubscription rewrites legacy Meridian profiles to the native
-// subscription route on load. The external Meridian OAuth proxy has been
-// removed; the subscription route calls api.anthropic.com directly with our own
-// OAuth token. Any profile explicitly on route=meridian — or an un-routed
-// profile still pointing at Meridian's default local port (a pre-route config)
-// — is flipped to route=subscription with its proxy BaseURL cleared (the
-// subscription route pins api.anthropic.com; a leftover :3456 URL would send a
-// direct call at a dead proxy).
-//
-// The migrated profile has no token in our keychain (Meridian read what `claude
-// login` wrote, not our own OAuth store), so it lands "absent" until the user
-// signs in through the loopback flow — the intended one-time re-auth.
-func migrateMeridianToSubscription(cfg *Config) {
-	migrated := make([]string, 0, len(cfg.CloudProfiles))
-	profileExists := func(name string) bool {
-		for _, p := range cfg.CloudProfiles {
-			if p.Name == name {
-				return true
-			}
-		}
-		return false
-	}
-	for i := range cfg.CloudProfiles {
-		p := &cfg.CloudProfiles[i]
-		isMeridian := p.Route == "meridian" || (p.Route == "" && isMeridianDefaultURL(p.BaseURL))
-		if !isMeridian {
-			continue
-		}
-		migrated = append(migrated, p.Name)
-		p.Route = "subscription"
-		p.BaseURL = ""
-		if p.Flavor == "" {
-			p.Flavor = "messages"
-		}
-	}
-	if len(migrated) == 0 {
-		return
-	}
-	if cfg.ActiveCloudProfile == "" || cfg.ActiveCloudProfile == "meridian" || !profileExists(cfg.ActiveCloudProfile) {
-		cfg.ActiveCloudProfile = migrated[0]
-	}
-	if cfg.BackupCloudProfile == "meridian" || (cfg.BackupCloudProfile != "" && !profileExists(cfg.BackupCloudProfile)) {
-		cfg.BackupCloudProfile = migrated[0]
-	}
-}
-
 // collapseLegacySubscriptionAliases removes stale subscription-route aliases once
 // the canonical native subscription profile exists. During the Meridian
 // switchover, some configs accumulated default/anthropic subscription profiles
@@ -1076,7 +1018,6 @@ func Load(path string) (Config, error) {
 	applyEnvOverrides(&cfg)
 	finalizeModelTiers(&cfg)
 	migrateCloudProfiles(&cfg)
-	migrateMeridianToSubscription(&cfg)
 	collapseLegacySubscriptionAliases(&cfg)
 	normalizeCloudModelDefaults(&cfg)
 	if err := cfg.LlamaServer.Validate(); err != nil {
