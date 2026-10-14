@@ -306,10 +306,16 @@ func TestLocalSaveFailureIneligibleOperationErrorIsRetriedNotStopped(t *testing.
 // never drops the retained receipt.
 func TestLocalSaveFailureStorageErrorNeverStopsWork(t *testing.T) {
 	ctx, root, store, _, s, work, calls, owner, _ := localSaveFixture(t)
+	// Release the fixture's setup handle before removing its database. Windows
+	// disallows unlinking open SQLite files; the poll opens its own handle.
+	installID := store.InstallID()
+	if e := store.Close(); e != nil {
+		t.Fatal(e)
+	}
 	if e := os.RemoveAll(root); e != nil {
 		t.Fatal(e)
 	}
-	stopped, e := owner.poll(ctx, s, root, store.InstallID())
+	stopped, e := owner.poll(ctx, s, root, installID)
 	if stopped || e == nil {
 		t.Fatal("storage failure did not surface an error", stopped, e)
 	}
