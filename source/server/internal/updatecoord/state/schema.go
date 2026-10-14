@@ -15,10 +15,11 @@ import (
 // is read or written.
 const AppID = 0x4352434E // 'C','R','C','N'
 
-// SchemaVersion4 adds installation-bound agent sessions and one-shot force
-// intents. Explicit Open alone migrates recognized exact legacy schemas through
-// additive steps; optional startup readers never migrate or initialize state.
-const SchemaVersion = 4
+// SchemaVersion 5 adds the force_save_failures table for idempotent save failure
+// publication and explicit force confirmation. Explicit Open alone migrates
+// recognized exact legacy schemas through additive steps; optional startup
+// readers never migrate or initialize state.
+const SchemaVersion = 5
 
 // LegacySchemaVersion is the OLDEST schema version a database may carry to
 // be upgraded. Every version from here up to (but not including)
@@ -154,8 +155,36 @@ CREATE TABLE force_stop_intents (
 );
 `
 
+// schema5AddendumSQL is the ONLY schema change from version 4 to version 5:
+// the force_save_failures table for idempotent save failure publication and
+// explicit force confirmation. Each row is addressed by receipt_id for
+// idempotent publication and op_id for uniqueness, with strict validation
+// of install_id, boot_id, pid, expiry, and decision state.
+const schema5AddendumSQL = `
+CREATE TABLE force_save_failures (
+  receipt_id TEXT PRIMARY KEY,
+  op_id INTEGER UNIQUE NOT NULL,
+  install_id TEXT NOT NULL,
+  boot_id TEXT NOT NULL,
+  pid INTEGER NOT NULL,
+  issued_ms INTEGER NOT NULL,
+  expires_ms INTEGER NOT NULL,
+  decision INTEGER NOT NULL CHECK (decision IN (0,1,2)),
+  confirmed INTEGER NOT NULL CHECK (confirmed IN (0,1)),
+  consumed INTEGER NOT NULL CHECK (consumed IN (0,1))
+);
+`
+
 var schema4Tables = map[string]bool{
 	"state_meta": true, "install_state": true, "operation_records": true, "policy_records": true, "dismissal_records": true, "activation_journals": true, "force_agent_sessions": true, "force_stop_intents": true,
+}
+
+// schema5Tables is the exact table set of schema version 5: the version-4
+// tables plus the force_save_failures table. The same exactness rules apply:
+// a database claiming version 5 must contain exactly these tables or it is
+// refused as partial, corrupt, foreign, or future.
+var schema5Tables = map[string]bool{
+	"state_meta": true, "install_state": true, "operation_records": true, "policy_records": true, "dismissal_records": true, "activation_journals": true, "force_agent_sessions": true, "force_stop_intents": true, "force_save_failures": true,
 }
 
 // schemaAddendumSQL returns the ONLY DDL the single migration step from the
@@ -169,6 +198,8 @@ func schemaAddendumSQL(from int64) string {
 		return schema3AddendumSQL
 	case 3:
 		return schema4AddendumSQL
+	case 4:
+		return schema5AddendumSQL
 	default:
 		return ""
 	}
@@ -185,6 +216,8 @@ func schemaSQLFor(version int64) string {
 		return schema1SQL + schema2AddendumSQL + schema3AddendumSQL
 	case 4:
 		return schema1SQL + schema2AddendumSQL + schema3AddendumSQL + schema4AddendumSQL
+	case 5:
+		return schema1SQL + schema2AddendumSQL + schema3AddendumSQL + schema4AddendumSQL + schema5AddendumSQL
 	default:
 		return ""
 	}
@@ -201,6 +234,8 @@ func tablesFor(version int64) map[string]bool {
 		return schema3Tables
 	case 4:
 		return schema4Tables
+	case 5:
+		return schema5Tables
 	default:
 		return nil
 	}

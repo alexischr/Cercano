@@ -13,13 +13,40 @@ import (
 )
 
 var (
-	ErrForceIntent     = errors.New("state: invalid or unconfirmed force intent")
-	ErrForceTarget     = errors.New("state: stale force target")
-	ErrForceReplay     = errors.New("state: force intent already exists or consumed")
-	ErrForceUnprepared = errors.New("state: force operation is not confirmed and prepared")
+	ErrForceIntent           = errors.New("state: invalid or unconfirmed force intent")
+	ErrForceTarget           = errors.New("state: stale force target")
+	ErrForceReplay           = errors.New("state: force intent already exists or consumed")
+	ErrForceUnprepared       = errors.New("state: force operation is not confirmed and prepared")
+	ErrSaveFailure           = errors.New("state: invalid save failure")
+	ErrSaveFailureReplay     = errors.New("state: save failure already exists or consumed")
+	ErrSaveFailureNotFound   = errors.New("state: save failure not found")
+	ErrSaveFailureExpired    = errors.New("state: save failure expired")
+	ErrSaveFailureWrongAgent = errors.New("state: save failure wrong agent")
+	ErrSaveFailureWrongOp    = errors.New("state: save failure wrong operation")
 )
 
 const MaxForceIntentTTL = 30 * time.Second
+
+// ForceDecision represents the decision state for a save failure.
+type ForceDecision int
+
+const (
+	ForceDecisionPending ForceDecision = 0
+	ForceDecisionCancel  ForceDecision = 1
+	ForceDecisionForce   ForceDecision = 2
+)
+
+// ForceSaveFailure represents a save failure record.
+type ForceSaveFailure struct {
+	ReceiptID string
+	OpID      int64
+	Agent     ForceAgent
+	IssuedMS  int64
+	ExpiresMS int64
+	Decision  ForceDecision
+	Confirmed bool
+	Consumed  bool
+}
 
 // ForceAgent identifies one process lifetime. BootID is random public identity,
 // not a bearer credential; authorization is the protected local store. A PID alone
@@ -254,4 +281,238 @@ func (s *Store) ReadForceIntent(ctx context.Context, opID int64) (ForceIntent, b
 		return ForceIntent{}, false, false, ErrForceIntent
 	}
 	return s.forceIntentConn(ctx, s.db, opID)
+}
+
+// PublishSaveFailure publishes an idempotent save failure for the given operation.
+func (s *Store) PublishSaveFailure(ctx context.Context, opID int64, agent ForceAgent, receiptID string, expires time.Time, now func() time.Time) error {
+	if now == nil {
+		return ErrSaveFailure
+	}
+	if err := agent.validate(); err != nil {
+		return err
+	}
+	if opID <= 0 || !IsLowerHexSHA256(receiptID) {
+		return ErrSaveFailure
+	}
+	return s.inWriteTx(ctx, func(ctx context.Context, c *sql.Conn) error {
+		if err := agent.validate(); err != nil {
+			return err
+		}
+		if err := s.forceEligible(ctx, c, opID); err != nil {
+			return err
+		}
+		a, found, err := s.forceAgentConn(ctx, c)
+		if err != nil {
+			return err
+		}
+		if !found || a != agent {
+			return ErrSaveFailureWrongAgent
+		}
+		intent, found, consumed, err := s.forceIntentConn(ctx, c, opID)
+		if err != nil {
+			return err
+		}
+		if !found || !consumed || intent.Agent != agent {
+			return ErrSaveFailureNotFound
+		}
+		nowTime := now()
+		if expires.UnixMilli() <= nowTime.UnixMilli() || expires.After(nowTime.Add(MaxForceIntentTTL)) {
+			return ErrSaveFailureExpired
+		}
+		previous, exists, err := s.saveFailureConn(ctx, c, receiptID)
+		if err != nil {
+			return err
+		}
+		if exists {
+			// Reconcile an ambiguous commit without modifying the published
+			// receipt, its deadline, or a subsequent immutable decision.
+			if previous.OpID != opID || previous.Agent != agent || previous.ExpiresMS != expires.UnixMilli() {
+				return ErrSaveFailureReplay
+			}
+			return nil
+		}
+		_, err = c.ExecContext(ctx, `
+			INSERT INTO force_save_failures (
+				receipt_id, op_id, install_id, boot_id, pid, 
+				issued_ms, expires_ms, decision, confirmed, consumed
+			) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0)
+		`, receiptID, opID, s.installID, agent.BootID, agent.PID, nowTime.UnixMilli(), expires.UnixMilli())
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+// ReadPendingSaveFailure reads a pending save failure for the given operation.
+func (s *Store) ReadPendingSaveFailure(ctx context.Context, opID int64) (ForceSaveFailure, bool, error) {
+	if opID <= 0 {
+		return ForceSaveFailure{}, false, ErrSaveFailure
+	}
+	// Find the receipt ID for this operation
+	var receiptID string
+	err := s.db.QueryRowContext(ctx, `SELECT receipt_id FROM force_save_failures WHERE op_id = ? AND consumed = 0`, opID).Scan(&receiptID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ForceSaveFailure{}, false, nil
+		}
+		return ForceSaveFailure{}, false, err
+	}
+	return s.saveFailureConn(ctx, s.db, receiptID)
+}
+
+// saveFailureConn reads a save failure record from the database.
+func (s *Store) saveFailureConn(ctx context.Context, c dbtx, receiptID string) (ForceSaveFailure, bool, error) {
+	f := ForceSaveFailure{ReceiptID: receiptID}
+	var id, ot, it, bt, pt, issuedt, expirest, decisiont, confirmedt, consumedt string
+	var decision, confirmed, consumed int
+	err := c.QueryRowContext(ctx, `
+		SELECT op_id, install_id, boot_id, pid, issued_ms, expires_ms, 
+		       decision, confirmed, consumed, typeof(op_id), typeof(install_id), 
+		       typeof(boot_id), typeof(pid), typeof(issued_ms), typeof(expires_ms), 
+		       typeof(decision), typeof(confirmed), typeof(consumed)
+		FROM force_save_failures 
+		WHERE receipt_id = ?
+	`, receiptID).Scan(&f.OpID, &id, &f.Agent.BootID, &f.Agent.PID, &f.IssuedMS, &f.ExpiresMS,
+		&decision, &confirmed, &consumed, &ot, &it, &bt, &pt, &issuedt, &expirest,
+		&decisiont, &confirmedt, &consumedt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return f, false, nil
+	}
+	if err != nil {
+		return f, false, err
+	}
+	if id != s.installID || ot != "integer" || it != "text" || bt != "text" || pt != "integer" ||
+		issuedt != "integer" || expirest != "integer" || decisiont != "integer" ||
+		confirmedt != "integer" || consumedt != "integer" || f.Agent.validate() != nil ||
+		decision < 0 || decision > 2 || confirmed != 0 && confirmed != 1 ||
+		consumed != 0 && consumed != 1 {
+		return f, false, ErrCorruptDatabase
+	}
+	f.Decision = ForceDecision(decision)
+	f.Confirmed = confirmed == 1
+	f.Consumed = consumed == 1
+	if !IsLowerHexSHA256(f.ReceiptID) || f.OpID <= 0 || f.IssuedMS <= 0 || f.ExpiresMS <= f.IssuedMS || f.ExpiresMS-f.IssuedMS > MaxForceIntentTTL.Milliseconds() || (f.Decision == ForceDecisionPending) == f.Confirmed || f.Consumed && !f.Confirmed {
+		return f, false, ErrCorruptDatabase
+	}
+	return f, true, nil
+}
+
+// SubmitSaveDecision submits an explicit force confirmation for a save failure.
+func (s *Store) SubmitSaveDecision(ctx context.Context, receiptID string, decision ForceDecision, confirmed bool, now func() time.Time) error {
+	if now == nil || decision < ForceDecisionCancel || decision > ForceDecisionForce || decision == ForceDecisionForce && !confirmed {
+		return ErrSaveFailure
+	}
+	return s.inWriteTx(ctx, func(ctx context.Context, c *sql.Conn) error {
+		f, found, err := s.saveFailureConn(ctx, c, receiptID)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return ErrSaveFailureNotFound
+		}
+		if f.Consumed {
+			return ErrSaveFailureReplay
+		}
+		if err := f.validate(now()); err != nil {
+			return err
+		}
+		if err := s.saveFailureEligible(ctx, c, f); err != nil {
+			return err
+		}
+		res, err := c.ExecContext(ctx, `
+			UPDATE force_save_failures 
+			SET decision = ?, confirmed = 1 
+			WHERE receipt_id = ? AND confirmed = 0 AND consumed = 0
+		`, decision, receiptID)
+		if err != nil {
+			return err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n != 1 {
+			return ErrSaveFailureReplay
+		}
+		return nil
+	})
+}
+
+// ConsumeSaveDecision consumes a save failure decision once.
+func (s *Store) ConsumeSaveDecision(ctx context.Context, receiptID string, owned ForceAgent, now func() time.Time) error {
+	if now == nil || owned.validate() != nil {
+		return ErrSaveFailure
+	}
+	return s.inWriteTx(ctx, func(ctx context.Context, c *sql.Conn) error {
+		f, found, err := s.saveFailureConn(ctx, c, receiptID)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return ErrSaveFailureNotFound
+		}
+		if f.Agent != owned {
+			return ErrSaveFailureWrongAgent
+		}
+		if f.Consumed {
+			return ErrSaveFailureReplay
+		}
+		if err := f.validate(now()); err != nil {
+			return err
+		}
+		if err := s.saveFailureEligible(ctx, c, f); err != nil {
+			return err
+		}
+		res, err := c.ExecContext(ctx, `
+			UPDATE force_save_failures 
+			SET consumed = 1 
+			WHERE receipt_id = ? AND consumed = 0 AND confirmed = 1
+		`, receiptID)
+		if err != nil {
+			return err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n != 1 {
+			return ErrSaveFailureReplay
+		}
+		return nil
+	})
+}
+
+// saveFailureEligible revalidates the original intent and current agent inside
+// the same transaction as each decision write. Replacing an agent revokes it.
+func (s *Store) saveFailureEligible(ctx context.Context, c *sql.Conn, f ForceSaveFailure) error {
+	if err := s.forceEligible(ctx, c, f.OpID); err != nil {
+		return err
+	}
+	a, found, err := s.forceAgentConn(ctx, c)
+	if err != nil {
+		return err
+	}
+	if !found || a != f.Agent {
+		return ErrSaveFailureWrongAgent
+	}
+	intent, found, consumed, err := s.forceIntentConn(ctx, c, f.OpID)
+	if err != nil {
+		return err
+	}
+	if !found || !consumed || intent.Agent != f.Agent {
+		return ErrSaveFailureNotFound
+	}
+	return nil
+}
+
+func (f ForceSaveFailure) validate(now time.Time) error {
+	n := now.UnixMilli()
+	if !IsLowerHexSHA256(f.ReceiptID) || f.OpID <= 0 || f.Agent.validate() != nil || f.IssuedMS <= 0 || f.IssuedMS > n || f.ExpiresMS <= f.IssuedMS || f.ExpiresMS-f.IssuedMS > MaxForceIntentTTL.Milliseconds() {
+		return ErrSaveFailure
+	}
+	if f.ExpiresMS <= n {
+		return ErrSaveFailureExpired
+	}
+	return nil
 }

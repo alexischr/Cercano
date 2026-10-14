@@ -34,3 +34,24 @@ func (c *ForceControl) Consume(ctx context.Context, a ForceAgent, now func() tim
 func (c *ForceControl) Intent(ctx context.Context, opID int64) (ForceIntent, bool, bool, error) {
 	return c.store.ReadForceIntent(ctx, opID)
 }
+
+// PublishSaveFailure publishes an idempotent save failure for the given operation.
+// The caller supplies a crypto-random receiptID for idempotent publication.
+func (c *ForceControl) PublishSaveFailure(ctx context.Context, opID int64, agent ForceAgent, receiptID string, expires time.Time, now func() time.Time) error {
+	return c.store.PublishSaveFailure(ctx, opID, agent, receiptID, expires, now)
+}
+
+// PendingSaveFailure reads a pending save failure for the given operation.
+func (c *ForceControl) PendingSaveFailure(ctx context.Context, opID int64) (ForceSaveFailure, bool, error) {
+	return c.store.ReadPendingSaveFailure(ctx, opID)
+}
+
+// SubmitSaveDecision submits an explicit force confirmation for a save failure.
+func (c *ForceControl) SubmitSaveDecision(ctx context.Context, receiptID string, decision ForceDecision, confirmed bool, now func() time.Time) error {
+	return c.store.SubmitSaveDecision(ctx, receiptID, decision, confirmed, now)
+}
+
+// ConsumeSaveDecision consumes a save failure decision once.
+func (c *ForceControl) ConsumeSaveDecision(ctx context.Context, receiptID string, owned ForceAgent, now func() time.Time) error {
+	return c.store.ConsumeSaveDecision(ctx, receiptID, owned, now)
+}
