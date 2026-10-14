@@ -6210,14 +6210,21 @@ func (m Model) renderCompactingMeterBar(cells, fillN int) string {
 	return b.String()
 }
 
-// formatTokens renders 1050000 → "1,050.0k", 21400 → "21.4k", 412 → "412".
+// formatTokens renders 1050000 → "1,050k", 21400 → "21.4k", 412 → "412".
 func formatTokens(n int) string {
 	if n < 1000 {
 		return fmt.Sprintf("%d", n)
 	}
 	label := fmt.Sprintf("%.1fk", float64(n)/1000)
+	if n >= 1_000_000 {
+		label = fmt.Sprintf("%.0fk", float64(n)/1000)
+	}
+	integerEnd := strings.IndexByte(label, '.')
+	if integerEnd < 0 {
+		integerEnd = len(label) - 1 // Exclude the k suffix.
+	}
 	// Group after rounding so a rounded-up value also gets its separator.
-	for i := strings.IndexByte(label, '.') - 3; i > 0; i -= 3 {
+	for i := integerEnd - 3; i > 0; i -= 3 {
 		label = label[:i] + "," + label[i:]
 	}
 	return label
