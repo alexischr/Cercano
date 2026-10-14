@@ -692,7 +692,7 @@ func RunToolLoop(ctx context.Context, in ToolLoopInput) (returned ToolLoopResult
 			}
 			log.Printf("[tool-loop] context budget trimmed history: conv=%s provider=%s model=%s iter=%d before_messages=%d after_messages=%d estimated_tokens=%d tool_tokens=%d output_reserve=%d limit=%d budget=%d", in.ConversationID, in.Provider.Name(), in.Model, iter+1, beforeTrim, len(hist), budget.EstimatedUsed, budget.ToolTokens, budget.OutputReserve, budget.Limit, budget.PromptBudget)
 			if in.EventSink != nil {
-				in.EventSink(LoopEvent{Kind: LoopNotice, Summary: "local context is smaller — trimmed conversation history to fit the model window"})
+				in.EventSink(LoopEvent{Kind: LoopNotice, Summary: "Conversation exceeds the model’s input budget — older messages were omitted from this request. Saved conversation history is unchanged."})
 			}
 		}
 		if !budget.Fits {
