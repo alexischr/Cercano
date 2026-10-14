@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"cercano/source/server/internal/compaction"
 	"cercano/source/server/internal/contextmeter"
 	"cercano/source/server/internal/crashlog"
 	"cercano/source/server/internal/engine"
@@ -233,6 +234,10 @@ func estimateRequestBudget(req llm.ChatRequest) requestBudgetEstimate {
 	for _, msg := range req.Messages {
 		for _, block := range msg.Blocks {
 			budget.MessageTokens += estimateTokens(block.Text) + estimateTokens(block.Content) + estimateTokens(block.ImageURL) + estimateTokens(block.ImageData)
+			// Opaque reasoning is replayed to the backend by the openai
+			// adapter (reasoning_content); use the canonical shared
+			// estimate rather than duplicating a local one.
+			budget.MessageTokens += compaction.ReasoningTokens(block)
 		}
 	}
 	if tools, err := json.Marshal(req.Tools); err == nil {

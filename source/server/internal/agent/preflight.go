@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"cercano/source/server/internal/compaction"
 	"cercano/source/server/internal/contextmeter"
 	"cercano/source/server/internal/llm"
 )
@@ -38,7 +39,10 @@ func estimateTokens(s string) int {
 // estimateMessageTokens sums the estimated tokens across a message's text-bearing
 // blocks. Text and tool-result Content carry the bulk of history bytes; image
 // payloads are counted structurally (a flat per-image cost) because their
-// base64 length bears no relation to the model's image token cost.
+// base64 length bears no relation to the model's image token cost. Opaque
+// reasoning data (Block.ReasoningData, replayed to the provider verbatim by
+// the responses adapter) is charged through the canonical calculator's shared
+// estimate so this guard and compaction agree instead of drifting.
 func estimateMessageTokens(m llm.Message) int {
 	total := 0
 	for _, b := range m.Blocks {
@@ -47,6 +51,7 @@ func estimateMessageTokens(m llm.Message) int {
 		if b.Type == llm.BlockImage {
 			total += perImageTokenEstimate
 		}
+		total += compaction.ReasoningTokens(b)
 	}
 	return total
 }

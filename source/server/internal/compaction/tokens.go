@@ -7,6 +7,27 @@ import (
 
 const imageTokenOverhead = 64
 
+// ReasoningTokens returns a conservative, deterministic budget charge for a
+// block's opaque reasoning payload (Block.ReasoningData, the Responses API
+// encrypted_content blob the adapters replay to the provider verbatim).
+//
+// The blob is encrypted base64: it has no relation to any tokenizer's
+// vocabulary, so "exact" tokenization of the bytes would be a false claim, not
+// an estimate. The provider counts the decrypted reasoning tokens we never
+// see; that count scales with the plaintext, which scales with the encrypted
+// payload (base64 expands ~4/3, encryption adds framing), so one token per
+// four encoded bytes tracks the underlying reasoning cost with slack on the
+// high side — the safe direction for budget and compaction pressure. This
+// mirrors the ImageTokens convention for opaque payloads. Providers that drop
+// foreign reasoning blocks (e.g. the anthropic adapter) make this an
+// overestimate; that is accepted so accounting stays conservative.
+func ReasoningTokens(b llm.Block) int {
+	if b.ReasoningData == "" {
+		return 0
+	}
+	return (len(b.ReasoningData) + 3) / 4
+}
+
 // MessageTokens estimates the token cost of a message by counting its block
 // text/content/tool-input plus a conservative charge for inline image payloads.
 // Approximate but deterministic for a given tokenizer.
@@ -28,6 +49,9 @@ func MessageTokens(tok contextmeter.Tokenizer, m llm.Message) int {
 		if b.Type == llm.BlockImage {
 			n += ImageTokens(tok, b)
 		}
+		// Opaque reasoning is provider-facing input the adapters replay
+		// verbatim; ignoring it let reasoning-heavy histories look free.
+		n += ReasoningTokens(b)
 	}
 	return n
 }
@@ -70,7 +94,9 @@ func TotalTokens(tok contextmeter.Tokenizer, msgs []llm.Message) int {
 // after history images have been converted to references/placeholders. Unlike
 // MessageTokens, inline image bytes are not charged by payload size. Use this
 // for UI sent-context meters and hard-override decisions that are meant to
-// mirror the compacted prompt, not raw storage pressure.
+// mirror the compacted prompt, not raw storage pressure. Opaque reasoning
+// data IS charged: the responses adapter replays it to the provider as
+// encrypted_content, so it is genuine prompt input (see ReasoningTokens).
 func ProviderMessageTokens(tok contextmeter.Tokenizer, m llm.Message) int {
 	n := 0
 	for _, b := range m.Blocks {
@@ -89,6 +115,7 @@ func ProviderMessageTokens(tok contextmeter.Tokenizer, m llm.Message) int {
 		if b.Type == llm.BlockImage {
 			n += ProviderImageTokens(tok, b)
 		}
+		n += ReasoningTokens(b)
 	}
 	return n
 }
