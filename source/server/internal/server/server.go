@@ -563,6 +563,12 @@ func (s *Server) SetSecrets(st secrets.Store) { s.cfgSvc.SetSecrets(st) }
 // gRPC server itself — that's the caller's job (cmd/cercano/main.go uses
 // GracefulStop).
 func (s *Server) Shutdown() {
+	// Release any retained process-local save-failure receipt so no stale
+	// receipt outlives the owner. Cleanup never infers process exit/health.
+	s.safeStopMu.Lock()
+	forceOwner := s.localForceControl
+	s.safeStopMu.Unlock()
+	forceOwner.CleanupPendingSave(s)
 	// Drain the per-conversation worker pool (kill warm workers + stop the
 	// idle-reaper) when worker mode is armed. The in-process runner has nothing
 	// to drain; the type assertion no-ops for it.
