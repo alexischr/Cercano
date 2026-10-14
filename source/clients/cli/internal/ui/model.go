@@ -808,6 +808,8 @@ func fetchContextUsage(ag *agentclient.Client, convID string) tea.Cmd {
 // toolCallFetchedMsg carries the result of a lazy GetToolCall — the full args
 // and result body for one expanded scrollback tool entry, keyed by tool_use_id.
 type toolCallFetchedMsg struct {
+	origin *chatView
+	tabID  string
 	id     string
 	detail *agentclient.ToolCallDetail
 	err    error
@@ -828,17 +830,34 @@ func fetchToolCallCmd(ag *agentclient.Client, convID, toolUseID string) tea.Cmd 
 // dispatchToolFetches drains any tool bodies the chat queued for lazy load
 // (from an expand toggle) and returns the fetch commands, kicking the
 // animation tick so the loading spinner animates while they're in flight.
+// Handles both main chat and all active sub-agent tabs.
 func (m *Model) dispatchToolFetches() []tea.Cmd {
-	ids := m.mainChat().TakePendingToolFetches()
-	if len(ids) == 0 {
-		return nil
+	m.ensureChatTabs()
+	var cmds []tea.Cmd
+	for _, tabID := range m.chatTabs.order {
+		tab := m.chatTabs.tabs[tabID]
+		if tab == nil {
+			continue
+		}
+		view := &tab.view
+		convID := tabID // Sub-agent tab IDs are persisted conversation IDs.
+		if tabID == mainChatTabID {
+			view = m.mainChat()
+			convID = m.convID
+		}
+		for _, id := range view.TakePendingToolFetches() {
+			fetch := fetchToolCallCmd(m.agent, convID, id)
+			cmds = append(cmds, func() tea.Msg {
+				msg := fetch().(toolCallFetchedMsg)
+				msg.origin, msg.tabID = view, tabID
+				return msg
+			})
+		}
 	}
-	cmds := make([]tea.Cmd, 0, len(ids)+1)
-	for _, id := range ids {
-		cmds = append(cmds, fetchToolCallCmd(m.agent, m.convID, id))
-	}
-	if kick := m.ensureAnimTick(); kick != nil {
-		cmds = append(cmds, kick)
+	if len(cmds) > 0 {
+		if kick := m.ensureAnimTick(); kick != nil {
+			cmds = append(cmds, kick)
+		}
 	}
 	return cmds
 }
@@ -1949,16 +1968,29 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 		return m, fetchContextUsage(m.agent, m.convID)
 
 	case toolCallFetchedMsg:
-		// Lazy tool-body fetch returned — fill the expanded entry (or just
-		// clear the spinner if the fetch failed / found nothing) and repaint.
-		if t := m.mainChat().findToolEntry(msg.id); t != nil {
+		// Resolve the original view, never the currently focused tab. Ignore
+		// late responses for a closed or replaced tab.
+		view := m.mainChat()
+		if msg.origin != nil {
+			if msg.tabID != mainChatTabID {
+				tab := m.chatTabs.tabs[msg.tabID]
+				if tab == nil {
+					return m, nil
+				}
+				view = &tab.view
+			}
+			if view != msg.origin {
+				return m, nil
+			}
+		}
+		if t := view.findToolEntry(msg.id); t != nil {
 			t.Loading = false
 			if msg.err == nil && msg.detail != nil && msg.detail.Found {
 				t.FullArgs = msg.detail.ArgsJSON
 				t.FullResult = msg.detail.Result
 				t.StartLine = msg.detail.StartLine
 			}
-			m.mainChat().markTranscriptDirty()
+			view.markTranscriptDirty()
 			m.refreshViewport()
 		}
 		return m, nil
