@@ -22,7 +22,10 @@ type routeProvider struct {
 }
 
 func (p *routeProvider) TargetFor(model, tier string) llm.ServingRoute {
-	route := llm.ServingRoute{Provider: p.Provider.Name(), Profile: p.profile, Destination: p.destination, Model: model, ContextWindow: contextmeter.ModelWindowFor("").Tokens}
+	// Resolve the requested model before attaching the route: downstream budget
+	// consumers prefer this window over their own model-name fallback.
+	window := contextmeter.ModelWindowFor(model)
+	route := llm.ServingRoute{Provider: p.Provider.Name(), Profile: p.profile, Destination: p.destination, Model: model, ContextWindow: window.Tokens, ContextWindowKnown: window.Known}
 	if source, ok := p.Provider.(interface {
 		ModelEvidence(string) modelmetadata.Evidence
 	}); ok {
