@@ -14,7 +14,8 @@ import (
 )
 
 // grepCap searches across a directory for a pattern. Prefers ripgrep (rg)
-// for speed; falls back to POSIX grep -RIn. Output is structured rows of
+// for speed; falls back to POSIX grep -REn (extended regex — the portable
+// common subset both backends share). Output is structured rows of
 // {path, line, content} — the model gets parsed matches rather than the
 // raw stdout of either backend.
 type grepCap struct{}
@@ -40,7 +41,7 @@ func (grepCap) Schema() capabilities.Schema {
 	"properties": {
 		"pattern": {
 			"type": "string",
-			"description": "Regex pattern (rg/grep dialect)."
+			"description": "Regex pattern in the portable common subset supported by both ripgrep and grep -E: literals, character classes, alternation (|), grouping (()), and repetition (* + ? {m,n}). Escaped metacharacters stay literal. Avoid backreferences and look-around — they are not portable across the two backends."
 		},
 		"path": {
 			"type": "string",
@@ -119,7 +120,11 @@ func grepRunRipgrep(ctx context.Context, a grepArgs) (*capabilities.Result, erro
 }
 
 func grepRunGrep(ctx context.Context, a grepArgs) (*capabilities.Result, error) {
-	args := []string{"-R", "-I", "-n", "-H"}
+	// -E selects POSIX extended regex so the fallback speaks the same portable
+	// common subset the rg backend (and the schema docs) promise: alternation,
+	// grouping, and repetition instead of basic-regex literals. Without it a
+	// pattern like "alpha|beta" silently matches nothing under grep.
+	args := []string{"-R", "-I", "-n", "-H", "-E"}
 	if a.CaseInsensitive {
 		args = append(args, "-i")
 	}

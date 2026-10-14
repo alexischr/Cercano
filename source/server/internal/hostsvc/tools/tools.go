@@ -771,8 +771,12 @@ func (x *Service) RunAgenticDispatch(ctx context.Context, spec dispatch.Spec, se
 		addDispatchRequestBudgetFields(extra, res)
 		x.logDispatchFailure("dispatch.tool_loop_failed", spec, subConvID, provider, model, sel.IsCloud, granted, ignored, err, extra)
 		emitDispatchProgress(spec.Emit, agenttools.ProgressEvent{SubAgentID: subConvID, SubAgentParentID: spec.ConversationID, SubAgentTitle: subTitle, Kind: "error", Text: fmt.Sprintf("sub-agent failed: conv=%s err=%v", subConvID, err), GrantedTools: granted, IgnoredTools: ignored, IsError: true})
+		// A typed terminal failure with preserved partial work (token-budget
+		// exhaustion or repeated output truncation) must reach the parent with
+		// the partial handoff text and the transcript pointer, like the budget
+		// path — not as a bare generic error that drops both.
 		var le *llm.Error
-		if errors.As(err, &le) && le.Class == llm.ErrTokenBudgetExhausted {
+		if errors.As(err, &le) && (le.Class == llm.ErrTokenBudgetExhausted || le.Class == llm.ErrOutputTruncated) {
 			handoff := res.FinalText
 			if handoff == "" {
 				handoff = "Partial work — task not completed; review the recorded transcript."
@@ -785,7 +789,7 @@ func (x *Service) RunAgenticDispatch(ctx context.Context, spec dispatch.Spec, se
 			}
 			text := handoff + "\n" + location
 			emitDispatchProgress(spec.Emit, agenttools.ProgressEvent{SubAgentID: subConvID, Kind: "error", Text: text, IsError: true})
-			return dispatch.Result{Text: text, SubConversationID: subID, Model: model, Provider: provider, IsCloud: sel.IsCloud, GrantedTools: granted, IgnoredTools: ignored}, fmt.Errorf("%w\n%s", err, text)
+			return dispatch.Result{Text: text, SubConversationID: subID, Model: model, Provider: provider, Tier: string(spec.Tier), IsCloud: sel.IsCloud, InputTokens: res.InputTokens, OutputTokens: res.OutputTokens, GrantedTools: granted, IgnoredTools: ignored}, fmt.Errorf("%w\n%s", err, text)
 		}
 
 		return dispatch.Result{}, err
@@ -854,18 +858,15 @@ func (x *Service) RunAgenticDispatch(ctx context.Context, spec dispatch.Spec, se
 			Suspicious:        true,
 			SuspicionReason:   reason,
 		}, fmt.Errorf("%s", suspiciousNoOpMessage(reason))
-	} else if len(called) <= 1 && len(mutating) == 0 {
-		// Low-signal read-only run: not flagged (no provable contradiction),
-		// but logged so we can study how often near-empty runs happen without
-		// crying wolf on the returned Result.
-		log.Printf("[dispatch] subagent low-signal run: conv=%s called=%v (read-only grant, <=1 tool call)",
-			subConvID, sortedKeys(called))
-		x.logDispatchFailure("dispatch.degraded", spec, subConvID, provider, model, sel.IsCloud, granted, ignored, nil, failurelog.Event{
-			"error_class":        "low_signal",
-			"message":            "read-only sub-agent completed with one or fewer tool calls",
-			"called_tools_count": len(called),
-			"called_tools":       sortedKeys(called),
-		})
+	} else if res.ToolCallCount <= 1 && len(mutating) == 0 {
+		// Neutral telemetry for a near-empty read-only run: a successful
+		// one-call dispatch is healthy, not a failure, so nothing goes to the
+		// failure log (dispatch.degraded is for provable failures only). Count
+		// actual invocations (ToolCallCount), not distinct tool names
+		// (CalledTools), so a run that called the same tool five times is
+		// never mislabeled a one-call run.
+		log.Printf("[dispatch] subagent read-only run: conv=%s called=%v distinct_tool_names_count=%d tool_call_count=%d",
+			subConvID, sortedKeys(called), len(called), res.ToolCallCount)
 	}
 
 	tr.DispatchDone(dispatchhistory.DispatchDoneEvent{

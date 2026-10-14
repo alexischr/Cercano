@@ -231,6 +231,9 @@ func copyFiles(m map[string]string) map[string]string {
 func Advance(ctx context.Context, turns []conversation.Turn, state conversation.Compaction,
 	summarize compaction.SummarizeFunc, cfg Config, tok contextmeter.Tokenizer) (conversation.Compaction, bool, bool, error) {
 
+	// Normalize only the derived view, before both boundary selection and
+	// summary construction so evidence and frozen coverage stay in lockstep.
+	turns = historicalOrphanView(turns)
 	all := agent.BuildLLMHistory(turns)
 	if compaction.TotalTokens(tok, all) < cfg.ActivationFloorTokens {
 		return state, false, false, nil // activation gate
