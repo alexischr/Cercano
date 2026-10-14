@@ -7,20 +7,14 @@ import (
 
 const imageTokenOverhead = 64
 
-// ReasoningTokens returns a conservative, deterministic budget charge for a
-// block's opaque reasoning payload (Block.ReasoningData, the Responses API
-// encrypted_content blob the adapters replay to the provider verbatim).
+// ReasoningTokens returns a deterministic estimate for a block's opaque
+// reasoning payload (Block.ReasoningData).
 //
-// The blob is encrypted base64: it has no relation to any tokenizer's
-// vocabulary, so "exact" tokenization of the bytes would be a false claim, not
-// an estimate. The provider counts the decrypted reasoning tokens we never
-// see; that count scales with the plaintext, which scales with the encrypted
-// payload (base64 expands ~4/3, encryption adds framing), so one token per
-// four encoded bytes tracks the underlying reasoning cost with slack on the
-// high side — the safe direction for budget and compaction pressure. This
-// mirrors the ImageTokens convention for opaque payloads. Providers that drop
-// foreign reasoning blocks (e.g. the anthropic adapter) make this an
-// overestimate; that is accepted so accounting stays conservative.
+// One token per four encoded bytes is a byte-based budgeting heuristic, not
+// an exact token count or a guaranteed upper bound. The encrypted payload does
+// not expose the provider's underlying token accounting. Charging it prevents
+// reasoning from being treated as free, but actual usage may differ. Providers
+// that omit foreign reasoning payloads may be overcharged by this shared estimate.
 func ReasoningTokens(b llm.Block) int {
 	if b.ReasoningData == "" {
 		return 0
