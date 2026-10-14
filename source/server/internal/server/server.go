@@ -106,7 +106,9 @@ type McpManager interface {
 
 // Server is the gRPC server for the Agent service.
 type Server struct {
-	forcePersistenceDeadline time.Time // shared bounded final-write window; guarded by safeStopMu
+	pendingForceSave         *ForceSaveFailure
+	forceSaveRecorder        func(context.Context, []broker.ActiveTurn) error // test seam; production defaults to durable store
+	forcePersistenceDeadline time.Time                                        // shared bounded final-write window; guarded by safeStopMu
 
 	localForceControl *forceLocalOwner // one instance-bound control owner, guarded by safeStopMu
 

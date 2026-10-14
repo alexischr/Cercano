@@ -31,7 +31,7 @@ func TestForceInterruptedCurrentTurnPersistsBeforeResume(t *testing.T) {
 	final := llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "Interrupted; do not replay owned fixture work."}}}
 	s.persistCurrentTurn(ctx, "force-persist", gen, final)
 	turns, e := store.GetTurns(context.Background(), "force-persist")
-	if e != nil || len(turns) != 2 {
+	if e != nil || len(turns) != 3 {
 		t.Fatalf("interruption persistence lost: turns=%+v err=%v", turns, e)
 	}
 	if e = store.Close(); e != nil {
@@ -43,11 +43,11 @@ func TestForceInterruptedCurrentTurnPersistsBeforeResume(t *testing.T) {
 	}
 	defer reopened.Close()
 	turns, e = reopened.GetTurns(context.Background(), "force-persist")
-	if e != nil || len(turns) != 2 {
+	if e != nil || len(turns) != 3 {
 		t.Fatal("reopened history lost interruption", turns, e)
 	}
 	var blocks []llm.Block
-	if e = json.Unmarshal([]byte(turns[1].BlocksJSON), &blocks); e != nil || len(blocks) != 1 || blocks[0].Text != final.Blocks[0].Text {
+	if e = json.Unmarshal([]byte(turns[2].BlocksJSON), &blocks); e != nil || len(blocks) != 1 || blocks[0].Text != final.Blocks[0].Text {
 		t.Fatal("changed persisted interruption", blocks, e)
 	}
 }
@@ -69,7 +69,7 @@ func TestForcePersistenceDoesNotReviveSupersededGeneration(t *testing.T) {
 	}
 	s.persistCurrentTurn(old, "fenced", oldGen, llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "stale"}}})
 	turns, e := store.GetTurns(context.Background(), "fenced")
-	if e != nil || len(turns) != 0 {
+	if e != nil || len(turns) != 1 || turns[0].Content != forceRequestedNote || turns[0].Role != string(llm.RoleSystem) {
 		t.Fatal("stale generation persisted", turns, e)
 	}
 }

@@ -11,7 +11,8 @@ import (
 )
 
 func TestForceStopSealsBusyAdmissionAndRetainsInterruptionGeneration(t *testing.T) {
-	s := &Server{turnBroker: broker.New()}
+	s, _ := newServerWithStore(t)
+	s.turnBroker = broker.New()
 	leave, e := s.updateWork.enter()
 	if e != nil {
 		t.Fatal(e)
@@ -56,10 +57,41 @@ func TestForceStopSealsBusyAdmissionAndRetainsInterruptionGeneration(t *testing.
 		t.Fatal("duplicate stop callback")
 	}
 }
+func TestForceStopRequesterCanAcquirePersistenceLock(t *testing.T) {
+	s, _ := newServerWithStore(t)
+	s.turnBroker = broker.New()
+
+	// Set up a callback that tries to acquire the safeStopMu lock
+	callbackLockAcquired := false
+	s.SetProcessForceStopRequester(func(reason string) {
+		// Try to acquire the safeStopMu lock - this should succeed
+		acquired := s.safeStopMu.TryLock()
+		if acquired {
+			callbackLockAcquired = true
+			s.safeStopMu.Unlock()
+		}
+	})
+
+	// Request force stop with no active turns
+	pid := int64(os.Getpid())
+	ctx := context.Background()
+	ok, e := s.RequestForceUpdateStop(ctx, pid, true)
+
+	if !ok || e != nil {
+		t.Fatal("Force stop failed:", ok, e)
+	}
+
+	// The callback should have been able to acquire the lock
+	if !callbackLockAcquired {
+		t.Fatal("Callback could not acquire safeStopMu lock")
+	}
+}
+
 func TestForceStopRefusalHasNoEffects(t *testing.T) {
 	for _, kind := range []string{"no-consent", "wrong-pid", "no-owner", "canceled", "other-seal"} {
 		t.Run(kind, func(t *testing.T) {
-			s := &Server{turnBroker: broker.New()}
+			s, _ := newServerWithStore(t)
+			s.turnBroker = broker.New()
 			work, _, release := s.turnBroker.BeginTurn(context.Background(), "owned")
 			defer release()
 			calls := 0

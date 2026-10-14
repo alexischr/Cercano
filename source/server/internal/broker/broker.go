@@ -62,7 +62,8 @@ type turnHandle struct {
 // Broker is the per-conversation turn registry, fan-out hub, and replay buffer.
 // The zero value is not usable; call New.
 type Broker struct {
-	shutdownInterrupted bool // permanent; guarded by mu
+	forcePreparing      chan struct{} // temporary registration barrier; guarded by mu
+	shutdownInterrupted bool          // permanent; guarded by mu
 	mu                  sync.Mutex
 	convs               map[string]*convState
 }
@@ -103,6 +104,17 @@ func (b *Broker) convLocked(conv string) *convState {
 func (b *Broker) BeginTurn(parent context.Context, conv string) (context.Context, uint64, func()) {
 	ctx, cancel := context.WithCancel(parent)
 	b.mu.Lock()
+	for b.forcePreparing != nil && !b.shutdownInterrupted {
+		wait := b.forcePreparing
+		b.mu.Unlock()
+		select {
+		case <-wait:
+		case <-ctx.Done():
+			cancel()
+			return ctx, 0, func() {}
+		}
+		b.mu.Lock()
+	}
 	if b.shutdownInterrupted {
 		b.mu.Unlock()
 		cancel()

@@ -44,7 +44,8 @@ func forceLocalFixture(t *testing.T, ids ...string) (string, *state.Store, int64
 func TestLocalForceIntentInvokesOnlyOwnedCallbackOnce(t *testing.T) {
 	root, store, id := forceLocalFixture(t)
 	ctx := context.Background()
-	s := &Server{turnBroker: broker.New()}
+	s, _ := newServerWithStore(t)
+	s.turnBroker = broker.New()
 	calls := 0
 	s.SetProcessForceStopRequester(func(string) { calls++ })
 	owner, e := s.newForceLocalOwner()
