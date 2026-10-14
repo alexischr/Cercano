@@ -4,6 +4,7 @@ import (
 	"cercano/source/server/pkg/accountidentity"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -781,6 +782,17 @@ func legacyCloudProfileName(provider string) string {
 	}
 }
 
+// isMeridianDefaultURL reports whether raw points at Meridian's default local
+// address. The host must match exactly: a substring test also matched ports
+// 34560–34569 and wiped the BaseURL of any profile served there.
+func isMeridianDefaultURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	return u.Host == "127.0.0.1:3456" || u.Host == "localhost:3456"
+}
+
 // migrateMeridianToSubscription rewrites legacy Meridian profiles to the native
 // subscription route on load. The external Meridian OAuth proxy has been
 // removed; the subscription route calls api.anthropic.com directly with our own
@@ -805,8 +817,7 @@ func migrateMeridianToSubscription(cfg *Config) {
 	}
 	for i := range cfg.CloudProfiles {
 		p := &cfg.CloudProfiles[i]
-		isMeridian := p.Route == "meridian" ||
-			(p.Route == "" && (strings.Contains(p.BaseURL, "127.0.0.1:3456") || strings.Contains(p.BaseURL, "localhost:3456")))
+		isMeridian := p.Route == "meridian" || (p.Route == "" && isMeridianDefaultURL(p.BaseURL))
 		if !isMeridian {
 			continue
 		}

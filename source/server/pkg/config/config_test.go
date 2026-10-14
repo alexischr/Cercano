@@ -527,6 +527,11 @@ func TestMigrateMeridianToSubscription(t *testing.T) {
 		{"un-routed 127 default port", CloudProfile{Name: "b", BaseURL: "http://127.0.0.1:3456"}, "subscription", ""},
 		{"un-routed localhost default port", CloudProfile{Name: "c", BaseURL: "http://localhost:3456"}, "subscription", ""},
 		{"non-default port untouched", CloudProfile{Name: "d", BaseURL: "http://127.0.0.1:9999"}, "", "http://127.0.0.1:9999"},
+		{"default port with path", CloudProfile{Name: "g", BaseURL: "http://127.0.0.1:3456/v1"}, "subscription", ""},
+		// Ports that merely start with 3456 are not Meridian (an ephemeral
+		// httptest port such as 34561 once had its BaseURL wiped).
+		{"127 port sharing the 3456 prefix untouched", CloudProfile{Name: "h", BaseURL: "http://127.0.0.1:34561/v1"}, "", "http://127.0.0.1:34561/v1"},
+		{"localhost port sharing the 3456 prefix untouched", CloudProfile{Name: "i", BaseURL: "http://localhost:34569"}, "", "http://localhost:34569"},
 		{"public URL untouched", CloudProfile{Name: "e", BaseURL: "https://api.anthropic.com"}, "", "https://api.anthropic.com"},
 		{"explicit direct route preserved", CloudProfile{Name: "f", Route: "direct", BaseURL: "http://127.0.0.1:3456"}, "direct", "http://127.0.0.1:3456"},
 	}
