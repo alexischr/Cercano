@@ -112,6 +112,7 @@ type Model struct {
 	agent              *agentclient.Client
 	convID             string
 	tuiUpdateAvailable bool
+	forceSaveSeen      string
 	tuiCurrentVersion  string
 	tuiExpectedVersion string
 	tuiUpdateOperation int64
@@ -368,14 +369,15 @@ type pendingToolCall struct {
 // model routes y / n / esc (and optional extra keys) to it. onYes/onNo
 // resolve and should clear m.pendingConfirm; extras run without resolving.
 type confirmRequest struct {
-	auth    *agentclient.AuthenticationRequired
-	tool    *pendingToolCall
-	title   string
-	details []string
-	hints   string
-	onYes   func(Model) (Model, tea.Cmd)
-	onNo    func(Model) (Model, tea.Cmd)
-	extras  map[string]func(Model) (Model, tea.Cmd)
+	forceSaveReceipt string // local update gate identity, never a tool permission
+	auth             *agentclient.AuthenticationRequired
+	tool             *pendingToolCall
+	title            string
+	details          []string
+	hints            string
+	onYes            func(Model) (Model, tea.Cmd)
+	onNo             func(Model) (Model, tea.Cmd)
+	extras           map[string]func(Model) (Model, tea.Cmd)
 	// retryPrompt is the user turn that produced this gate. Keep it on the gate
 	// itself because the normal lastSubmittedPrompt rehydration cache is cleared
 	// when the stream closes, which can happen before reconnect recovery marks the
@@ -566,7 +568,7 @@ func (m *Model) applyTheme(t theme.Theme) {
 
 // Init is called by Bubble Tea once at startup.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.restartInit, m.input.Focus(), m.splash.Init(), fetchConfigCmd(m.agent), fetchToolsCmd(m.agent), fetchPermissionModeCmd(m.agent), fetchOpenRuntimeStatusCmd(m.agent), fetchVisionCmd(m.agent), subscribeEventsCmd(m.agent), subscribeConnStateCmd(m.agent))
+	return tea.Batch(m.restartInit, discoverForceSaveCmd, m.input.Focus(), m.splash.Init(), fetchConfigCmd(m.agent), fetchToolsCmd(m.agent), fetchPermissionModeCmd(m.agent), fetchOpenRuntimeStatusCmd(m.agent), fetchVisionCmd(m.agent), subscribeEventsCmd(m.agent), subscribeConnStateCmd(m.agent))
 }
 
 // permissionModeMsg carries the result of the startup GetPermissionMode RPC.
@@ -1027,6 +1029,17 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
+	case forceSavePollMsg:
+		return m.applyForceSavePoll(msg)
+	case forceSaveResultMsg:
+		if msg.err != nil {
+			return m.restartNotice("Update choice could not be confirmed. It may have been recorded; do not assume the agent is still running or the update completed.")
+		}
+		if msg.force {
+			return m.restartNotice("Force anyway choice recorded. The agent must revalidate it before stopping; update completion is not yet confirmed.")
+		}
+		return m.restartNotice("Cancel choice recorded. No force override was requested.")
+
 	case tuiUpdateNoticeMsg:
 		next, cmd := m.applyTUIUpdateNotice(msg.version, msg.operationID)
 		return next, tea.Batch(cmd, msg.next)
