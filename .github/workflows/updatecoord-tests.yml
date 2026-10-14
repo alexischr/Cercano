@@ -7,6 +7,7 @@ on:
       - '.gitattributes'
       - 'source/server/internal/updatecoord/**'
       - 'source/server/pkg/update/**'
+      - 'source/server/pkg/forcesave/**'
       - 'source/server/internal/server/**'
       - 'source/server/internal/broker/**'
       - 'source/server/cmd/cercano/**'
@@ -48,7 +49,7 @@ jobs:
         run: go env GOOS GOARCH
       - name: Native temporary-state and subprocess tests
         working-directory: source/server
-        run: go test -count=1 -timeout=2m ./internal/updatecoord/... ./pkg/update
+        run: go test -count=1 -timeout=2m ./internal/updatecoord/... ./pkg/update ./pkg/forcesave
       - name: Windows launch lock tests
         # Only the Windows-specific launch-lock primitives are hermetic on
         # Windows today; do not run the rest of the server suite here.
@@ -62,10 +63,10 @@ jobs:
       - name: Race tests
         if: runner.os != 'Windows'
         working-directory: source/server
-        run: go test -race -count=1 -timeout=2m ./internal/updatecoord/... ./pkg/update
+        run: go test -race -count=1 -timeout=2m ./internal/updatecoord/... ./pkg/update ./pkg/forcesave
       - name: Static checks
         working-directory: source/server
-        run: go vet ./internal/updatecoord/...
+        run: go vet ./internal/updatecoord/... ./pkg/forcesave
       - name: Work admission and asynchronous lifetime fixtures
         working-directory: source/server
         run: go test -count=1 -timeout=2m -run 'TestSafeStop|TestShutdownAgentWhenIdle|TestUpdateIdle|TestUpdateAdmission|TestObserver|TestDownloadWork|TestUpdateWorker|TestUpdateCompaction|TestUpdateCredential' ./internal/server ./internal/localruntime ./internal/worker ./internal/compactiongen ./internal/hostsvc/credentials
@@ -78,11 +79,11 @@ jobs:
         run: go test -count=1 -timeout=2m ./internal/hostsvc/persistence
       - name: Owned-turn and force-stop fixtures
         working-directory: source/server
-        run: go test -count=1 -timeout=2m -run 'TestShutdownInterruption|TestForceStop|TestLocalForce|TestForceLocalObserver|TestForce.*Persist' ./internal/broker ./internal/server
+        run: go test -count=1 -timeout=2m -run 'TestShutdownInterruption|TestForce|TestLocalForce|TestLocalSaveFailure' ./internal/broker ./internal/server
       - name: Force interruption race checks
         if: runner.os != 'Windows'
         working-directory: source/server
-        run: go test -race -count=1 -timeout=2m -run 'TestShutdownInterruption|TestForceStop|TestLocalForce|TestForceLocalObserver|TestForce.*Persist' ./internal/broker ./internal/server
+        run: go test -race -count=1 -timeout=2m -run 'TestShutdownInterruption|TestForce|TestLocalForce|TestLocalSaveFailure' ./internal/broker ./internal/server
       - name: Process stop ownership fixtures
         working-directory: source/server
         run: go test -count=1 -timeout=2m -run 'Test.*Stop|Test.*Shutdown|TestTUIObserverLivesUntilReturnedAgentCleanup' ./cmd/cercano
