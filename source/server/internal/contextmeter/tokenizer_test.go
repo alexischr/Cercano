@@ -52,6 +52,44 @@ func TestKnownModelMaxDistinguishesDefaultFallback(t *testing.T) {
 	}
 }
 
+// Regression for the gpt-6-astra context-window fix: the model publishes a
+// 1,050,000-token window (capacity value user-supplied, not independently
+// verified against official provider documentation). Before the fix it fell
+// through to the 128K default with Known=false, so live logs showed
+// window=128000 known=false.
+func TestModelWindowForGPT6Astra(t *testing.T) {
+	mw := ModelWindowFor("gpt-6-astra")
+	if !mw.Known || mw.Tokens != 1_050_000 {
+		t.Fatalf("ModelWindowFor(gpt-6-astra) = %+v, want {1050000 true}", mw)
+	}
+	if got, ok := KnownModelMax("gpt-6-astra"); !ok || got != 1_050_000 {
+		t.Fatalf("KnownModelMax(gpt-6-astra) = (%d,%v), want (1050000,true)", got, ok)
+	}
+	// Case-insensitive exact match via the shared normalizer.
+	mw = ModelWindowFor("GPT-6-Astra")
+	if !mw.Known || mw.Tokens != 1_050_000 {
+		t.Fatalf("ModelWindowFor(GPT-6-Astra) = %+v, want {1050000 true}", mw)
+	}
+	// Runtime-prefixed routing names normalize to the same exact model.
+	if got, ok := KnownModelMax("llama_server:online:gpt-6-astra"); !ok || got != 1_050_000 {
+		t.Fatalf("KnownModelMax(prefixed) = (%d,%v), want (1050000,true)", got, ok)
+	}
+}
+
+// The capacity entry must stay narrow: only the exact gpt-6-astra model gets
+// 1,050,000. Other GPT models keep the unknown-model default path.
+func TestGPTFamilyStaysUnknownExceptAstra(t *testing.T) {
+	for _, model := range []string{"gpt-6", "gpt-6-astra-preview", "gpt-5.5", "gpt-4o", "gpt-6-astra-mini"} {
+		if got, ok := KnownModelMax(model); ok {
+			t.Errorf("KnownModelMax(%q) = (%d,true), want unknown (false)", model, got)
+		}
+		mw := ModelWindowFor(model)
+		if mw.Known || mw.Tokens != 128_000 {
+			t.Errorf("ModelWindowFor(%q) = %+v, want {128000 false}", model, mw)
+		}
+	}
+}
+
 func TestModelWindowForReportsCertainty(t *testing.T) {
 	claude := ModelWindowFor("claude-sonnet-4-6")
 	if !claude.Known || claude.Tokens != 200_000 {
