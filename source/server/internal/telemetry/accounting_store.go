@@ -3,6 +3,7 @@ package telemetry
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -32,6 +33,9 @@ func (s *SQLiteStore) InitializeAccounting(ctx context.Context) error {
 	}
 	defer conn.Close()
 	if _, err = conn.ExecContext(ctx, `BEGIN IMMEDIATE`); err != nil {
+		// Cancellation can race with successful execution. database/sql does
+		// not track this manual transaction, so discard an uncertain connection.
+		_ = conn.Raw(func(any) error { return driver.ErrBadConn })
 		return err
 	}
 	committed := false
@@ -39,9 +43,11 @@ func (s *SQLiteStore) InitializeAccounting(ctx context.Context) error {
 		if committed {
 			return
 		}
-		// Rollback carries the caller's context so a canceled upgrade does
-		// not queue behind the busy_timeout to release the writer lock.
-		_, _ = conn.ExecContext(ctx, `ROLLBACK`)
+		// Cleanup must execute even when the caller canceled initialization.
+		// Returning an open manual transaction to the pool leaks its writer lock.
+		if _, err := conn.ExecContext(context.WithoutCancel(ctx), `ROLLBACK`); err != nil {
+			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+		}
 	}()
 	for _, statement := range []string{
 		`CREATE TABLE IF NOT EXISTS accounting_metadata (key TEXT PRIMARY KEY,value TEXT NOT NULL)`,
