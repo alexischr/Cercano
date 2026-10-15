@@ -1,0 +1,12 @@
+# Durable manifest capture and completed-child verification
+
+Implemented in bounded slices following the approved per-executable manifest contract.
+
+- Manifest hardening checks current-operation allocation/record binding and uses the archive gate's portable namespace rules.
+- `LoadCompletedSelectionManifest` resolves the exact selected completed, health-verified journal and operation plus its manifest in one read transaction. A newer pending operation does not hide the installed version. Missing, inconsistent, corrupt and unallocated records refuse verification.
+- `enrollment.VerifyInstalledChild` independently reads protected existing enrollment/state and selected manifest. Handoff values remain locators. Trusted local policy must provide state/version roots; the production executable input must come from `os.Executable`. It verifies role, path, exact size and hash and re-reads selection. This is completed-installation verification, NOT first candidate health authorization.
+- The switch transaction captures the freshly verified agent/client manifest before switch intent. Reentry compares immutable stored facts; missing post-intent manifests fail closed rather than being synthesized from current files. No new migration was introduced by these integration slices.
+
+Verification on the development macOS host: full `go test -race ./internal/updatecoord/... -count=1`, `go vet ./internal/updatecoord/...`, Windows/Linux amd64 package builds, and Windows enrollment/activationtxn test compilation pass. Tests cover historical selected state with newer pending work, incomplete and corrupt state, wrong role/installation, same-size tamper, durable pre-intent capture, immutable retries, conflicting records and missing post-intent manifests. Existing subprocess switch-interruption tests pass.
+
+Native Windows/Linux execution remains pending for these changes. Cross-compilation is not native execution or a durability proof. Live startup, stable-launcher handoff, candidate-health authorization and the full updater flow remain unfinished; no live enrollment/state migration, agent restart, process execution or release publication was performed.

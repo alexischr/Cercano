@@ -322,7 +322,7 @@ func runGuarded(ctx context.Context, req Request, guard exclusion.GuardSession) 
 		if err != nil {
 			return Result{}, err
 		}
-		if err := verifyTargetImages(ctx, req, journal); err != nil {
+		if err := verifyAndBindTargetImages(ctx, req, journal); err != nil {
 			return Result{}, err
 		}
 		// Durable intent BEFORE any effect.
@@ -353,7 +353,7 @@ func runGuarded(ctx context.Context, req Request, guard exclusion.GuardSession) 
 
 	case state.JournalSelected:
 		if decision.Action == activation.ActionTargetAwaitHealth {
-			if err := verifyTargetImages(ctx, req, journal); err != nil {
+			if err := verifyAndBindTargetImages(ctx, req, journal); err != nil {
 				return Result{}, err
 			}
 			// Idempotent reentry: nothing to write. The result names the
@@ -446,7 +446,7 @@ func publishAndAcknowledge(ctx context.Context, req Request, guard exclusion.Gua
 			return Result{}, herr
 		}
 	}
-	if err := verifyTargetImages(ctx, req, journal); err != nil {
+	if err := verifyAndBindTargetImages(ctx, req, journal); err != nil {
 		return Result{}, err
 	}
 	pub, perr := selection.PublishGuarded(ctx, guard, req.Directory, expected, target)
@@ -480,7 +480,7 @@ func acknowledge(ctx context.Context, req Request, journal state.ActivationJourn
 	if readback.State != activation.ObservedPresent || readback.Selection == nil || *readback.Selection != target {
 		return Result{}, fmt.Errorf("%w: readback is %s", ErrReadbackMismatch, readback.State)
 	}
-	if err := verifyTargetImages(ctx, req, journal); err != nil {
+	if err := verifyAndBindTargetImages(ctx, req, journal); err != nil {
 		return Result{Target: target, Checkpoint: journal.Checkpoint, JournalRevision: revision, Published: published, SelectionDigest: digest}, err
 	}
 	_, rev, err := advance(ctx, req, journal, revision, state.JournalSelected)

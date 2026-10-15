@@ -671,6 +671,12 @@ func TestSwitchUnsafePublicationDirectoryRefuses(t *testing.T) {
 	// The durable intent is already recorded, so an unsafe publication
 	// directory is refused by the publisher with NOTHING further written
 	// by this transaction.
+	// Model the production pre-intent manifest capture before simulating
+	// interruption at an already-durable switch intent.
+	j, _ := f.journal()
+	if err := verifyAndBindTargetImages(context.Background(), f.request(), j); err != nil {
+		t.Fatal(err)
+	}
 	f.advanceJournal(state.JournalSwitchIntent)
 	if err := os.Chmod(f.dir, 0o755); err != nil {
 		t.Fatalf("chmod: %v", err)
@@ -726,6 +732,12 @@ func TestSwitchContextCancellationLeavesReconcilableJournal(t *testing.T) {
 	// Cancellation with a durable intent at switch-intent and a target
 	// selection already committed leaves a reconcilable journal; the
 	// reentry acknowledges without a second write.
+	// Model the production pre-intent manifest capture before simulating
+	// interruption at an already-durable switch intent.
+	j, _ := f.journal()
+	if err := verifyAndBindTargetImages(context.Background(), f.request(), j); err != nil {
+		t.Fatal(err)
+	}
 	f.advanceJournal(state.JournalSwitchIntent)
 	f.publishSelection(selection.Expected{Absent: true}, f.target())
 	before := f.rawSelection()
