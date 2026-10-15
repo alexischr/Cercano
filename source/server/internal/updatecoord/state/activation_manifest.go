@@ -271,21 +271,10 @@ func (s *Store) loadActivationManifestConn(ctx context.Context, q rowQuerier, op
 	return m, revision, nil
 }
 
-// LoadCurrentActivationManifest loads the persisted activation manifest of
-// the installation's CURRENT operation for an independent child verifier:
-// this is the protected installation-state path a versioned child uses to
-// obtain expected image fingerprints itself, rather than trusting launcher
-// handoff values (which remain locators, not authority).
-//
-// The current operation is resolved through the SAME strict,
-// allocation-checked, installation-bound loader the adapter uses
-// (loadCurrentOperation) inside ONE consistent read transaction shared by
-// the current-operation lookup and the manifest row read. It never assumes
-// the newest operation is the selected, installed one beyond what that
-// loader certifies: the operation record itself is validated before any
-// manifest is attached to it. A row that fails strict decoding or
-// validation is ErrCorruptDatabase or ErrInstallIDMismatch and is never
-// treated as empty. Read-only: no write, no write lock.
+// LoadCurrentActivationManifest loads the current operation's manifest using
+// strict operation validation and one read transaction. Current does NOT mean
+// selected or installed. Startup consumers must instead reconcile selection,
+// journal and operation (LoadCompletedSelectionManifest for completed installs).
 func (s *Store) LoadCurrentActivationManifest(ctx context.Context) (ActivationManifest, int64, error) {
 	ctx, cancel := context.WithTimeout(ctx, opTimeout)
 	defer cancel()
