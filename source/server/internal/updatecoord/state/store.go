@@ -80,12 +80,10 @@ type Store struct {
 // schema (application_id, user_version, exact table set for the database's
 // own version, and meta-bound installID) BEFORE any write or journal pragma
 // touches it. A legitimate older database is upgraded in ONE immediate
-// transaction to the current version: a validated schema-1 database chains
-// sequentially through schema 2 to the current version, and a validated
-// schema-2 database takes the remaining single ADDITIVE step (the
-// activation_journals table plus the recorded version) with every existing
-// operation record, identifier counter, delegation record, and dismissal
-// record retained; the upgrade is revalidated under the same connection and
+// transaction to the current version: a validated legacy database chains
+// sequentially through every intermediate version (each step purely
+// ADDITIVE), with every existing operation record, identifier counter,
+// delegation record, dismissal record, and activation journal retained; the upgrade is revalidated under the same connection and
 // is safe against a concurrent handle performing the same upgrade. Foreign,
 // future, corrupt, or identity-mismatched databases are refused without
 // modification; there is no reset and no destructive migration. A brand-new

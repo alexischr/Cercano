@@ -15,11 +15,15 @@ import (
 // is read or written.
 const AppID = 0x4352434E // 'C','R','C','N'
 
-// SchemaVersion 5 adds the force_save_failures table for idempotent save failure
-// publication and explicit force confirmation. Explicit Open alone migrates
-// recognized exact legacy schemas through additive steps; optional startup
-// readers never migrate or initialize state.
-const SchemaVersion = 5
+// SchemaVersion 6 adds the activation_manifests table persisting the
+// approved installation-bound verified per-executable manifest recovery
+// facts (agent/client member paths, lengths, and SHA-256 fingerprints) as
+// one strict canonical JSON row per operation. SchemaVersion 5 added the
+// force_save_failures table for idempotent save failure publication and
+// explicit force confirmation. Explicit Open alone migrates recognized
+// exact legacy schemas through additive steps; optional startup readers
+// never migrate or initialize state.
+const SchemaVersion = 6
 
 // LegacySchemaVersion is the OLDEST schema version a database may carry to
 // be upgraded. Every version from here up to (but not including)
@@ -187,6 +191,33 @@ var schema5Tables = map[string]bool{
 	"state_meta": true, "install_state": true, "operation_records": true, "policy_records": true, "dismissal_records": true, "activation_journals": true, "force_agent_sessions": true, "force_stop_intents": true, "force_save_failures": true,
 }
 
+// schema6AddendumSQL is the ONLY schema change from version 5 to version 6:
+// the activation_manifests table persisting the approved installation-bound
+// verified per-executable manifest recovery facts. It deliberately mirrors
+// the activation_journals pattern — keyed by operation identifier, bound to
+// one installation, per-row revision, and a strict canonical JSON payload
+// column — so manifest recovery facts ride the same storage discipline as
+// journals. The payload carries the verified agent/client member paths,
+// lengths, and SHA-256 fingerprints bound to the installation, operation,
+// selected version directory, and archive digest; it is written once and
+// never updated.
+const schema6AddendumSQL = `
+CREATE TABLE activation_manifests (
+  op_id         INTEGER PRIMARY KEY,
+  install_id    TEXT NOT NULL,
+  revision      INTEGER NOT NULL,
+  manifest_json TEXT NOT NULL
+);
+`
+
+// schema6Tables is the exact table set of schema version 6: the version-5
+// tables plus the activation_manifests table. The same exactness rules
+// apply: a database claiming version 6 must contain exactly these tables or
+// it is refused as partial, corrupt, foreign, or future.
+var schema6Tables = map[string]bool{
+	"state_meta": true, "install_state": true, "operation_records": true, "policy_records": true, "dismissal_records": true, "activation_journals": true, "force_agent_sessions": true, "force_stop_intents": true, "force_save_failures": true, "activation_manifests": true,
+}
+
 // schemaAddendumSQL returns the ONLY DDL the single migration step from the
 // given recognized version adds. Steps are additive: they append new
 // objects and never redefine or drop a version-1 or version-2 object.
@@ -200,6 +231,8 @@ func schemaAddendumSQL(from int64) string {
 		return schema4AddendumSQL
 	case 4:
 		return schema5AddendumSQL
+	case 5:
+		return schema6AddendumSQL
 	default:
 		return ""
 	}
@@ -218,6 +251,8 @@ func schemaSQLFor(version int64) string {
 		return schema1SQL + schema2AddendumSQL + schema3AddendumSQL + schema4AddendumSQL
 	case 5:
 		return schema1SQL + schema2AddendumSQL + schema3AddendumSQL + schema4AddendumSQL + schema5AddendumSQL
+	case 6:
+		return schema1SQL + schema2AddendumSQL + schema3AddendumSQL + schema4AddendumSQL + schema5AddendumSQL + schema6AddendumSQL
 	default:
 		return ""
 	}
@@ -236,6 +271,8 @@ func tablesFor(version int64) map[string]bool {
 		return schema4Tables
 	case 5:
 		return schema5Tables
+	case 6:
+		return schema6Tables
 	default:
 		return nil
 	}
@@ -301,7 +338,7 @@ func exec(ctx context.Context, db dbtx, query string) error {
 // validateExistingDB checks that an existing database is a dedicated,
 // recognized updater state database bound to installID. The WHOLE
 // recognized schema for the database's own version is validated: each
-// recognized version (1 through 4) must match the exact definition for
+// recognized version (1 through 5) must match the exact definition for
 // that version — same version with unknown/extra/missing/altered objects
 // is refused. The exact legacy schema-1 and schema-2 definitions are
 // preserved verbatim, so an older database is never treated as an unknown
