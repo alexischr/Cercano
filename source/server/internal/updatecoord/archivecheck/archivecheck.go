@@ -376,26 +376,7 @@ func validateOptionValues(opts Options) error {
 	// folding), or one name that must be both a file and a directory, make
 	// the layout ambiguous on case-insensitive filesystems (Windows,
 	// macOS) and are refused regardless of declaration order.
-	nsSeen := map[string]string{} // fold key -> exact first-seen name
-	nsKind := map[string]bool{}   // fold key -> name is a directory
-	addNS := func(name string, isDir bool) error {
-		key := foldKey(name)
-		if prev, dup := nsSeen[key]; dup {
-			switch {
-			case prev == name && isDir && nsKind[key]:
-				return nil // the same implicit parent, legitimately shared
-			case prev == name && !isDir && !nsKind[key]:
-				return fmt.Errorf("archivecheck: Layout contains duplicate member %q", name)
-			case nsKind[key] != isDir:
-				return fmt.Errorf("archivecheck: Layout uses %q and %q as both a regular file and a directory", name, prev)
-			default:
-				return fmt.Errorf("archivecheck: Layout contains case-colliding names %q and %q", name, prev)
-			}
-		}
-		nsSeen[key] = name
-		nsKind[key] = isDir
-		return nil
-	}
+	ns := newPortableNamespace()
 	for _, role := range []struct {
 		name  string
 		names []string
@@ -405,7 +386,7 @@ func validateOptionValues(opts Options) error {
 				return fmt.Errorf("archivecheck: Layout.%s %q: %w", role.name, n, err)
 			}
 			full := joinRoot(l.Root, n)
-			if err := addNS(full, false); err != nil {
+			if err := ns.add(full, false); err != nil {
 				return fmt.Errorf("archivecheck: Layout.%s %q: %w", role.name, n, err)
 			}
 			// Every ancestor directory of a member is part of the namespace.
@@ -415,9 +396,84 @@ func validateOptionValues(opts Options) error {
 					break
 				}
 				d = d[:i]
-				if err := addNS(d, true); err != nil {
+				if err := ns.add(d, true); err != nil {
 					return fmt.Errorf("archivecheck: Layout.%s %q: %w", role.name, n, err)
 				}
+			}
+		}
+	}
+	return nil
+}
+
+// portableNamespace tracks one portable name namespace being built: no two
+// names may fold to the same key, and no name may serve as both a regular
+// file and a directory. It is shared by the archive layout validator and
+// by ValidatePortableNamespace so downstream consumers (for example the
+// persisted activation manifest) enforce exactly the same namespace rules.
+type portableNamespace struct {
+	seen map[string]string // fold key -> exact first-seen name
+	kind map[string]bool   // fold key -> name is a directory
+}
+
+func newPortableNamespace() *portableNamespace {
+	return &portableNamespace{seen: map[string]string{}, kind: map[string]bool{}}
+}
+
+func (ns *portableNamespace) add(name string, isDir bool) error {
+	key := foldKey(name)
+	if prev, dup := ns.seen[key]; dup {
+		switch {
+		case prev == name && isDir && ns.kind[key]:
+			return nil // the same implicit parent, legitimately shared
+		case prev == name && !isDir && !ns.kind[key]:
+			return fmt.Errorf("archivecheck: duplicate member %q", name)
+		case ns.kind[key] != isDir:
+			return fmt.Errorf("archivecheck: %q and %q used as both a regular file and a directory", name, prev)
+		default:
+			return fmt.Errorf("archivecheck: case-colliding names %q and %q", name, prev)
+		}
+	}
+	ns.seen[key] = name
+	ns.kind[key] = isDir
+	return nil
+}
+
+// ValidatePortableName validates one portable member name with the exact
+// rules the archive layout path applies (relative, slash-separated, valid
+// UTF-8, no traversal, no backslash, no colon or Windows-invalid
+// characters, no control bytes, no Windows reserved device name in any
+// segment, no segment ending in a dot or space). It exists so downstream
+// consumers revalidate names they persist against the same contract the
+// archive gate enforced, instead of a diverging copy of it.
+func ValidatePortableName(name string) error {
+	return validateEntryName(name, false)
+}
+
+// ValidatePortableNamespace validates a set of portable member names as one
+// namespace: every name must pass ValidatePortableName, no two names may
+// fold to the same key (case-fold collisions, including Unicode folds
+// strings.ToLower misses), no name may be used as both a regular file and a
+// directory, and no name may collide with an implicit parent directory of
+// another member. It is the same namespace contract the archive layout
+// validator enforces.
+func ValidatePortableNamespace(names []string) error {
+	ns := newPortableNamespace()
+	for _, name := range names {
+		if err := validateEntryName(name, false); err != nil {
+			return fmt.Errorf("archivecheck: member %q: %w", name, err)
+		}
+		if err := ns.add(name, false); err != nil {
+			return err
+		}
+		// Every ancestor directory of a member is part of the namespace.
+		for d := name; ; {
+			i := strings.LastIndexByte(d, '/')
+			if i < 0 {
+				break
+			}
+			d = d[:i]
+			if err := ns.add(d, true); err != nil {
+				return err
 			}
 		}
 	}

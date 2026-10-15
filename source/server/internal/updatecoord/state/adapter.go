@@ -79,7 +79,7 @@ func NewAdapter(s *Store) *Adapter {
 func (a *Adapter) Start(ctx context.Context, targetVersion string) (operation.Snapshot, error) {
 	var snap operation.Snapshot
 	err := a.store.inWriteTx(ctx, func(ctx context.Context, conn *sql.Conn) error {
-		cur, _, found, err := a.store.loadCurrentOperationConn(ctx, conn)
+		cur, _, found, err := a.store.loadCurrentOperation(ctx, conn)
 		if err != nil {
 			return err
 		}
@@ -167,7 +167,7 @@ func (a *Adapter) Start(ctx context.Context, targetVersion string) (operation.Sn
 func (a *Adapter) Apply(ctx context.Context, in operation.Input) (operation.Snapshot, error) {
 	var snap operation.Snapshot
 	err := a.store.inWriteTx(ctx, func(ctx context.Context, conn *sql.Conn) error {
-		cur, revision, found, err := a.store.loadCurrentOperationConn(ctx, conn)
+		cur, revision, found, err := a.store.loadCurrentOperation(ctx, conn)
 		if err != nil {
 			return err
 		}
@@ -214,7 +214,7 @@ func (a *Adapter) Snapshot(ctx context.Context) (operation.Snapshot, bool, error
 		return operation.Snapshot{}, false, err
 	}
 	defer conn.Close() //nolint:errcheck // read-only path
-	cur, _, found, err := a.store.loadCurrentOperationConn(ctx, conn)
+	cur, _, found, err := a.store.loadCurrentOperation(ctx, conn)
 	if err != nil || !found {
 		return operation.Snapshot{}, false, err
 	}

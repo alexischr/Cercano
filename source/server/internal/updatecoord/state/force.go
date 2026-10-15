@@ -127,7 +127,7 @@ func (s *Store) ReadForceAgent(ctx context.Context) (ForceAgent, bool, error) {
 	return s.forceAgentConn(ctx, s.db)
 }
 func (s *Store) forceEligible(ctx context.Context, c *sql.Conn, opID int64) error {
-	rec, _, found, e := s.loadCurrentOperationConn(ctx, c)
+	rec, _, found, e := s.loadCurrentOperation(ctx, c)
 	if e != nil {
 		return e
 	}
@@ -231,7 +231,7 @@ func (s *Store) ConsumeForceIntent(ctx context.Context, owned ForceAgent, now fu
 		if !found || a != owned {
 			return ErrForceTarget
 		}
-		rec, _, found, e := s.loadCurrentOperationConn(ctx, c)
+		rec, _, found, e := s.loadCurrentOperation(ctx, c)
 		if e != nil || !found {
 			return e
 		}

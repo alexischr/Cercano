@@ -265,7 +265,7 @@ func (s *Store) saveActivationJournalConn(ctx context.Context, conn *sql.Conn, e
 	// operation, loaded through the same strict, binding-checked path the
 	// adapter uses; a journal can never name an operation that was never
 	// allocated or persisted.
-	rec, _, found, err := s.loadCurrentOperationConn(ctx, conn)
+	rec, _, found, err := s.loadCurrentOperation(ctx, conn)
 	if err != nil {
 		return 0, err
 	}

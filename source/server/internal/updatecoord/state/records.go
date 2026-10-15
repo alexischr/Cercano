@@ -143,18 +143,26 @@ func (s *Store) saveOperationRecordConn(ctx context.Context, conn *sql.Conn, exp
 	return expectedRevision + 1, nil
 }
 
-// loadCurrentOperationConn loads the installation's CURRENT operation
-// record — the record with the HIGHEST persisted operation ID; history
-// below the current operation is immutable from the adapter once a newer
-// operation exists — together with its revision. It reads no rows when no
-// operation exists. It is safe inside a caller-owned write transaction
-// (where it also enforces that the record's ID was allocated below the
-// persisted counter) and outside one, so reads never need the write lock.
+// rowQuerier is the subset of *sql.Conn / *sql.Tx / *sql.DB used by the
+// shared strict loaders, so one loader works inside either a write
+// transaction (conn-backed) or a read transaction (tx-backed).
+type rowQuerier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// loadCurrentOperation loads the installation's CURRENT operation record
+// — the record with the HIGHEST persisted operation ID; history below the
+// current operation is immutable from the adapter once a newer operation
+// exists — together with its revision. It reads no rows when no operation
+// exists. It is safe inside a caller-owned write transaction (where it
+// also enforces that the record's ID was allocated below the persisted
+// counter) and inside a read transaction, so current-operation reads
+// observe one consistent snapshot without taking the write lock.
 // A row failing strict decoding or validation is ErrCorruptDatabase.
-func (s *Store) loadCurrentOperationConn(ctx context.Context, conn *sql.Conn) (operation.Record, int64, bool, error) {
+func (s *Store) loadCurrentOperation(ctx context.Context, q rowQuerier) (operation.Record, int64, bool, error) {
 	var payload string
 	var opID, revision int64
-	err := conn.QueryRowContext(ctx,
+	err := q.QueryRowContext(ctx,
 		`SELECT op_id, revision, record_json FROM operation_records WHERE install_id = ? ORDER BY op_id DESC LIMIT 1`,
 		s.installID).Scan(&opID, &revision, &payload)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -174,7 +182,7 @@ func (s *Store) loadCurrentOperationConn(ctx context.Context, conn *sql.Conn) (o
 		return operation.Record{}, 0, false, fmt.Errorf("%w: operation record %d is bound to a different installation", ErrInstallIDMismatch, opID)
 	}
 	var next int64
-	if err := conn.QueryRowContext(ctx, `SELECT next_op_id FROM install_state WHERE install_id=?`, s.installID).Scan(&next); err != nil {
+	if err := q.QueryRowContext(ctx, `SELECT next_op_id FROM install_state WHERE install_id=?`, s.installID).Scan(&next); err != nil {
 		return operation.Record{}, 0, false, ErrCorruptDatabase
 	}
 	if rec.ID >= next {

@@ -50,6 +50,9 @@ import (
 	"io"
 	"strings"
 	"unicode/utf8"
+
+	"cercano/source/server/internal/updatecoord/archivecheck"
+	"cercano/source/server/internal/updatecoord/imagecheck"
 )
 
 // ActivationManifestSchemaVersion is the schema version ActivationManifest
@@ -184,7 +187,7 @@ func (s *Store) saveActivationManifestConn(ctx context.Context, conn *sql.Conn, 
 	// operation, loaded through the same strict, binding-checked path the
 	// adapter uses; a manifest can never name an operation that was never
 	// allocated or persisted.
-	rec, _, found, err := s.loadCurrentOperationConn(ctx, conn)
+	rec, _, found, err := s.loadCurrentOperation(ctx, conn)
 	if err != nil {
 		return 0, err
 	}
@@ -228,12 +231,20 @@ func (s *Store) saveActivationManifestConn(ctx context.Context, conn *sql.Conn, 
 func (s *Store) LoadActivationManifest(ctx context.Context, opID int64) (ActivationManifest, int64, error) {
 	ctx, cancel := context.WithTimeout(ctx, opTimeout)
 	defer cancel()
+	return s.loadActivationManifestConn(ctx, s.db, opID)
+}
+
+// loadActivationManifestConn is the querier-scoped manifest-read primitive:
+// one bounded, consistent snapshot of the row, strictly decoded and
+// validated. It is shared by the by-ID reader (db-backed) and the
+// current-operation reader (tx-backed) so both enforce identical rules.
+func (s *Store) loadActivationManifestConn(ctx context.Context, q rowQuerier, opID int64) (ActivationManifest, int64, error) {
 	if opID <= 0 {
 		return ActivationManifest{}, 0, fmt.Errorf("%w: operation id must be positive", ErrInvalidRecord)
 	}
 	var rowInstall, payload string
 	var revision int64
-	err := s.db.QueryRowContext(ctx,
+	err := q.QueryRowContext(ctx,
 		`SELECT install_id, revision, manifest_json FROM activation_manifests WHERE op_id = ?`, opID).Scan(&rowInstall, &revision, &payload)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ActivationManifest{}, 0, fmt.Errorf("%w: activation manifest %d", ErrRecordNotFound, opID)
@@ -266,27 +277,53 @@ func (s *Store) LoadActivationManifest(ctx context.Context, opID int64) (Activat
 // obtain expected image fingerprints itself, rather than trusting launcher
 // handoff values (which remain locators, not authority).
 //
-// Semantics mirror LoadActivationManifest, plus currency: with no current
-// operation, or with a current operation that has no manifest, the result
-// is ErrRecordNotFound. A row that fails strict decoding or validation is
-// ErrCorruptDatabase or ErrInstallIDMismatch and is never treated as
-// empty. Read-only: no write, no write lock.
+// The current operation is resolved through the SAME strict,
+// allocation-checked, installation-bound loader the adapter uses
+// (loadCurrentOperation) inside ONE consistent read transaction shared by
+// the current-operation lookup and the manifest row read. It never assumes
+// the newest operation is the selected, installed one beyond what that
+// loader certifies: the operation record itself is validated before any
+// manifest is attached to it. A row that fails strict decoding or
+// validation is ErrCorruptDatabase or ErrInstallIDMismatch and is never
+// treated as empty. Read-only: no write, no write lock.
 func (s *Store) LoadCurrentActivationManifest(ctx context.Context) (ActivationManifest, int64, error) {
 	ctx, cancel := context.WithTimeout(ctx, opTimeout)
 	defer cancel()
-	var opID int64
-	err := s.db.QueryRowContext(ctx,
-		`SELECT op_id FROM operation_records WHERE install_id = ? ORDER BY op_id DESC LIMIT 1`, s.installID).Scan(&opID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return ActivationManifest{}, 0, ErrRecordNotFound
-	}
+	var (
+		m        ActivationManifest
+		revision int64
+	)
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
-		return ActivationManifest{}, 0, fmt.Errorf("state: load current operation for manifest: %w", err)
+		return ActivationManifest{}, 0, fmt.Errorf("state: begin manifest read: %w", err)
 	}
-	if opID <= 0 {
-		return ActivationManifest{}, 0, ErrCorruptDatabase
+	defer tx.Rollback()
+	// Currency is established by the strict shared loader, not by a bare
+	// "highest op_id" probe: unallocated, malformed, or
+	// installation-mismatched current rows are ErrCorruptDatabase /
+	// ErrInstallIDMismatch, and a superseded-but-existing operation is
+	// exactly what this loader returns as current.
+	rec, _, found, err := s.loadCurrentOperation(ctx, tx)
+	if err != nil {
+		return ActivationManifest{}, 0, err
 	}
-	return s.LoadActivationManifest(ctx, opID)
+	if !found {
+		return ActivationManifest{}, 0, fmt.Errorf("%w: no operation exists to own an activation manifest", ErrRecordNotFound)
+	}
+	m, revision, err = s.loadActivationManifestConn(ctx, tx, rec.ID)
+	if err != nil {
+		return ActivationManifest{}, 0, err
+	}
+	// The manifest must still bind to the operation it claims: its target
+	// version must match the record's, not just its operation ID. A
+	// mismatch is corrupt persisted data.
+	if m.TargetVersion != rec.TargetVersion {
+		return ActivationManifest{}, 0, fmt.Errorf("%w: activation manifest %d target %q does not match operation %d target %q", ErrCorruptDatabase, rec.ID, m.TargetVersion, rec.ID, rec.TargetVersion)
+	}
+	if err := tx.Commit(); err != nil {
+		return ActivationManifest{}, 0, fmt.Errorf("state: commit manifest read: %w", err)
+	}
+	return m, revision, nil
 }
 
 // ValidateActivationManifest performs the full structural validation of a
@@ -323,30 +360,44 @@ func ValidateActivationManifest(m ActivationManifest, installID string) error {
 	if len(m.Members) > maxActivationManifestMembers {
 		return fmt.Errorf("%w: manifest records %d members, at most %d", ErrInvalidRecord, len(m.Members), maxActivationManifestMembers)
 	}
-	seen := make(map[string]bool, len(m.Members))
+	paths := make([]string, 0, len(m.Members))
 	for _, member := range m.Members {
 		if err := validateManifestMemberPath(member.Path); err != nil {
 			return err
 		}
-		if seen[member.Path] {
-			return fmt.Errorf("%w: duplicate member path %q", ErrInvalidRecord, member.Path)
-		}
-		seen[member.Path] = true
+		paths = append(paths, member.Path)
 		if member.Length <= 0 {
 			return fmt.Errorf("%w: member %q must record a positive byte length", ErrInvalidRecord, member.Path)
+		}
+		// A member can never be larger than the verified image it was
+		// extracted from; the same ceiling image verification enforces.
+		if member.Length > imagecheck.MaxImageBytes {
+			return fmt.Errorf("%w: member %q length %d exceeds the image limit", ErrInvalidRecord, member.Path, member.Length)
 		}
 		if !IsLowerHexSHA256(member.SHA256) {
 			return fmt.Errorf("%w: member %q fingerprint must be a 64-character lowercase hex SHA-256", ErrInvalidRecord, member.Path)
 		}
 	}
+	// The member set forms ONE portable namespace: no two members may fold
+	// to the same case key (including Unicode folds strings.ToLower misses),
+	// no member may be used as both a file and a directory, and no member
+	// may collide with another member's implicit parent directory — the
+	// exact namespace contract the archive layout validator enforced.
+	if err := archivecheck.ValidatePortableNamespace(paths); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidRecord, err)
+	}
 	return nil
 }
 
-// validateManifestMemberPath applies the archive-internal path rules a
-// member carries: valid UTF-8, bounded, no NUL, no backslash, no `.` or
-// `..` component, and never absolute — the manifest never carries a path
-// that could escape the executor's trusted version-directory root by
-// itself.
+// validateManifestMemberPath applies the archive-internal portable path
+// rules a member carries, via the exported archivecheck validator. The
+// manifest never carries a path that could escape the executor's trusted
+// version-directory root by itself, and every member name must satisfy the
+// same portable contract the archive gate enforced before staging: valid
+// UTF-8, bounded, relative, slash-separated, no NUL, no backslash, no
+// colon, no Windows-invalid characters, no control bytes, no `.` or `..`
+// component, no Windows reserved device name in any segment (including
+// superscript forms), and no segment ending in a dot or space.
 func validateManifestMemberPath(path string) error {
 	if path == "" {
 		return fmt.Errorf("%w: member path must not be empty", ErrInvalidRecord)
@@ -354,44 +405,10 @@ func validateManifestMemberPath(path string) error {
 	if len(path) > maxManifestMemberPathBytes {
 		return fmt.Errorf("%w: member path exceeds %d bytes", ErrInvalidRecord, maxManifestMemberPathBytes)
 	}
-	if !utf8.ValidString(path) || strings.ContainsRune(path, 0) {
-		return fmt.Errorf("%w: member path must be valid UTF-8 without NUL", ErrInvalidRecord)
-	}
-	if strings.ContainsRune(path, '\\') {
-		return fmt.Errorf("%w: member path must be a relative slash path", ErrInvalidRecord)
-	}
-	if filepathIsAbsolute(path) {
-		return fmt.Errorf("%w: member path must be relative", ErrInvalidRecord)
-	}
-	for _, part := range strings.Split(path, "/") {
-		if part == "" || part == "." || part == ".." {
-			return fmt.Errorf("%w: member path component %q is not allowed", ErrInvalidRecord, part)
-		}
+	if err := archivecheck.ValidatePortableName(path); err != nil {
+		return fmt.Errorf("%w: member path: %v", ErrInvalidRecord, err)
 	}
 	return nil
-}
-
-// filepathIsAbsolute reports whether p would be treated as absolute by the
-// host filesystem semantics this package refuses up front: a Windows drive
-// letter prefix, a reserved device prefix, or a POSIX-rooted path. The
-// manifest path rules reject backslashes outright, so only slash-form
-// absolute forms remain to detect.
-func filepathIsAbsolute(p string) bool {
-	if strings.HasPrefix(p, "/") {
-		return true
-	}
-	// Windows drive-letter form (e.g. "C:/..."), and UNC-style "//...".
-	if len(p) >= 2 && isASCIIAlpha(p[0]) && p[1] == ':' {
-		return true
-	}
-	if strings.HasPrefix(p, `//`) {
-		return true
-	}
-	return false
-}
-
-func isASCIIAlpha(c byte) bool {
-	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 }
 
 // decodeActivationManifest strictly decodes a persisted manifest payload:

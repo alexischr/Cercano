@@ -14,6 +14,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"cercano/source/server/internal/updatecoord/imagecheck"
 	"cercano/source/server/internal/updatecoord/operation"
 )
 
@@ -147,6 +148,108 @@ func TestActivationManifestRequiresExistingCurrentOperation(t *testing.T) {
 	}
 }
 
+// rawOperationJSON reads the persisted operation record payload straight
+// out of the database, bypassing the package API, so tests can corrupt it.
+func rawOperationJSON(t *testing.T, dbPath string, opID int64) []byte {
+	t.Helper()
+	db := rawDB(t, dbPath)
+	var payload string
+	if err := db.QueryRow(`SELECT record_json FROM operation_records WHERE op_id=?`, opID).Scan(&payload); err != nil {
+		t.Fatal(err)
+	}
+	return []byte(payload)
+}
+
+// TestLoadCurrentActivationManifestRequiresStrictCurrentOperation reproduces
+// the review findings against the current-operation reader: it must route
+// through the same strict current-operation validation the writer uses
+// (allocation counter, decodable record, record installation binding, in one
+// consistent read transaction) and must cross-check the manifest's target
+// version against the operation record it claims to belong to.
+func TestLoadCurrentActivationManifestRequiresStrictCurrentOperation(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	s, err := Open(root, "test-install")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	snap := startCurrentOperation(t, s, "9.9.9")
+	m := validManifest(snap.ID, "9.9.9")
+	if _, err := s.SaveActivationManifest(ctx, m); err != nil {
+		t.Fatal(err)
+	}
+	dbPath := filepath.Join(root, orgComponent(), "updater", "test-install", stateFileName)
+	rawOp := rawOperationJSON(t, dbPath, snap.ID)
+	rawMan := rawManifestJSON(t, dbPath, snap.ID)
+	db := rawDB(t, dbPath)
+	restore := func() {
+		t.Helper()
+		if _, err := db.Exec(`UPDATE install_state SET next_op_id=?`, snap.ID+1); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`UPDATE operation_records SET record_json=? WHERE op_id=?`, string(rawOp), snap.ID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`UPDATE activation_manifests SET manifest_json=? WHERE op_id=?`, string(rawMan), snap.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// An operation whose ID was never allocated below the persisted
+	// counter is corrupt, even though a manifest row exists for it.
+	if _, err := db.Exec(`UPDATE install_state SET next_op_id=?`, snap.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.LoadCurrentActivationManifest(ctx); !errors.Is(err, ErrCorruptDatabase) {
+		t.Fatalf("unallocated current operation accepted: %v", err)
+	}
+	restore()
+
+	// A malformed current-operation record payload is corrupt.
+	if _, err := db.Exec(`UPDATE operation_records SET record_json='{not json' WHERE op_id=?`, snap.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.LoadCurrentActivationManifest(ctx); !errors.Is(err, ErrCorruptDatabase) {
+		t.Fatalf("malformed current operation accepted: %v", err)
+	}
+	restore()
+
+	// An operation record payload bound to another installation is corrupt.
+	lied := strings.Replace(string(rawOp), `"installation_id":"test-install"`, `"installation_id":"other-install"`, 1)
+	if lied == string(rawOp) {
+		t.Fatal("installation lie did not change the record payload")
+	}
+	if _, err := db.Exec(`UPDATE operation_records SET record_json=? WHERE op_id=?`, lied, snap.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.LoadCurrentActivationManifest(ctx); !errors.Is(err, ErrInstallIDMismatch) {
+		t.Fatalf("mismatched current operation accepted: %v", err)
+	}
+	restore()
+
+	// A manifest whose target version does not match the current
+	// operation record's target version is corrupt: the reader must not
+	// hand out fingerprints bound to a different version.
+	tampered := strings.Replace(string(rawMan), `"target_version":"9.9.9"`, `"target_version":"8.8.8"`, 1)
+	if tampered == string(rawMan) {
+		t.Fatal("target tamper did not change the manifest payload")
+	}
+	if _, err := db.Exec(`UPDATE activation_manifests SET manifest_json=? WHERE op_id=?`, tampered, snap.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.LoadCurrentActivationManifest(ctx); !errors.Is(err, ErrCorruptDatabase) {
+		t.Fatalf("target-mismatched manifest accepted: %v", err)
+	}
+	restore()
+
+	// With pristine rows the strict reader loads the same manifest.
+	got, rev, err := s.LoadCurrentActivationManifest(ctx)
+	if err != nil || rev != 1 || !reflect.DeepEqual(got, m) {
+		t.Fatalf("strict reader on pristine rows: %+v %d %v", got, rev, err)
+	}
+}
+
 func TestActivationManifestBindingAndValidation(t *testing.T) {
 	ctx := context.Background()
 	s, err := Open(t.TempDir(), "test-install")
@@ -235,11 +338,59 @@ func TestActivationManifestBindingAndValidation(t *testing.T) {
 		{"empty member component", func(m *ActivationManifest) {
 			m.Members[0].Path = "bin//cercano-agent.exe"
 		}, ErrInvalidRecord},
+		{"colon member path", func(m *ActivationManifest) {
+			m.Members[0].Path = "bin:cercano-agent.exe"
+		}, ErrInvalidRecord},
+		{"alternate-data-stream member path", func(m *ActivationManifest) {
+			m.Members[0].Path = "cercano-agent.exe:hidden"
+		}, ErrInvalidRecord},
+		{"windows-invalid member character", func(m *ActivationManifest) {
+			m.Members[0].Path = "cercano-agent*.exe"
+		}, ErrInvalidRecord},
+		{"control byte member path", func(m *ActivationManifest) {
+			m.Members[0].Path = "bin/\x01cercano-agent.exe"
+		}, ErrInvalidRecord},
+		{"reserved device member path", func(m *ActivationManifest) {
+			m.Members[0].Path = "CON"
+		}, ErrInvalidRecord},
+		{"reserved device with extension", func(m *ActivationManifest) {
+			m.Members[0].Path = "aux.txt"
+		}, ErrInvalidRecord},
+		{"reserved device directory segment", func(m *ActivationManifest) {
+			m.Members[0].Path = "nul/cercano-agent.exe"
+		}, ErrInvalidRecord},
+		{"superscript reserved device", func(m *ActivationManifest) {
+			m.Members[0].Path = "com¹.exe"
+		}, ErrInvalidRecord},
+		{"trailing dot member segment", func(m *ActivationManifest) {
+			m.Members[0].Path = "cercano-agent.exe."
+		}, ErrInvalidRecord},
+		{"trailing space member segment", func(m *ActivationManifest) {
+			m.Members[0].Path = "cercano-agent "
+		}, ErrInvalidRecord},
+		{"trailing space directory segment", func(m *ActivationManifest) {
+			m.Members[0].Path = "bin /cercano-agent.exe"
+		}, ErrInvalidRecord},
+		{"case-fold alias member paths", func(m *ActivationManifest) {
+			m.Members = []ManifestMember{
+				{Path: "cercano-agent.exe", Length: 1, SHA256: strings.Repeat("a", 64)},
+				{Path: "Cercano-Agent.exe", Length: 2, SHA256: strings.Repeat("b", 64)},
+			}
+		}, ErrInvalidRecord},
+		{"member path is also a parent directory", func(m *ActivationManifest) {
+			m.Members = []ManifestMember{
+				{Path: "bin", Length: 1, SHA256: strings.Repeat("a", 64)},
+				{Path: "bin/cercano-agent.exe", Length: 2, SHA256: strings.Repeat("b", 64)},
+			}
+		}, ErrInvalidRecord},
 		{"oversized member path", func(m *ActivationManifest) {
 			m.Members[0].Path = strings.Repeat("a", maxManifestMemberPathBytes+1)
 		}, ErrInvalidRecord},
 		{"zero member length", func(m *ActivationManifest) { m.Members[0].Length = 0 }, ErrInvalidRecord},
 		{"negative member length", func(m *ActivationManifest) { m.Members[0].Length = -5 }, ErrInvalidRecord},
+		{"member length exceeds image limit", func(m *ActivationManifest) {
+			m.Members[0].Length = imagecheck.MaxImageBytes + 1
+		}, ErrInvalidRecord},
 		{"uppercase member digest", func(m *ActivationManifest) {
 			m.Members[0].SHA256 = strings.ToUpper(m.Members[0].SHA256)
 		}, ErrInvalidRecord},
@@ -256,6 +407,14 @@ func TestActivationManifestBindingAndValidation(t *testing.T) {
 	}
 	if err := ValidateActivationManifest(base, "test-install"); err != nil {
 		t.Fatalf("base manifest rejected: %v", err)
+	}
+
+	// The image-verification limit itself is a legitimate boundary: a
+	// member of exactly imagecheck.MaxImageBytes is accepted.
+	atLimit := copyManifest(base)
+	atLimit.Members[0].Length = imagecheck.MaxImageBytes
+	if err := ValidateActivationManifest(atLimit, "test-install"); err != nil {
+		t.Fatalf("member at the image limit rejected: %v", err)
 	}
 }
 
@@ -325,6 +484,42 @@ func TestActivationManifestStrictDecodingRefusesCorruption(t *testing.T) {
 		}, nil, ErrCorruptDatabase},
 		{"corrupt member length", nil, func(o []byte) []byte {
 			s := strings.Replace(string(o), `"length":111`, `"length":-111`, 1)
+			return []byte(s)
+		}, nil, ErrCorruptDatabase},
+		{"duplicate member key", nil, func(o []byte) []byte {
+			s := strings.Replace(string(o), `"length":111`, `"length":111,"length":111`, 1)
+			return []byte(s)
+		}, nil, ErrCorruptDatabase},
+		{"uppercase member key", nil, func(o []byte) []byte {
+			s := strings.Replace(string(o), `"path":"cercano-agent.exe"`, `"PATH":"cercano-agent.exe"`, 1)
+			return []byte(s)
+		}, nil, ErrCorruptDatabase},
+		{"null member field", nil, func(o []byte) []byte {
+			s := strings.Replace(string(o), `"length":111`, `"length":null`, 1)
+			return []byte(s)
+		}, nil, ErrCorruptDatabase},
+		{"unknown member field", nil, func(o []byte) []byte {
+			s := strings.Replace(string(o), `"cercano-agent.exe","length":111`, `"cercano-agent.exe","extra":1,"length":111`, 1)
+			return []byte(s)
+		}, nil, ErrCorruptDatabase},
+		{"nested object member value", nil, func(o []byte) []byte {
+			s := strings.Replace(string(o), `"path":"cercano-agent.exe"`, `"path":{"a":1}`, 1)
+			return []byte(s)
+		}, nil, ErrCorruptDatabase},
+		{"nested array member value", nil, func(o []byte) []byte {
+			s := strings.Replace(string(o), `"length":111`, `"length":[111]`, 1)
+			return []byte(s)
+		}, nil, ErrCorruptDatabase},
+		{"members not an array", nil, func(o []byte) []byte {
+			s := strings.Replace(string(o), `"members":[`, `"members":{`, 1)
+			return []byte(s)
+		}, nil, ErrCorruptDatabase},
+		{"member element not an object", nil, func(o []byte) []byte {
+			s := strings.Replace(string(o), `"members":[`, `"members":["cercano-agent.exe",`, 1)
+			return []byte(s)
+		}, nil, ErrCorruptDatabase},
+		{"empty members array", nil, func(o []byte) []byte {
+			s := strings.Replace(string(o), `"members":[`, `"members":[]`, 1)
 			return []byte(s)
 		}, nil, ErrCorruptDatabase},
 		{"wrong install id in payload", nil, func(o []byte) []byte {
