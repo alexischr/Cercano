@@ -428,7 +428,16 @@ func TestStreamToolLoop_ReplaysHistoryNoDuplication(t *testing.T) {
 // GetContextUsage returns a tokenizer-estimated sent size > 0 and the correct
 // model-max for the active cloud model.
 func TestStreamToolLoop_UpdatesContextMeter(t *testing.T) {
-	srv, _ := newServerWithStore(t)
+	srv, store := newServerWithStore(t)
+	ctx := context.Background()
+	if err := store.EnsureConversation(ctx, "conv-meter", "/p", "test-model"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveContextUsage(ctx, conversation.ContextUsage{
+		ConversationID: "conv-meter", Source: "compaction", TokensUsed: 4_936_958, RawTokens: 7_472_891,
+	}); err != nil {
+		t.Fatal(err)
+	}
 	srv.cfgSvc.Mutate(func(c *config.Config) { c.LocusMode = "cloud_only" })
 	prov := &scriptedProvider{
 		scripts: [][]llm.Block{{{Type: llm.BlockText, Text: "hello"}}},
@@ -453,8 +462,8 @@ func TestStreamToolLoop_UpdatesContextMeter(t *testing.T) {
 	if resp.TokensUsed <= 0 {
 		t.Errorf("TokensUsed = %d, want > 0 (provider-facing assembled estimate)", resp.TokensUsed)
 	}
-	if resp.RawTokens <= 0 {
-		t.Errorf("RawTokens = %d, want > 0 (cheap storage estimate)", resp.RawTokens)
+	if resp.RawTokens != 7_472_891 {
+		t.Errorf("RawTokens = %d, want separately measured history size 7472891", resp.RawTokens)
 	}
 	if want := int32(contextmeter.ModelMax("test-model")); resp.ModelMax != want {
 		t.Errorf("ModelMax = %d, want %d (cloud window)", resp.ModelMax, want)

@@ -74,9 +74,8 @@ func TestGetContextUsage_EmptyConversationReportsNone(t *testing.T) {
 	}
 }
 
-// Cold start: turns exist but no snapshot. The meter must still show a real
-// number (the reported bug was a confident 0 here), and the computed estimate
-// must be cached so later polls are a single row read.
+// Cold start: cache raw history separately, but do not pretend it measures
+// a provider request. The meter remains explicitly unknown until a request.
 func TestGetContextUsage_ColdStartWarmsRawEstimate(t *testing.T) {
 	s, store := newServerWithStore(t)
 	ctx := context.Background()
@@ -100,11 +99,11 @@ func TestGetContextUsage_ColdStartWarmsRawEstimate(t *testing.T) {
 	if resp.GetRawTokens() <= 0 {
 		t.Errorf("cold start must report positive raw tokens, got %d", resp.GetRawTokens())
 	}
-	if resp.GetTokensUsed() <= 0 {
-		t.Errorf("cold start must report positive tokens used, got %d", resp.GetTokensUsed())
+	if resp.GetTokensUsed() != 0 || resp.GetEstimatedRequestTokens() != 0 {
+		t.Errorf("cold start must not report raw history as request usage: %v", resp)
 	}
-	if got := resp.GetUsageSource(); got != "raw_estimate" {
-		t.Errorf("UsageSource = %q, want \"raw_estimate\" on cold start", got)
+	if got := resp.GetUsageSource(); got != "none" {
+		t.Errorf("UsageSource = %q, want \"none\" on cold start", got)
 	}
 
 	// The estimate should now be cached rather than recomputed each poll.

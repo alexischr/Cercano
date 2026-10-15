@@ -6061,6 +6061,13 @@ func (m Model) renderDevChip() string {
 }
 
 func (m Model) renderContextMeter() string {
+	if m.ctxUsageSource == "none" {
+		label := "ctx not computed yet"
+		if m.compacting {
+			label += " · compacting…"
+		}
+		return m.styles.Muted.Render(label)
+	}
 	// cumIn now carries the agent-reported cumulative used (set by
 	// ctxUsageMsg) rather than per-turn input. Fall back to cumIn+cumOut
 	// before the first usage RPC has returned.

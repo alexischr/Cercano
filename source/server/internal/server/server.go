@@ -2225,12 +2225,17 @@ func (s *Server) InvokeTool(ctx context.Context, req *proto.InvokeToolRequest) (
 	return resp, nil
 }
 
-// GetContextUsage implements proto.AgentServer. The persistence service owns
-// send-view/raw accounting; the front door overlays the latest live tool-loop
-// request estimate because only the loop sees the exact system prompt, advertised
-// tool schemas, and output reserve for the provider request.
+// GetContextUsage implements proto.AgentServer. Durable request accounting is
+// authoritative across restarts and workers. Live accounting is a fallback when
+// no request snapshot has been persisted.
 func (s *Server) GetContextUsage(ctx context.Context, req *proto.GetContextUsageRequest) (*proto.GetContextUsageResponse, error) {
-	// Prefer the latest live request accounting when available. It is already the
+	// Durable request accounting is shared with workers and survives resume.
+	// An in-process entry must not mask a newer request recorded by a worker.
+	durable, err := s.persistSvc.GetContextUsage(ctx, req)
+	if err == nil && durable.GetUsageSource() == "snapshot" {
+		return durable, nil
+	}
+	// Fall back to live request accounting when available. It is already the
 	// provider-bound, post-compaction/post-elision view and avoids re-walking giant
 	// persisted tool-result transcripts on every footer poll.
 	if snap, ok := s.latestRequestAccounting(req.GetConversationId()); ok && snap.EstimatedRequestTokens > 0 {
@@ -2257,7 +2262,7 @@ func (s *Server) GetContextUsage(ctx context.Context, req *proto.GetContextUsage
 		return resp, nil
 	}
 
-	return s.persistSvc.GetContextUsage(ctx, req)
+	return durable, err
 }
 
 // SuggestNextPrompt implements proto.AgentServer — delegates to persistSvc.
