@@ -16,12 +16,33 @@ import (
 // InitializeAccounting creates the new accounting population, leaving all
 // legacy tables untouched. Call from background startup, never inference.
 // TrackingSince is inserted once, transactionally with the new schema.
+//
+// Initialization must hold the SQLite writer lock before its first read. A
+// deferred transaction snapshots the schema during its first statement and
+// only upgrades to a write later; if the legacy event lane commits between
+// the read and the upgrade, SQLite aborts the upgrade immediately with
+// SQLITE_BUSY (SQLITE_BUSY_SNAPSHOT in WAL terms), so busy_timeout is never
+// consulted and the attempt cannot retry. BEGIN IMMEDIATE reserves the
+// writer first and waits on busy_timeout like every other writer in this
+// store, keeping the schema upgrade and tracking_since insert atomic.
 func (s *SQLiteStore) InitializeAccounting(ctx context.Context) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+	conn, err := s.db.Conn(ctx)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer conn.Close()
+	if _, err = conn.ExecContext(ctx, `BEGIN IMMEDIATE`); err != nil {
+		return err
+	}
+	committed := false
+	defer func() {
+		if committed {
+			return
+		}
+		// Rollback carries the caller's context so a canceled upgrade does
+		// not queue behind the busy_timeout to release the writer lock.
+		_, _ = conn.ExecContext(ctx, `ROLLBACK`)
+	}()
 	for _, statement := range []string{
 		`CREATE TABLE IF NOT EXISTS accounting_metadata (key TEXT PRIMARY KEY,value TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS inference_attempts (
@@ -48,7 +69,7 @@ func (s *SQLiteStore) InitializeAccounting(ctx context.Context) error {
    input_tokens INTEGER CHECK(input_tokens>=0),output_tokens INTEGER CHECK(output_tokens>=0))`,
 		`CREATE INDEX IF NOT EXISTS external_usage_reports_time ON external_usage_reports(reported_at)`,
 	} {
-		if _, err = tx.ExecContext(ctx, statement); err != nil {
+		if _, err = conn.ExecContext(ctx, statement); err != nil {
 			return err
 		}
 	}
@@ -58,27 +79,31 @@ func (s *SQLiteStore) InitializeAccounting(ctx context.Context) error {
 		`ALTER TABLE inference_attempts ADD COLUMN reasoning_chunks INTEGER CHECK(reasoning_chunks>=0)`,
 		`ALTER TABLE inference_attempts ADD COLUMN reasoning_bytes INTEGER CHECK(reasoning_bytes>=0)`,
 	} {
-		if _, err = tx.ExecContext(ctx, column); err != nil {
+		if _, err = conn.ExecContext(ctx, column); err != nil {
 			if !isDuplicateColumn(err) {
 				return err
 			}
 		}
 	}
 	var version string
-	err = tx.QueryRowContext(ctx, `SELECT value FROM accounting_metadata WHERE key='schema_version'`).Scan(&version)
+	err = conn.QueryRowContext(ctx, `SELECT value FROM accounting_metadata WHERE key='schema_version'`).Scan(&version)
 	if err != nil && err != sql.ErrNoRows {
 		return err
 	}
 	if err == nil && version != "1" {
 		return fmt.Errorf("unsupported accounting schema version %q", version)
 	}
-	if _, err = tx.ExecContext(ctx, `INSERT INTO accounting_metadata(key,value) VALUES('schema_version','1') ON CONFLICT(key) DO NOTHING`); err != nil {
+	if _, err = conn.ExecContext(ctx, `INSERT INTO accounting_metadata(key,value) VALUES('schema_version','1') ON CONFLICT(key) DO NOTHING`); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, `INSERT INTO accounting_metadata(key,value) VALUES('tracking_since',?) ON CONFLICT(key) DO NOTHING`, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+	if _, err = conn.ExecContext(ctx, `INSERT INTO accounting_metadata(key,value) VALUES('tracking_since',?) ON CONFLICT(key) DO NOTHING`, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if _, err = conn.ExecContext(ctx, `COMMIT`); err != nil {
+		return err
+	}
+	committed = true
+	return nil
 }
 
 func (s *SQLiteStore) TrackingSince(ctx context.Context) (time.Time, error) {
