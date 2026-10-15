@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/PuerkitoBio/goquery"
 )
 
 const (
@@ -74,6 +76,12 @@ func (f *Fetcher) Fetch(url string) (*FetchResult, error) {
 
 	// Extract text if HTML
 	if strings.Contains(contentType, "text/html") || strings.Contains(contentType, "application/xhtml") {
+		// Reddit can return a JavaScript verification form with HTTP 200.
+		// It is not the requested page; stripping its scripts hides the failure.
+		doc, parseErr := goquery.NewDocumentFromReader(strings.NewReader(content))
+		if parseErr == nil && doc.Find("form input[name='js_challenge']").Length() > 0 && doc.Find("form input[name='jsc_token']").Length() > 0 {
+			return nil, fmt.Errorf("JavaScript verification required fetching %s: the server returned a browser challenge, not the requested content (HTTP %d). This fetcher cannot execute JavaScript; open the URL in a browser or provide the page text", url, resp.StatusCode)
+		}
 		content = ExtractText(content)
 	}
 
