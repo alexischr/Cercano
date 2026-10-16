@@ -164,10 +164,10 @@ func (wp *wizardPage) captureBaseline() {
 }
 
 // rollbackBaseline restores the cloud configuration captured at wizard start:
-// profiles the run created are removed (deleting their keychain keys with
-// them), profiles it modified are restored, and the previously active profile
-// is re-activated. A key overwritten on a pre-existing profile cannot be
-// restored — keys are write-only by design.
+// only the baseline profiles are restored to their original state, preserving
+// any accounts that were added outside the wizard. Unconfirmed routing selections
+// are discarded by restoring the baseline configuration. A key overwritten on a
+// pre-existing profile cannot be restored — keys are write-only by design.
 func (wp *wizardPage) rollbackBaseline() error {
 	base := wp.state.Baseline
 	if base == nil || wp.agent == nil {
@@ -179,24 +179,11 @@ func (wp *wizardPage) rollbackBaseline() error {
 	if err != nil {
 		return err
 	}
-	inBase := map[string]bool{}
-	for _, b := range base.Profiles {
-		inBase[b.Name] = true
-	}
-	// Removing a currently-active profile clears the active slot agent-side,
-	// so a wizard-created active profile leaves cloud absent here and the
-	// re-activation below restores the original.
-	for _, p := range cur {
-		if !inBase[p.Name] {
-			if err := wp.agent.RemoveCloudProfile(ctx, p.Name); err != nil {
-				return fmt.Errorf("remove %s: %w", p.Name, err)
-			}
-		}
-	}
 	curByName := map[string]agentclient.CloudProfileInfo{}
 	for _, p := range cur {
 		curByName[p.Name] = p
 	}
+	// Only restore baseline profiles to their original state
 	for _, b := range base.Profiles {
 		c, ok := curByName[b.Name]
 		restored := wizardRestoreProfile(b)
@@ -315,7 +302,7 @@ func (wp *wizardPage) startKeyEntry() tea.Cmd {
 	cmd := ti.Focus()
 	wp.keyInput = ti
 	wp.keyEntry = true
-	wp.status = ""
+	wp.status = "connecting to cloud provider — this account will persist even if you cancel setup and can be managed in /config"
 	return cmd
 }
 
@@ -671,7 +658,7 @@ func (wp *wizardPage) Update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 func (wp *wizardPage) abandon() (closed bool) {
 	if !wp.abandonArmed {
 		wp.abandonArmed = true
-		wp.status = "abandon setup? changes made so far will be undone — press q again to confirm, any other key to keep going"
+		wp.status = "abandon setup? routing selections will be undone, but connected accounts will persist and can be managed in /config — press q again to confirm, any other key to keep going"
 		return false
 	}
 	if err := wp.rollbackFn(); err != nil {

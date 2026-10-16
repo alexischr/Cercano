@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"net"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -12,6 +13,8 @@ import (
 	"cercano/source/clients/cli/internal/theme"
 	"cercano/source/clients/cli/internal/wizard"
 	"cercano/source/server/pkg/agentclient"
+	"cercano/source/server/pkg/proto"
+	"google.golang.org/grpc"
 )
 
 func newTestWizardPage(t *testing.T) *wizardPage {
@@ -588,5 +591,188 @@ func TestWizardFinishDoesNotWriteRetiredCloudModel(t *testing.T) {
 	update := wizardFinishUpdate(wizard.State{LocusMode: "cloud_only", CloudProvider: "openai", TierPicks: map[string]string{"everyday.cloud": "selected"}})
 	if update.CloudModel != "" {
 		t.Fatalf("wizard still writes retired cloud_model=%q", update.CloudModel)
+	}
+}
+
+type rollbackProbeServer struct {
+	proto.UnimplementedAgentServer
+	removed []string
+	activeProfile string
+}
+
+func (s *rollbackProbeServer) GetCloudProfiles(context.Context, *proto.GetCloudProfilesRequest) (*proto.GetCloudProfilesResponse, error) {
+	return &proto.GetCloudProfilesResponse{Profiles: []*proto.CloudProfileInfo{
+		{Name: "baseline-account"},
+		{Name: "added-in-another-window"},
+	}}, nil
+}
+
+func (s *rollbackProbeServer) RemoveCloudProfile(_ context.Context, req *proto.RemoveCloudProfileRequest) (*proto.RemoveCloudProfileResponse, error) {
+	s.removed = append(s.removed, req.GetName())
+	return &proto.RemoveCloudProfileResponse{Ok: true}, nil
+}
+
+func (s *rollbackProbeServer) SetActiveCloudProfile(_ context.Context, req *proto.SetActiveCloudProfileRequest) (*proto.SetActiveCloudProfileResponse, error) {
+	s.activeProfile = req.GetName()
+	return &proto.SetActiveCloudProfileResponse{Ok: true}, nil
+}
+
+func (s *rollbackProbeServer) UpsertCloudProfile(_ context.Context, req *proto.UpsertCloudProfileRequest) (*proto.UpsertCloudProfileResponse, error) {
+	return &proto.UpsertCloudProfileResponse{Ok: true}, nil
+}
+
+func TestWizardRollbackProbe(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer()
+	stub := &rollbackProbeServer{}
+	proto.RegisterAgentServer(server, stub)
+	go server.Serve(listener)
+	defer server.Stop()
+	defer listener.Close()
+
+	client, err := agentclient.DialExisting(context.Background(), listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	wp := &wizardPage{
+		agent: client,
+		state: wizard.State{
+			Baseline: &wizard.Baseline{
+				ActiveProfile: "baseline-account",
+				Profiles: []wizard.ProfileSnapshot{
+					{Name: "baseline-account"},
+				},
+			},
+		},
+	}
+
+	if err := wp.rollbackBaseline(); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(stub.removed) != 0 {
+		t.Fatalf("cancellation deleted unrelated account(s): %v", stub.removed)
+	}
+}
+
+func TestWizardRollbackWithExistingAccounts(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer()
+	stub := &rollbackProbeServer{
+		activeProfile: "existing-account",
+	}
+	proto.RegisterAgentServer(server, stub)
+	go server.Serve(listener)
+	defer server.Stop()
+	defer listener.Close()
+
+	client, err := agentclient.DialExisting(context.Background(), listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	wp := &wizardPage{
+		agent: client,
+		state: wizard.State{
+			Baseline: &wizard.Baseline{
+				ActiveProfile: "existing-account",
+				Profiles: []wizard.ProfileSnapshot{
+					{Name: "existing-account"},
+				},
+			},
+		},
+	}
+
+	if err := wp.rollbackBaseline(); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(stub.removed) != 0 {
+		t.Fatalf("cancellation should not delete existing accounts: %v", stub.removed)
+	}
+}
+
+func TestWizardRollbackWithNoBaseline(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer()
+	stub := &rollbackProbeServer{}
+	proto.RegisterAgentServer(server, stub)
+	go server.Serve(listener)
+	defer server.Stop()
+	defer listener.Close()
+
+	client, err := agentclient.DialExisting(context.Background(), listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	wp := &wizardPage{
+		agent: client,
+		state: wizard.State{
+			Baseline: nil,
+		},
+	}
+
+	if err := wp.rollbackBaseline(); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(stub.removed) != 0 {
+		t.Fatalf("cancellation with no baseline should not delete accounts: %v", stub.removed)
+	}
+}
+
+func TestWizardRollbackWithMultipleAccounts(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer()
+	stub := &rollbackProbeServer{
+		activeProfile: "primary-account",
+	}
+	proto.RegisterAgentServer(server, stub)
+	go server.Serve(listener)
+	defer server.Stop()
+	defer listener.Close()
+
+	client, err := agentclient.DialExisting(context.Background(), listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	wp := &wizardPage{
+		agent: client,
+		state: wizard.State{
+			Baseline: &wizard.Baseline{
+				ActiveProfile: "primary-account",
+				Profiles: []wizard.ProfileSnapshot{
+					{Name: "primary-account"},
+					{Name: "secondary-account"},
+				},
+			},
+		},
+	}
+
+	if err := wp.rollbackBaseline(); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(stub.removed) != 0 {
+		t.Fatalf("cancellation should not delete any accounts: %v", stub.removed)
 	}
 }
