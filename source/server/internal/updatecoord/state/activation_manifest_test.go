@@ -432,6 +432,7 @@ func TestActivationManifestStrictDecodingRefusesCorruption(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = s.Close() })
 	snap := startCurrentOperation(t, s, "9.9.9")
 	m := validManifest(snap.ID, "9.9.9")
 	if _, err := s.SaveActivationManifest(ctx, m); err != nil {
