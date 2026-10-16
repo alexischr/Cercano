@@ -134,8 +134,8 @@ func TestWizardCloudOnlyNoOpenRuntime(t *testing.T) {
 
 // TestWizardFinishLeavesResumeStateOnFail pins the reversibility seam: a
 // failed apply keeps the persisted resume file so re-entry is guided from
-// the failed step, not from scratch. (Rollback of the applied part is the
-// existing rollbackBaseline path; this test covers the state side.)
+// the failed step, not from scratch. (Abandon now only clears state; there
+// is no cloud rollback.)
 func TestWizardFinishLeavesResumeStateOnFail(t *testing.T) {
 	wp := newTestWizardPage(t)
 	// Walk to open_only via the UI so the persisted state matches a real

@@ -17,6 +17,9 @@ import (
 	"google.golang.org/grpc"
 )
 
+// clearFunc is a test replacement for wizard.Clear to simulate failures
+var clearFunc = wizard.Clear
+
 func newTestWizardPage(t *testing.T) *wizardPage {
 	t.Helper()
 	t.Setenv("CERCANO_WIZARD_STATE", filepath.Join(t.TempDir(), "wizard_state.yaml"))
@@ -370,9 +373,6 @@ func TestWizardAbandonTrapdoor(t *testing.T) {
 	wp := newTestWizardPage(t)
 	press(t, wp, tea.KeyEnter) // cloud (first row) — state now persisted mid-run
 
-	rolledBack := false
-	wp.rollbackFn = func() error { rolledBack = true; return nil }
-
 	// First q only arms and asks.
 	if closed := pressQ(t, wp); closed {
 		t.Fatal("first q: page must stay open")
@@ -380,16 +380,10 @@ func TestWizardAbandonTrapdoor(t *testing.T) {
 	if !wp.abandonArmed || !strings.Contains(wp.status, "abandon setup?") {
 		t.Fatalf("first q: want armed + confirm status, got armed=%v status=%q", wp.abandonArmed, wp.status)
 	}
-	if rolledBack {
-		t.Fatal("first q: must not roll back yet")
-	}
 
-	// Second q rolls back, clears the resume file, closes.
+	// Second q clears the resume file and closes.
 	if closed := pressQ(t, wp); !closed {
 		t.Fatal("second q: want page closed")
-	}
-	if !rolledBack {
-		t.Error("second q: rollbackFn not called")
 	}
 	if _, ok := wizard.Load(); ok {
 		t.Error("abandon: resume state should be cleared")
@@ -398,7 +392,6 @@ func TestWizardAbandonTrapdoor(t *testing.T) {
 
 func TestWizardAbandonDisarmsOnOtherKey(t *testing.T) {
 	wp := newTestWizardPage(t)
-	wp.rollbackFn = func() error { t.Fatal("disarmed abandon must not roll back"); return nil }
 
 	pressQ(t, wp)
 	press(t, wp, tea.KeyDown) // any other key disarms
@@ -414,24 +407,28 @@ func TestWizardAbandonDisarmsOnOtherKey(t *testing.T) {
 	}
 }
 
-func TestWizardAbandonRollbackFailureStaysOpen(t *testing.T) {
+func TestWizardAbandonClearFailureStaysOpen(t *testing.T) {
 	wp := newTestWizardPage(t)
 	press(t, wp, tea.KeyEnter) // cloud (first row)
 
-	wp.rollbackFn = func() error { return fmt.Errorf("agent unreachable") }
+	// Simulate a Clear failure by temporarily making the Clear function return an error
+	originalClear := clearFunc
+	clearFunc = func() error { return fmt.Errorf("state write failed") }
+	defer func() { clearFunc = originalClear }()
+
 	pressQ(t, wp)
 	if closed := pressQ(t, wp); closed {
-		t.Fatal("rollback failure: page must stay open")
+		t.Fatal("clear failure: page must stay open")
 	}
-	if !strings.Contains(wp.status, "could not undo") {
-		t.Errorf("rollback failure: status %q should surface the error", wp.status)
+	if !strings.Contains(wp.status, "could not clear wizard state") {
+		t.Errorf("clear failure: status %q should surface the error", wp.status)
 	}
 	if _, ok := wizard.Load(); !ok {
-		t.Error("rollback failure: resume state must be preserved for retry")
+		t.Error("clear failure: resume state must be preserved for retry")
 	}
 
 	// Retry after the failure succeeds and closes.
-	wp.rollbackFn = func() error { return nil }
+	clearFunc = originalClear
 	pressQ(t, wp)
 	if closed := pressQ(t, wp); !closed {
 		t.Fatal("retry: want page closed")
@@ -594,41 +591,45 @@ func TestWizardFinishDoesNotWriteRetiredCloudModel(t *testing.T) {
 	}
 }
 
-type rollbackProbeServer struct {
+// cloudRPCSpy tracks cloud RPC calls made during wizard operations
+type cloudRPCSpy struct {
 	proto.UnimplementedAgentServer
-	removed []string
-	activeProfile string
+	removeCalls       []string
+	upsertCalls       []string
+	setActiveCalls    []string
+	getProfilesCalls  int
 }
 
-func (s *rollbackProbeServer) GetCloudProfiles(context.Context, *proto.GetCloudProfilesRequest) (*proto.GetCloudProfilesResponse, error) {
+func (s *cloudRPCSpy) GetCloudProfiles(context.Context, *proto.GetCloudProfilesRequest) (*proto.GetCloudProfilesResponse, error) {
+	s.getProfilesCalls++
 	return &proto.GetCloudProfilesResponse{Profiles: []*proto.CloudProfileInfo{
-		{Name: "baseline-account"},
-		{Name: "added-in-another-window"},
+		{Name: "existing-account"},
 	}}, nil
 }
 
-func (s *rollbackProbeServer) RemoveCloudProfile(_ context.Context, req *proto.RemoveCloudProfileRequest) (*proto.RemoveCloudProfileResponse, error) {
-	s.removed = append(s.removed, req.GetName())
+func (s *cloudRPCSpy) RemoveCloudProfile(_ context.Context, req *proto.RemoveCloudProfileRequest) (*proto.RemoveCloudProfileResponse, error) {
+	s.removeCalls = append(s.removeCalls, req.GetName())
 	return &proto.RemoveCloudProfileResponse{Ok: true}, nil
 }
 
-func (s *rollbackProbeServer) SetActiveCloudProfile(_ context.Context, req *proto.SetActiveCloudProfileRequest) (*proto.SetActiveCloudProfileResponse, error) {
-	s.activeProfile = req.GetName()
+func (s *cloudRPCSpy) SetActiveCloudProfile(_ context.Context, req *proto.SetActiveCloudProfileRequest) (*proto.SetActiveCloudProfileResponse, error) {
+	s.setActiveCalls = append(s.setActiveCalls, req.GetName())
 	return &proto.SetActiveCloudProfileResponse{Ok: true}, nil
 }
 
-func (s *rollbackProbeServer) UpsertCloudProfile(_ context.Context, req *proto.UpsertCloudProfileRequest) (*proto.UpsertCloudProfileResponse, error) {
+func (s *cloudRPCSpy) UpsertCloudProfile(_ context.Context, req *proto.UpsertCloudProfileRequest) (*proto.UpsertCloudProfileResponse, error) {
+	s.upsertCalls = append(s.upsertCalls, req.GetName())
 	return &proto.UpsertCloudProfileResponse{Ok: true}, nil
 }
 
-func TestWizardRollbackProbe(t *testing.T) {
+func TestWizardAbandonDoesNotMakeCloudRPCs(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := grpc.NewServer()
-	stub := &rollbackProbeServer{}
-	proto.RegisterAgentServer(server, stub)
+	spy := &cloudRPCSpy{}
+	proto.RegisterAgentServer(server, spy)
 	go server.Serve(listener)
 	defer server.Stop()
 	defer listener.Close()
@@ -642,34 +643,40 @@ func TestWizardRollbackProbe(t *testing.T) {
 	wp := &wizardPage{
 		agent: client,
 		state: wizard.State{
-			Baseline: &wizard.Baseline{
-				ActiveProfile: "baseline-account",
-				Profiles: []wizard.ProfileSnapshot{
-					{Name: "baseline-account"},
-				},
-			},
+			LocusMode: "cloud_primary",
+			Step:      wizard.StepCloud,
 		},
 	}
 
-	if err := wp.rollbackBaseline(); err != nil {
-		t.Fatal(err)
+	// Simulate a mid-wizard state and abandon
+	pressQ(t, wp) // First q arms
+	if closed := pressQ(t, wp); !closed {
+		t.Fatal("second q: want page closed")
 	}
 
-	if len(stub.removed) != 0 {
-		t.Fatalf("cancellation deleted unrelated account(s): %v", stub.removed)
+	// Verify no cloud RPCs were made during abandon
+	if spy.getProfilesCalls > 0 {
+		t.Errorf("abandon made %d GetCloudProfiles calls, expected 0", spy.getProfilesCalls)
+	}
+	if len(spy.removeCalls) > 0 {
+		t.Errorf("abandon made %d RemoveCloudProfile calls: %v, expected 0", len(spy.removeCalls), spy.removeCalls)
+	}
+	if len(spy.upsertCalls) > 0 {
+		t.Errorf("abandon made %d UpsertCloudProfile calls: %v, expected 0", len(spy.upsertCalls), spy.upsertCalls)
+	}
+	if len(spy.setActiveCalls) > 0 {
+		t.Errorf("abandon made %d SetActiveCloudProfile calls: %v, expected 0", len(spy.setActiveCalls), spy.setActiveCalls)
 	}
 }
 
-func TestWizardRollbackWithExistingAccounts(t *testing.T) {
+func TestWizardAbandonTwiceStillNoCloudRPCs(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := grpc.NewServer()
-	stub := &rollbackProbeServer{
-		activeProfile: "existing-account",
-	}
-	proto.RegisterAgentServer(server, stub)
+	spy := &cloudRPCSpy{}
+	proto.RegisterAgentServer(server, spy)
 	go server.Serve(listener)
 	defer server.Stop()
 	defer listener.Close()
@@ -683,32 +690,55 @@ func TestWizardRollbackWithExistingAccounts(t *testing.T) {
 	wp := &wizardPage{
 		agent: client,
 		state: wizard.State{
-			Baseline: &wizard.Baseline{
-				ActiveProfile: "existing-account",
-				Profiles: []wizard.ProfileSnapshot{
-					{Name: "existing-account"},
-				},
-			},
+			LocusMode: "cloud_primary",
+			Step:      wizard.StepCloud,
 		},
 	}
 
-	if err := wp.rollbackBaseline(); err != nil {
-		t.Fatal(err)
+	// First abandon
+	pressQ(t, wp)
+	if closed := pressQ(t, wp); !closed {
+		t.Fatal("first abandon: want page closed")
 	}
 
-	if len(stub.removed) != 0 {
-		t.Fatalf("cancellation should not delete existing accounts: %v", stub.removed)
+	// Second abandon (should close immediately since there's no state to clear)
+	wp2 := &wizardPage{
+		agent: client,
+		state: wizard.State{
+			LocusMode: "cloud_primary",
+			Step:      wizard.StepCloud,
+		},
+	}
+	pressQ(t, wp2)
+	if closed := pressQ(t, wp2); !closed {
+		t.Fatal("second abandon: want page closed (no state to persist)")
+	}
+
+	// Verify no cloud RPCs were made during either abandon
+	if spy.getProfilesCalls > 0 {
+		t.Errorf("two abandons made %d GetCloudProfiles calls, expected 0", spy.getProfilesCalls)
+	}
+	if len(spy.removeCalls) > 0 {
+		t.Errorf("two abandons made %d RemoveCloudProfile calls: %v, expected 0", len(spy.removeCalls), spy.removeCalls)
+	}
+	if len(spy.upsertCalls) > 0 {
+		t.Errorf("two abandons made %d UpsertCloudProfile calls: %v, expected 0", len(spy.upsertCalls), spy.upsertCalls)
+	}
+	if len(spy.setActiveCalls) > 0 {
+		t.Errorf("two abandons made %d SetActiveCloudProfile calls: %v, expected 0", len(spy.setActiveCalls), spy.setActiveCalls)
 	}
 }
 
-func TestWizardRollbackWithNoBaseline(t *testing.T) {
+func TestWizardAbandonWithDifferentCurrentMetadata(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := grpc.NewServer()
-	stub := &rollbackProbeServer{}
-	proto.RegisterAgentServer(server, stub)
+	spy := &cloudRPCSpy{
+		// Simulate that current metadata differs from what wizard would have captured
+	}
+	proto.RegisterAgentServer(server, spy)
 	go server.Serve(listener)
 	defer server.Stop()
 	defer listener.Close()
@@ -722,57 +752,28 @@ func TestWizardRollbackWithNoBaseline(t *testing.T) {
 	wp := &wizardPage{
 		agent: client,
 		state: wizard.State{
-			Baseline: nil,
+			LocusMode: "cloud_primary",
+			Step:      wizard.StepCloud,
 		},
 	}
 
-	if err := wp.rollbackBaseline(); err != nil {
-		t.Fatal(err)
+	// Abandon should not make any cloud RPCs even if current metadata differs
+	pressQ(t, wp)
+	if closed := pressQ(t, wp); !closed {
+		t.Fatal("abandon: want page closed")
 	}
 
-	if len(stub.removed) != 0 {
-		t.Fatalf("cancellation with no baseline should not delete accounts: %v", stub.removed)
+	// Verify no cloud RPCs were made
+	if spy.getProfilesCalls > 0 {
+		t.Errorf("abandon with different metadata made %d GetCloudProfiles calls, expected 0", spy.getProfilesCalls)
 	}
-}
-
-func TestWizardRollbackWithMultipleAccounts(t *testing.T) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	if len(spy.removeCalls) > 0 {
+		t.Errorf("abandon with different metadata made %d RemoveCloudProfile calls: %v, expected 0", len(spy.removeCalls), spy.removeCalls)
 	}
-	server := grpc.NewServer()
-	stub := &rollbackProbeServer{
-		activeProfile: "primary-account",
+	if len(spy.upsertCalls) > 0 {
+		t.Errorf("abandon with different metadata made %d UpsertCloudProfile calls: %v, expected 0", len(spy.upsertCalls), spy.upsertCalls)
 	}
-	proto.RegisterAgentServer(server, stub)
-	go server.Serve(listener)
-	defer server.Stop()
-	defer listener.Close()
-
-	client, err := agentclient.DialExisting(context.Background(), listener.Addr().String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer client.Close()
-
-	wp := &wizardPage{
-		agent: client,
-		state: wizard.State{
-			Baseline: &wizard.Baseline{
-				ActiveProfile: "primary-account",
-				Profiles: []wizard.ProfileSnapshot{
-					{Name: "primary-account"},
-					{Name: "secondary-account"},
-				},
-			},
-		},
-	}
-
-	if err := wp.rollbackBaseline(); err != nil {
-		t.Fatal(err)
-	}
-
-	if len(stub.removed) != 0 {
-		t.Fatalf("cancellation should not delete any accounts: %v", stub.removed)
+	if len(spy.setActiveCalls) > 0 {
+		t.Errorf("abandon with different metadata made %d SetActiveCloudProfile calls: %v, expected 0", len(spy.setActiveCalls), spy.setActiveCalls)
 	}
 }

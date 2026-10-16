@@ -3,7 +3,6 @@ package ui
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -91,11 +90,8 @@ type wizardPage struct {
 	// (the concrete gRPC client can't be faked).
 	downloadFn func(ctx context.Context, runtime, modelID string) error
 	// abandonArmed is the q-pressed-once confirm state: the next q abandons
-	// the run (rollback + clear); any other key disarms.
+	// the run (clear); any other key disarms.
 	abandonArmed bool
-	// rollbackFn undoes eager commits on abandon; defaults to
-	// rollbackBaseline, overridable in tests.
-	rollbackFn func() error
 }
 
 // wizardTierPurpose is the per-tier "what is this for" line shown on the
@@ -131,14 +127,8 @@ func newWizardPage(ag *agentclient.Client, p theme.Palette, s theme.Styles, w, h
 		return err
 	}
 	wp.commitKeyFn = wp.commitAPIKey
-	wp.rollbackFn = wp.rollbackBaseline
 	wp.loadProviders()
 	wp.discoverResources()
-	if !ok {
-		// Fresh run: snapshot the cloud config before any eager commits can
-		// touch it. Resumed runs keep the baseline captured when they started.
-		wp.captureBaseline()
-	}
 	wp.cursor = wp.defaultCursor()
 	return wp
 }
@@ -146,61 +136,7 @@ func newWizardPage(ag *agentclient.Client, p theme.Palette, s theme.Styles, w, h
 // captureBaseline records the pre-wizard cloud-profile configuration in the
 // run's state so abandoning can restore it. Best-effort: with no agent (or a
 // failed read) abandon still clears the run, it just can't undo commits.
-func (wp *wizardPage) captureBaseline() {
-	if wp.agent == nil {
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	profiles, active, err := wp.agent.GetCloudProfiles(ctx)
-	if err != nil {
-		return
-	}
-	b := &wizard.Baseline{ActiveProfile: active}
-	for _, p := range profiles {
-		b.Profiles = append(b.Profiles, wizardSnapshotProfile(p))
-	}
-	wp.state.Baseline = b
-}
 
-// rollbackBaseline restores the cloud configuration captured at wizard start:
-// only the baseline profiles are restored to their original state, preserving
-// any accounts that were added outside the wizard. Unconfirmed routing selections
-// are discarded by restoring the baseline configuration. A key overwritten on a
-// pre-existing profile cannot be restored — keys are write-only by design.
-func (wp *wizardPage) rollbackBaseline() error {
-	base := wp.state.Baseline
-	if base == nil || wp.agent == nil {
-		return nil
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	cur, active, err := wp.agent.GetCloudProfiles(ctx)
-	if err != nil {
-		return err
-	}
-	curByName := map[string]agentclient.CloudProfileInfo{}
-	for _, p := range cur {
-		curByName[p.Name] = p
-	}
-	// Only restore baseline profiles to their original state
-	for _, b := range base.Profiles {
-		c, ok := curByName[b.Name]
-		restored := wizardRestoreProfile(b)
-		if ok && c.Flavor == b.Flavor && c.Backend == b.Backend && c.BaseURL == b.BaseURL && c.Route == b.Route && (!b.DetailsCaptured || (c.Provider == b.Provider && c.Region == b.Region && c.AWSProfile == b.AWSProfile && reflect.DeepEqual(c.Choices.Clone(), restored.Choices.Clone()))) {
-			continue
-		}
-		if err := wp.agent.UpsertCloudProfile(ctx, restored); err != nil {
-			return fmt.Errorf("restore %s: %w", b.Name, err)
-		}
-	}
-	if base.ActiveProfile != "" && base.ActiveProfile != active {
-		if err := wp.agent.SetActiveCloudProfile(ctx, base.ActiveProfile); err != nil {
-			return fmt.Errorf("re-activate %s: %w", base.ActiveProfile, err)
-		}
-	}
-	return nil
-}
 
 // loadProviders caches the cloud-provider catalog from the agent for the
 // cloud step's provider list and profile lookups. Best-effort and nil-guarded,
@@ -661,12 +597,7 @@ func (wp *wizardPage) abandon() (closed bool) {
 		wp.status = "abandon setup? routing selections will be undone, but connected accounts will persist and can be managed in /config — press q again to confirm, any other key to keep going"
 		return false
 	}
-	if err := wp.rollbackFn(); err != nil {
-		wp.abandonArmed = false
-		wp.status = "could not undo setup changes: " + err.Error()
-		return false
-	}
-	if err := wizard.Clear(); err != nil {
+	if err := clearFunc(); err != nil {
 		wp.abandonArmed = false
 		wp.status = "could not clear wizard state: " + err.Error()
 		return false
