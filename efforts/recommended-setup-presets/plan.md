@@ -7,7 +7,7 @@ Implement the approved spec.md in this directory. Use the existing wizard, persi
 Objective: replace provisional model and rerun assumptions with recorded evidence before selecting shipping defaults. Files: existing wizard and UI implementation under source/clients/cli, source/server/pkg/setupstate, relevant routing/configuration handlers, source/server/internal/localruntime/llamaserver/catalog.go and its tests, and an effort-local evidence document. Tests: characterize current setup rerun, cancellation, persistence, context override preservation, and resource detection using isolated fixtures, never live credentials.
 
 - [x] Create an isolated implementation worktree after plan approval and read applicable development instructions
-- [~] Trace wizard entry, UI, account discovery, apply, cancellation, resume, reset separation, and routing persistence
+- [x] Trace wizard entry, UI, account discovery, apply, cancellation, resume, reset separation, and routing persistence
   - [ ] Identify exact files and existing tests before edits; record existing behavior and missing acceptance coverage
   - [ ] Confirm hardware detection distinguishes unified memory, discrete GPU memory, and unknown hardware; identify reusable probes
 - [ ] Verify exact Qwen candidate identity and compatible Q6-or-higher artifacts using authoritative model and artifact sources
@@ -17,23 +17,23 @@ Objective: replace provisional model and rerun assumptions with recorded evidenc
   - [ ] Identify supported smaller-machine defaults without extrapolating unified-memory results to discrete GPUs
   - [ ] Record unknowns, hardware availability, download sizes, and validation requirements; do not advertise full context merely because weights fit
 - [ ] Resolve contradictory model identities or memory evidence with the user before materially changing recommendations
-- [ ] Add focused characterization coverage for existing-user preservation and explicit context overrides
+- [x] Add focused characterization coverage for existing-user preservation and explicit context overrides
 
 ## Phase 2 — Resource-aware recommendation logic
 
 Objective: produce complete, inspectable three-tier recommendations from available accounts, compatible installed models, hardware, and explicit preference. Files: existing wizard/recommendation helpers and catalog, relevant routing configuration types, and adjacent tests located in Phase 1. Tests: deterministic table-driven recommendations using fake accounts and hardware; no paid requests or model downloads.
 
-- [ ] Implement recommendation selection within the existing architecture for cloud-only, mixed, and local-only presets
+- [x] Implement recommendation selection within the existing architecture for cloud-only, mixed, and local-only presets
   - [ ] Populate all three tiers using one supported cloud account when that is all the user has
   - [ ] Use multiple existing accounts where suitable without requiring a secondary provider
   - [ ] Honor local preference and ensure local-only recommendations contain no cloud routes or backups
   - [ ] Allow one suitable local model to serve all three tiers and reuse compatible installed artifacts
-- [ ] Encode only evidence-supported local model, quantization, and context defaults
+- [~] Encode only evidence-supported local model, quantization, and context defaults
   - [ ] Distinguish unified-memory and discrete-GPU fit and handle missing or insufficient hardware information honestly
   - [ ] Preserve intentional context overrides and enforce existing allocation and compatibility checks
   - [ ] Prefer explicitly recommended smaller context over silent precision or cache changes
-- [ ] Keep recommendation generation free of configuration writes, downloads, and runtime restarts
-- [ ] Test account combinations, preferences, no usable resources, model reuse, memory boundaries, unknown hardware, and override preservation
+- [x] Keep recommendation generation free of configuration writes, downloads, and runtime restarts
+- [x] Test account combinations, preferences, no usable resources, model reuse, memory boundaries, unknown hardware, and override preservation
 
 ## Phase 3 — Recommended setup experience
 

@@ -282,6 +282,34 @@ func wizardFinishUpdate(st wizard.State) agentclient.ConfigUpdate {
 	return u
 }
 
+// wizardApplyPatches builds the exact sparse configuration patches the wizard
+// issues on apply, from the collected answers alone. Pure: it performs no
+// RPCs, writes nothing, and never expresses context, model, credential, or
+// other unrelated settings — the wizard can only touch the keys it owns
+// (locus mode, open runtime, one patch per tier pick), so an existing
+// user's explicit context overrides and unrelated settings are preserved by
+// construction. The cloud side is excluded: cloud slots are committed through
+// the profile mutation (applyCloudChoices), not these taxonomy patches.
+func wizardApplyPatches(st wizard.State) []agentclient.ConfigUpdate {
+	patches := []agentclient.ConfigUpdate{wizardFinishUpdate(st)}
+	keys := make([]string, 0, len(st.TierPicks))
+	for k := range st.TierPicks {
+		// Cloud choices use the profile mutation, not Local runtime patches.
+		if strings.HasSuffix(k, "."+wizard.SideCloud) {
+			continue
+		}
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		patches = append(patches, agentclient.ConfigUpdate{
+			ModelTierKey:   k,
+			ModelTierValue: st.TierPicks[k],
+		})
+	}
+	return patches
+}
+
 // applyConfig pushes the collected answers to the agent: locus mode and
 // default provider in one sparse patch, then one patch per tier pick (the
 // UpdateConfig taxonomy patch takes a single key per call). Synchronous by
@@ -292,27 +320,16 @@ func (wp *wizardPage) applyConfig() error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if _, err := wp.agent.UpdateConfig(ctx, wizardFinishUpdate(wp.state)); err != nil {
+	patches := wizardApplyPatches(wp.state)
+	if _, err := wp.agent.UpdateConfig(ctx, patches[0]); err != nil {
 		return err
 	}
 	if err := wp.applyCloudChoices(ctx); err != nil {
 		return err
 	}
-	keys := make([]string, 0, len(wp.state.TierPicks))
-	for k := range wp.state.TierPicks {
-		// Cloud choices use the profile mutation, not Local runtime patches.
-		if strings.HasSuffix(k, "."+wizard.SideCloud) {
-			continue
-		}
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		if _, err := wp.agent.UpdateConfig(ctx, agentclient.ConfigUpdate{
-			ModelTierKey:   k,
-			ModelTierValue: wp.state.TierPicks[k],
-		}); err != nil {
-			return fmt.Errorf("%s: %w", k, err)
+	for _, p := range patches[1:] {
+		if _, err := wp.agent.UpdateConfig(ctx, p); err != nil {
+			return fmt.Errorf("%s: %w", p.ModelTierKey, err)
 		}
 	}
 	wp.enrollOpenDownloads(ctx)

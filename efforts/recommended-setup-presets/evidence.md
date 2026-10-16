@@ -32,6 +32,54 @@ Analytical cache component, assuming one sequence and 16-bit unquantized K and V
 
 A host resource probe reports 137438953472 bytes (128 GiB) RAM and approximately 1.2 TiB available disk. This host can potentially support bounded candidate validation but is not a physical 48/64/96 GB test machine. No downloads or runtime changes have been performed. A subsequent vm_stat/ps probe found an existing llama-server process (PID 14864) reporting 83,865,248 KiB RSS (about 80 GiB); the host also reported about 84.7 GiB wired memory and 13.9 GiB compressor occupancy. RSS, wired memory, and compressor figures must not be summed as independent model allocations. Nevertheless, there is no safely established headroom for another Qwen load with a large unquantized cache. Runtime validation needs an isolated host or a user-approved window to free the existing runtime's memory. Do not stop or restart the active runtime implicitly.
 
+## Wizard audit and recommendation logic — 2026-10-16 (dispatch session)
+
+### Phase 1 completion: wizard trace and characterization
+
+The wizard trace is now complete. `source/clients/cli/internal/ui/wizard_page.go` implements the apply, cancel, resume, and reset separation: `applyConfig` pushes a finish patch first (locus mode plus, only for open-using modes, `OpenRuntime: llama_server`), then explicit cloud-choice updates, then sorted tier patches; the abandon trapdoor restores the pre-run cloud profile baseline via `rollbackBaseline` before clearing wizard state; a failed apply or finish leaves the persisted resume state intact for nondestructive re-entry. No path overwrites unrelated user settings, and applying a preview remains an explicit user action.
+
+New characterization tests in `source/clients/cli/internal/ui/wizard_apply_test.go` pin these behaviors by reflection against `agentclient.ConfigUpdate` rather than by string matching:
+
+- `TestWizardApplyPatchesPreservesExistingUserConfig` — patches touch only locus-mode, runtime, tier, and cloud-provider fields for cloud-only, mixed, and open-only modes; every other config field is left untouched.
+- `TestWizardApplyPatchesOrderAndShape` — finish patch first, then cloud choices, then tier patches in sorted key order; no duplicate or malformed tier keys.
+- `TestWizardCloudOnlyNoOpenRuntime` — cloud-only recommendations never set `OpenRuntime`, so no local runtime is restarted.
+- `TestWizardFinishLeavesResumeStateOnFail` — a failing apply keeps `wp.state.Step` advanced and keeps the persisted resume file so re-entry resumes at the open step.
+
+### Phase 1 completion: hardware probe inventory
+
+- Darwin (`source/server/internal/sysram/sysram_darwin.go`): `Total()` reads `hw.memsize` (unified memory); `NonEvictable()` sums wired plus compressor pages from `vm_stat`.
+- Linux (`source/server/internal/sysram/sysram_linux.go`): `Total()` reads `MemTotal`; `NonEvictable()` approximates committed memory as `MemTotal − MemAvailable` (conservative direction; returns ok=false on old kernels without MemAvailable).
+- Other platforms (`sysram_other.go`): both probes report unknown, and callers render "unknown" instead of a fit verdict.
+
+Gap recorded honestly: no code path probes discrete-GPU (VRAM) memory anywhere in the tree. The server's RAM-band profile selection (`llamaserver/catalog.go ProfileForRAMEntries`) uses system RAM only; on a Linux box with a discrete GPU that is system RAM, not VRAM. The new recommendation engine does not extrapolate — it defers model fit to the server and reports hardware-unknown conditions with an explicit note — but a discrete-GPU-aware fit verdict would require a new server-side capability and is a remaining Phase 5 concern, not something improvised here.
+
+### Phase 2 implementation: recommendation engine
+
+`source/clients/cli/internal/ui/wizard_recommend.go` implements the pure recommendation engine within the existing architecture:
+
+- `recommendSetup(inputs wizardRecommendInputs) wizardRecommendation` is a pure function of state, shipped tier recommendations (`config.LoadTierRecommendations`), and the agent's runtime model catalog (`ListRuntimeModels`, which carries `SystemRamBytes` and `RecommendedOpenModels`). It performs no RPCs, config writes, downloads, or runtime restarts; `TestRecommendSetupPerformsNoWrites` pins that.
+- Local model selection defers to the server's memory-band selection (`RecommendedOpenModels`), falling back to `config.PickFirst` over shipped open candidates. When no server band answer is available the recommendation is annotated with the honest note `"Local picks fall back to shipped defaults; memory fit not yet verified on this machine."` rather than presenting a fit verdict; `TestRecommendDefersToServerMemoryBand` and `TestRecommendUnknownHardwareNotesHonestly` pin this.
+- Preference handling: local preference overrides a mixed default and vice versa; an unknown provider recommendation does not present a cloud route; cloud use in mixed presets is explicit (`CloudUsed`) and cloud-only sets no local tiers. `TestRecommendLocalPreferenceHonored`, `TestRecommendUnknownProvider`, `TestRecommendMixedDisclosesCloudUse`, `TestRecommendCloudOnlyOneAccount`, `TestRecommendLocalOnlyHasNoCloudRoutes` pin these.
+- No usable resources yields explicit empty picks with a note, never a fabricated default (`TestRecommendNoUsableResources`).
+- Already-downloaded artifacts are reused (`estimateIsLocal`), keeping model reuse visible and avoiding re-download recommendations (`TestRecommendReusesInstalledArtifacts`).
+- Tier picks use the existing `llama_server.<tier>` / `<tier>.cloud` slot conventions consumed by `applyConfig` (`TestRecommendTierPicksUsesSlotConventions`).
+- One bug found and fixed, disclosed here: `recommendSetup` previously could carry a stale `CloudProvider` into open-only recommendations (misrepresenting a cloud route that is not used); it now clears `CloudProvider` when the mode uses no cloud. Found by the local-only test, not by inspection alone.
+
+`wizard_recommend_test.go` uses a purpose-built `testCatalog` fixture whose `DownloadState` correctly reflects which models are on disk; an earlier fixture bug (marking all models downloaded, then clearing) was corrected in this session.
+
+Test results on this machine: `go test ./internal/ui/ ./internal/wizard/` passes; `go vet ./internal/ui/` passes; `go build ./...` (CLI module) passes. No server code was modified.
+
+### User-authorized deferral — Qwen shipping default gated
+
+The user explicitly authorized deferring memory-intensive runtime validation and continuing implementation with the Qwen shipping default gated. In line with that:
+
+- No candidate validation was performed. Nothing was downloaded, no models were loaded, the existing llama-server runtime (PID 14864, ~80 GiB RSS) was not stopped or restarted, and no claim is made that the Qwen candidate loads or works.
+- No Qwen catalog default was added: `llamacompat/arch.go` still rejects architecture `qwen35`, so adding it to curated recommendations would fail the compatibility gate; the stale-allowlist question remains open and no gate change was made.
+- The only evidence-supported 128 GiB local candidate remains the existing catalog's GLM-4.5-Air Q4_K_M entry (marked tested in the shipped catalog, though not freshly re-verified in this effort).
+- Smaller-machine defaults remain the existing catalog profiles (`ProfileForRAMEntries` picks the largest profile at or below machine RAM; smallest profile below the smallest tier is a catalog-data question, not changed here).
+
+Remaining before the Qwen gate can be lifted: pinned-binary architecture verification (allowlist update decision), actual Qwen GGUF tensor precision and runtime/tool-calling validation on an isolated host or user-approved memory window, GLM memory recalculation, and hardware-specific safe context defaults. These belong to Phase 1 verification tasks left pending and Phase 5 acceptance, and are out of scope for this dispatch.
+
 ## Outstanding verification
 
-Exact pinned binary architecture support; compatibility-gate update requirements; actual Qwen GGUF tensor precision and runtime/tool-calling behavior; GLM memory calculation; hardware-specific safe context defaults; smaller-machine candidates; and complete existing-user configuration-preservation audit. No shipping recommendation or application code has changed.
+Exact pinned binary architecture support; compatibility-gate update requirements; actual Qwen GGUF tensor precision and runtime/tool-calling behavior; GLM memory calculation; hardware-specific safe context defaults; smaller-machine candidates; discrete-GPU-aware fit (new server capability, not improvised here). Application code changed in this dispatch is limited to `wizard_recommend.go` and its tests plus wizard characterization tests in the CLI UI package.
