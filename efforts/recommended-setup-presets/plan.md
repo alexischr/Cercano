@@ -6,8 +6,8 @@ Implement the approved spec.md in this directory. Use the existing wizard, persi
 
 Objective: replace provisional model and rerun assumptions with recorded evidence before selecting shipping defaults. Files: existing wizard and UI implementation under source/clients/cli, source/server/pkg/setupstate, relevant routing/configuration handlers, source/server/internal/localruntime/llamaserver/catalog.go and its tests, and an effort-local evidence document. Tests: characterize current setup rerun, cancellation, persistence, context override preservation, and resource detection using isolated fixtures, never live credentials.
 
-- [ ] Create an isolated implementation worktree after plan approval and read applicable development instructions
-- [ ] Trace wizard entry, UI, account discovery, apply, cancellation, resume, reset separation, and routing persistence
+- [x] Create an isolated implementation worktree after plan approval and read applicable development instructions
+- [~] Trace wizard entry, UI, account discovery, apply, cancellation, resume, reset separation, and routing persistence
   - [ ] Identify exact files and existing tests before edits; record existing behavior and missing acceptance coverage
   - [ ] Confirm hardware detection distinguishes unified memory, discrete GPU memory, and unknown hardware; identify reusable probes
 - [ ] Verify exact Qwen candidate identity and compatible Q6-or-higher artifacts using authoritative model and artifact sources
