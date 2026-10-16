@@ -421,7 +421,10 @@ func (wp *wizardPage) rows() []wizardRow {
 		if wp.authPick {
 			return wizardAuthRows(wp.state.CloudProvider)
 		}
-		rows := make([]wizardRow, 0, len(wp.providers))
+		rows := make([]wizardRow, 0, len(wp.providers)+1)
+		if p := wp.existingActiveProfile(); p != nil {
+			rows = append(rows, wizardRow{Key: "use_existing", Label: "Use existing account: " + p.Name, Annotation: "keep authentication and model choices"})
+		}
 		for _, pr := range wp.providers {
 			ann := ""
 			disabled := false
@@ -716,6 +719,18 @@ func (wp *wizardPage) selectRow() (tea.Cmd, bool) {
 
 	switch wp.state.Step {
 	case wizard.StepCloud:
+		if !wp.authPick && row.Key == "use_existing" {
+			if p := wp.existingActiveProfile(); p != nil {
+				wp.state.CloudProvider = p.Provider
+				if wp.state.CloudProvider == "" {
+					wp.state.CloudProvider = p.Name
+				}
+				wp.state.AuthMethod = "existing"
+				wp.state.CloudPicksEdited = nil
+				wp.advance()
+			}
+			return nil, false
+		}
 		if !wp.authPick {
 			if wp.state.CloudProvider != row.Key {
 				wp.state.CloudPicksEdited = nil
@@ -883,6 +898,20 @@ func (wp *wizardPage) stepDesc() string {
 }
 
 // summary renders the collected answers on the final screen.
+// existingActiveProfile only offers a profile observed in the resource snapshot.
+// Reusing it does not authenticate, activate, or rewrite that account.
+func (wp *wizardPage) existingActiveProfile() *agentclient.CloudProfileInfo {
+	if wp.curActiveProfile == "" {
+		return nil
+	}
+	for i := range wp.curProfiles {
+		if wp.curProfiles[i].Name == wp.curActiveProfile {
+			return &wp.curProfiles[i]
+		}
+	}
+	return nil
+}
+
 func (wp *wizardPage) summary() string {
 	var b strings.Builder
 	b.WriteString("Review recommended setup (not yet applied):\n")
@@ -897,8 +926,20 @@ func (wp *wizardPage) summary() string {
 		}
 		fmt.Fprintf(&b, "  cloud:    %s (%s)%s\n", wp.state.CloudProvider, wp.state.AuthMethod, note)
 	}
+	if wizard.ModeUsesCloud(wp.state.LocusMode) && wp.state.AuthMethod == "existing" {
+		if p := wp.existingActiveProfile(); p != nil {
+			fmt.Fprintf(&b, "  account:  %s (unchanged)\n", p.Name)
+			for _, tier := range []struct{ label, quality string }{{"Deep reasoning", "premium"}, {"Everyday development", "standard"}, {"Lightweight tasks", "economy"}} {
+				model := p.EffectiveQualityModels[tier.quality]
+				if model == "" {
+					model = "current account default (not resolved)"
+				}
+				fmt.Fprintf(&b, "  %s: %s\n", tier.label, model)
+			}
+		}
+	}
 	for _, t := range wizardTierOrder {
-		if wizard.ModeUsesCloud(wp.state.LocusMode) && wp.state.CloudProvider != "" {
+		if wizard.ModeUsesCloud(wp.state.LocusMode) && wp.state.CloudProvider != "" && wp.state.AuthMethod != "existing" {
 			key := string(t) + "." + wizard.SideCloud
 			if pick := wp.state.TierPicks[key]; pick != "" {
 				fmt.Fprintf(&b, "  %-24s %s\n", key+":", pick)
