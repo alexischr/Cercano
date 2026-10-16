@@ -883,6 +883,15 @@ func main() {
 	if code, claimed := dispatchPrivateUpdate(os.Args[1:], os.Stdout, os.Stderr, nil); claimed {
 		os.Exit(code)
 	}
+	// Approved private installation locators: parse and remove the reserved
+	// flags before the subcommand switch and before any normal flag parsing,
+	// config load, DB open, provider, or agent start. A child launched with
+	// the locators must prove its actual executable and agent role against
+	// the protected completed selection or startup is refused here; without
+	// locators startup is unchanged.
+	if code, ok := claimInstallContext(os.Args); !ok {
+		os.Exit(code)
+	}
 	// Handle subcommands before flag parsing.
 	if len(os.Args) > 1 {
 		switch os.Args[1] {

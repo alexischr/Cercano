@@ -32,6 +32,16 @@ func init() {
 }
 
 func main() {
+	// Approved private installation locators: parse and remove the reserved
+	// flags BEFORE the normal flag set (they are unknown to flag.Parse) and
+	// before any config load or agent launch. A child launched with the
+	// locators must prove its actual executable and client role against the
+	// protected completed selection or startup is refused here; without
+	// locators startup is unchanged.
+	if code, ok := claimInstallContext(os.Args); !ok {
+		os.Exit(code)
+	}
+
 	handoffFD := flag.Int("internal-tui-handoff-fd", -1, "Private TUI restart descriptor")
 	resumeShort := flag.Bool("r", false, "Open the conversation history picker on launch (alias for --resume)")
 	resumeLong := flag.Bool("resume", false, "Open the conversation history picker on launch")
