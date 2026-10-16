@@ -65,6 +65,22 @@ type wizardPage struct {
 	// (tests seed it directly).
 	catalog   agentclient.RuntimeModelCatalog
 	catalogOK bool
+	// hasCloudAccount reports whether an active cloud profile exists,
+	// discovered once at construction (read-only GetCloudProfiles). It
+	// drives the resource-based locus recommendation: a working account is
+	// the fastest start and needs no model download.
+	hasCloudAccount bool
+	// curProfiles/curActiveProfile snapshot the cloud profiles as they
+	// stood when the run started, so the final preview can show proposed
+	// cloud tier changes against the live profile instead of silently
+	// replacing them. No secrets — keys are not readable by design.
+	curProfiles      []agentclient.CloudProfileInfo
+	curActiveProfile string
+	// curConfig is the current agent configuration, fetched once at
+	// construction (read-only GetConfig) for the same purpose: the preview's
+	// "was:" / "unchanged" markers. Nil with no agent or a failed read, in
+	// which case the preview simply omits the markers.
+	curConfig *agentclient.Config
 	status    string
 	// applyFn commits the collected answers on finish; defaults to
 	// applyConfig, overridable in tests (agentclient.Client is a concrete
@@ -117,6 +133,7 @@ func newWizardPage(ag *agentclient.Client, p theme.Palette, s theme.Styles, w, h
 	wp.commitKeyFn = wp.commitAPIKey
 	wp.rollbackFn = wp.rollbackBaseline
 	wp.loadProviders()
+	wp.discoverResources()
 	if !ok {
 		// Fresh run: snapshot the cloud config before any eager commits can
 		// touch it. Resumed runs keep the baseline captured when they started.
@@ -213,6 +230,43 @@ func (wp *wizardPage) loadProviders() {
 		return
 	}
 	wp.providers = view.Providers
+}
+
+// discoverResources reads what the user already has — an active cloud
+// account and the current configuration — once at construction,
+// read-only. The locus step's recommendation and the final preview's
+// change list are computed from these; discovery itself writes nothing,
+// downloads nothing, and restarts nothing.
+func (wp *wizardPage) discoverResources() {
+	if wp.agent == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if profiles, active, err := wp.agent.GetCloudProfiles(ctx); err == nil {
+		wp.curProfiles, wp.curActiveProfile = profiles, active
+		wp.hasCloudAccount = active != ""
+	}
+	if cfg, err := wp.agent.GetConfig(ctx); err == nil {
+		wp.curConfig = cfg
+	}
+}
+
+// recommendedLocus is the resource-based recommendation the locus step
+// pre-selects and marks: it prefers the user's standing choice (rerunning
+// users keep their configured mode), then a working cloud account
+// (cloud_only — all three tiers served by the one account, no model
+// download needed, local setup still available later via /m or /setup),
+// and finally connects an account (cloud_primary — a new user's fastest
+// usable start).
+func (wp *wizardPage) recommendedLocus() string {
+	if wp.curConfig != nil && wp.curConfig.LocusMode != "" {
+		return wp.curConfig.LocusMode
+	}
+	if wp.hasCloudAccount {
+		return "cloud_only"
+	}
+	return "cloud_primary"
 }
 
 // wizardPreset finds a catalog provider by id in the agent-fetched catalog and
@@ -340,12 +394,9 @@ func (wp *wizardPage) ID() contentPageID { return contentPageWizard }
 
 func (wp *wizardPage) SetSize(w, h int) { wp.width, wp.height = w, h }
 
-// wizardRecommendedLocus is the mode the locus step pre-selects and leads
-// with. cloud_primary gives the highest-quality frontier experience; it and
-// open_only are the two recommended options (see the locus rows).
-const wizardRecommendedLocus = "cloud_primary"
-
-// rows returns the current screen's choices.
+// rows returns the current screen's choices. The locus step annotates
+// whatever recommendedLocus() picks for this user's resources, not a fixed
+// pair of modes.
 func (wp *wizardPage) rows() []wizardRow {
 	switch wp.state.Step {
 	case wizard.StepLocus:
@@ -353,12 +404,16 @@ func (wp *wizardPage) rows() []wizardRow {
 			{Key: "cloud_primary", Label: "cloud primary", Annotation: "highest-quality frontier model in the cloud; open co-processor for background work."},
 			{Key: "open_only", Label: "open only", Annotation: "fast and fully private — work never leaves this machine."},
 			{Key: "open_primary", Label: "open primary", Annotation: "main model on this machine, cloud fallback — a cost saver."},
-			{Key: "cloud_only", Label: "cloud only", Annotation: "everything on the hosted API — skips Cercano's local co-processor."},
+			{Key: "cloud_only", Label: "cloud only", Annotation: "everything on the hosted API — skips Cercano's local co-processor. No local download."},
 		}
+		rec := wp.recommendedLocus()
 		for i := range rows {
-			switch rows[i].Key {
-			case "cloud_primary", "open_only":
-				rows[i].Annotation += "  (recommended)"
+			if rows[i].Key == rec {
+				if wp.curConfig != nil && wp.curConfig.LocusMode == rec {
+					rows[i].Annotation += "  (your current setup)"
+				} else {
+					rows[i].Annotation += "  (recommended)"
+				}
 			}
 		}
 		return rows
@@ -407,7 +462,7 @@ func (wp *wizardPage) rows() []wizardRow {
 		rows = append(rows, wizardRow{Key: "continue", Label: "continue", Annotation: "accept these models"})
 		return rows
 	case wizard.StepDone:
-		return []wizardRow{{Key: "finish", Label: "finish", Annotation: "apply these settings and close"}}
+		return []wizardRow{{Key: "finish", Label: "Use recommended setup", Annotation: "apply the previewed settings and close"}}
 	}
 	return nil
 }
@@ -516,7 +571,7 @@ func shouldRefill(current string, candidates []string) bool {
 func (wp *wizardPage) defaultCursor() int {
 	rows := wp.rows()
 	if wp.state.Step == wizard.StepLocus {
-		rec := wizardRecommendedLocus
+		rec := wp.recommendedLocus()
 		for i, r := range rows {
 			if r.Key == rec {
 				return i
@@ -806,7 +861,7 @@ func (wp *wizardPage) stepTitle() string {
 func (wp *wizardPage) stepDesc() string {
 	switch wp.state.Step {
 	case wizard.StepLocus:
-		return "How do you want to run Cercano?"
+		return "Cercano delegates work across three task tiers: Deep reasoning for hard problems, Everyday development for main chat, and Lightweight tasks for quick helpers. One account or one suitable local model can serve all three. Start with the recommended option; assignments remain editable."
 	case wizard.StepCloud:
 		if wp.authPick {
 			return "How do you want to authenticate?"
@@ -814,7 +869,7 @@ func (wp *wizardPage) stepDesc() string {
 		return "Pick your cloud provider."
 	case wizard.StepOpen:
 		var b strings.Builder
-		b.WriteString("Recommended open models, one per tier \u2014 verified to run on this machine:\n")
+		b.WriteString("Recommended open models, one per tier \u2014 runtime compatibility and available-memory checks still apply:\n")
 		for _, t := range wizardTierOrder {
 			fmt.Fprintf(&b, "  %-16s %s\n", strings.ReplaceAll(string(t), "_", "-"), wizardTierPurpose[t])
 		}
@@ -830,9 +885,12 @@ func (wp *wizardPage) stepDesc() string {
 // summary renders the collected answers on the final screen.
 func (wp *wizardPage) summary() string {
 	var b strings.Builder
-	b.WriteString("Setup complete:\n")
+	b.WriteString("Review recommended setup (not yet applied):\n")
 	fmt.Fprintf(&b, "  locus:    %s\n", strings.ReplaceAll(wp.state.LocusMode, "_", " "))
-	if wp.state.CloudProvider != "" {
+	if wp.curConfig != nil {
+		fmt.Fprintf(&b, "  previous mode: %s\n", wp.curConfig.LocusMode)
+	}
+	if wizard.ModeUsesCloud(wp.state.LocusMode) && wp.state.CloudProvider != "" {
 		note := ""
 		if wp.state.AuthMethod == "chatgpt" {
 			note = " \u2014 approve the ChatGPT sign-in window that opens in your browser"
@@ -840,23 +898,45 @@ func (wp *wizardPage) summary() string {
 		fmt.Fprintf(&b, "  cloud:    %s (%s)%s\n", wp.state.CloudProvider, wp.state.AuthMethod, note)
 	}
 	for _, t := range wizardTierOrder {
-		if wp.state.CloudProvider != "" {
+		if wizard.ModeUsesCloud(wp.state.LocusMode) && wp.state.CloudProvider != "" {
 			key := string(t) + "." + wizard.SideCloud
 			if pick := wp.state.TierPicks[key]; pick != "" {
 				fmt.Fprintf(&b, "  %-24s %s\n", key+":", pick)
 			}
 		}
 		key := wizardOpenTierKey(t)
-		if pick := wp.state.TierPicks[key]; pick != "" {
-			fmt.Fprintf(&b, "  %-24s %s\n", key+":", pick)
+		if pick := wp.state.TierPicks[key]; wizard.ModeUsesOpen(wp.state.LocusMode) && pick != "" {
+			fmt.Fprintf(&b, "  %-24s %s", key+":", pick)
+			if wp.curConfig != nil {
+				before := wp.curConfig.ModelTiers[key]
+				if before == pick {
+					b.WriteString(" (unchanged)")
+				} else if before != "" {
+					fmt.Fprintf(&b, " (was: %s)", before)
+				} else {
+					b.WriteString(" (was: automatic)")
+				}
+			}
+			b.WriteByte('\n')
 		}
 	}
 	if wizard.ModeUsesOpen(wp.state.LocusMode) {
-		b.WriteString("\nYour open models download in the background \u2014 watch progress with /m.")
+		b.WriteString("\nAfter confirmation, missing open models download in the background \u2014 watch progress with /m.")
 		if wp.state.LocusMode != "open_only" {
 			b.WriteString(" Cercano uses your cloud model until they finish.")
 		}
 	}
+	if wp.state.LocusMode == "open_only" {
+		b.WriteString("\nLocal-only: no cloud routes or backups. Local models must be ready before use.")
+	} else if wp.state.LocusMode == "open_primary" {
+		b.WriteString("\nCloud fallback is permitted when a cloud account is configured: work may leave this machine.")
+	} else if wp.state.LocusMode == "cloud_primary" {
+		b.WriteString("\nCloud serves main work; local models serve background work. Work may leave this machine.")
+	}
+	if wizard.ModeUsesOpen(wp.state.LocusMode) {
+		b.WriteString("\nContext: existing overrides are unchanged; runtime allocation and serving-capacity checks still apply. Hardware fit is not validated by this preview.")
+	}
+	b.WriteString("\nAssignments remain editable in /config. Go back to customize or press q twice to abandon.")
 	return strings.TrimRight(b.String(), "\n")
 }
 

@@ -45,7 +45,7 @@ Objective: introduce tiers, discover resources, recommend, and preview rather th
   - [ ] Ask preference questions only where answers affect assignments
   - [ ] Let working cloud users start without a local download, with local setup available later
   - [ ] Make all tier assignments, cloud use, backups, context recommendations, and download requirements visible
-- [ ] Add an explicit Use recommended setup confirmation after preview
+- [x] Add an explicit Use recommended setup confirmation after preview
 - [ ] Explain that assignments remain editable and link to existing configuration surfaces
 - [ ] Test navigation, preference changes, preview accuracy, and absence of hidden download or restart side effects
 
