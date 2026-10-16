@@ -29,7 +29,10 @@ func (v Vision) String() string {
 }
 
 // Identity represents a model's unique identifier without credentials
+// Profile is the account profile that made this observation, representing
+// credential-free account scope
 type Identity struct {
+	Profile  string
 	Provider string
 	BaseURL  string
 	Route    string

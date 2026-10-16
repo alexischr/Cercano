@@ -13,6 +13,7 @@ import (
 // value is cached and shipped to workers.
 func IdentityFor(p config.CloudProfile, model string) modelmetadata.Identity {
 	return modelmetadata.Identity{
+		Profile:  p.Name,
 		Provider: p.Provider,
 		BaseURL:  p.BaseURL,
 		Route:    p.Route,

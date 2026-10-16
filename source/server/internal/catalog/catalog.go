@@ -142,6 +142,10 @@ type Model struct {
 	// the source publishes none.
 	Downloads int
 	Likes     int
+	// Metadata contains detailed metadata about the model
+	Metadata Metadata
+	// Observations contains per-account observations of this model
+	Observations []AccountObservation
 }
 
 // Variant is one selectable form of a model. For a downloadable source that
@@ -177,6 +181,10 @@ type Detail struct {
 	Deprecated bool
 	ReplacedBy string
 	Variants   []Variant
+	// Metadata contains detailed metadata about the model
+	Metadata Metadata
+	// Observations contains per-account observations of this model
+	Observations []AccountObservation
 }
 
 // DownloadPlan is what the download manager consumes: concrete URLs (one, or
