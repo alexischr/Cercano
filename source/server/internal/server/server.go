@@ -937,6 +937,9 @@ func (s *Server) UpsertCloudProfile(ctx context.Context, req *proto.UpsertCloudP
 	if err := routingwire.ApplyChoices(&np, req.ModelChoices); err != nil {
 		return &proto.UpsertCloudProfileResponse{Error: err.Error()}, nil
 	}
+	if err := s.validateMistralChoiceEdits(ctx, previous, np); err != nil {
+		return &proto.UpsertCloudProfileResponse{Error: err.Error()}, nil
+	}
 	if req.GetCreateOnly() {
 		var collision error
 		err := s.cfgSvc.Mutate(func(current *config.Config) {

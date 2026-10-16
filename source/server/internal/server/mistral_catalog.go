@@ -178,3 +178,47 @@ func (s *Server) validateMistralSelection(ctx context.Context, profile, model st
 	}
 	return fmt.Errorf("Mistral model %q is not available to account %q; refresh that account's model list", model, profile)
 }
+
+// validateMistralChoiceEdits is called while profile mutation is serialized.
+// Unchanged pinned IDs are retained; newly chosen IDs require current evidence.
+func (s *Server) validateMistralChoiceEdits(ctx context.Context, previous, next config.CloudProfile) error {
+	if !isMistralProfile(next) {
+		return nil
+	}
+	requested := map[string]bool{}
+	for tier, id := range next.TierOverrides {
+		if id != "" && id != previous.TierOverrides[tier] {
+			requested[id] = false
+		}
+	}
+	if next.ImageModel != "" && next.ImageModel != previous.ImageModel {
+		requested[next.ImageModel] = true
+	}
+	if len(requested) == 0 {
+		return nil
+	}
+	key := ""
+	if secrets := s.cfgSvc.Secrets(); secrets != nil {
+		key, _ = secrets.Get(next.Name)
+	}
+	if key == "" {
+		return fmt.Errorf("save the Mistral account and API key before selecting its models")
+	}
+	models, err := mistralcatalog.Fetch(ctx, nil, mistralcatalog.Account{Name: next.Name, BaseURL: next.BaseURL, Key: key})
+	if err != nil {
+		return fmt.Errorf("Mistral model selection could not be verified: %w", err)
+	}
+	for id, vision := range requested {
+		found := false
+		for _, m := range models {
+			if m.ID == id && m.Metadata.AgentEligible(time.Now()) && (!vision || m.Metadata.Vision == catalog.CapabilitySupported) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("Mistral model %q is unavailable, retired, or lacks the required capabilities for account %q", id, next.Name)
+		}
+	}
+	return nil
+}

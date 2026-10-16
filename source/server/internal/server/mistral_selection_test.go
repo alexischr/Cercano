@@ -46,6 +46,19 @@ func TestMistralSessionSelectionRevalidatesAccount(t *testing.T) {
 	if _, err := s.SessionModel(t.Context(), req); err == nil {
 		t.Fatal("foreign model selected")
 	}
+	for _, tc := range []struct {
+		model string
+		ok    bool
+	}{{"exact", true}, {"foreign-private", false}, {"retired", false}} {
+		saved, err := s.UpsertCloudProfile(t.Context(), &proto.UpsertCloudProfileRequest{Name: "work", ModelChoices: &proto.ProfileModelChoices{TierOverrides: map[string]string{"standard": tc.model}}})
+		if err != nil || saved.Ok != tc.ok {
+			t.Fatalf("save %s: %v %v", tc.model, saved, err)
+		}
+	}
+	saved, err := s.UpsertCloudProfile(t.Context(), &proto.UpsertCloudProfileRequest{Name: "work", ModelChoices: &proto.ProfileModelChoices{ImageModel: "exact"}})
+	if err != nil || saved.Ok {
+		t.Fatalf("unconfirmed vision accepted: %v %v", saved, err)
+	}
 	revoked.Store(true)
 	req.Model = "exact"
 	if _, err := s.SessionModel(t.Context(), req); err == nil {
