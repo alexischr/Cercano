@@ -17,9 +17,6 @@ import (
 	"google.golang.org/grpc"
 )
 
-// clearFunc is a test replacement for wizard.Clear to simulate failures
-var clearFunc = wizard.Clear
-
 func newTestWizardPage(t *testing.T) *wizardPage {
 	t.Helper()
 	t.Setenv("CERCANO_WIZARD_STATE", filepath.Join(t.TempDir(), "wizard_state.yaml"))
@@ -412,9 +409,7 @@ func TestWizardAbandonClearFailureStaysOpen(t *testing.T) {
 	press(t, wp, tea.KeyEnter) // cloud (first row)
 
 	// Simulate a Clear failure by temporarily making the Clear function return an error
-	originalClear := clearFunc
-	clearFunc = func() error { return fmt.Errorf("state write failed") }
-	defer func() { clearFunc = originalClear }()
+	wp.clearFn = func() error { return fmt.Errorf("state write failed") }
 
 	pressQ(t, wp)
 	if closed := pressQ(t, wp); closed {
@@ -428,7 +423,7 @@ func TestWizardAbandonClearFailureStaysOpen(t *testing.T) {
 	}
 
 	// Retry after the failure succeeds and closes.
-	clearFunc = originalClear
+	wp.clearFn = nil
 	pressQ(t, wp)
 	if closed := pressQ(t, wp); !closed {
 		t.Fatal("retry: want page closed")
@@ -594,10 +589,10 @@ func TestWizardFinishDoesNotWriteRetiredCloudModel(t *testing.T) {
 // cloudRPCSpy tracks cloud RPC calls made during wizard operations
 type cloudRPCSpy struct {
 	proto.UnimplementedAgentServer
-	removeCalls       []string
-	upsertCalls       []string
-	setActiveCalls    []string
-	getProfilesCalls  int
+	removeCalls      []string
+	upsertCalls      []string
+	setActiveCalls   []string
+	getProfilesCalls int
 }
 
 func (s *cloudRPCSpy) GetCloudProfiles(context.Context, *proto.GetCloudProfilesRequest) (*proto.GetCloudProfilesResponse, error) {
@@ -623,6 +618,7 @@ func (s *cloudRPCSpy) UpsertCloudProfile(_ context.Context, req *proto.UpsertClo
 }
 
 func TestWizardAbandonDoesNotMakeCloudRPCs(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -670,6 +666,7 @@ func TestWizardAbandonDoesNotMakeCloudRPCs(t *testing.T) {
 }
 
 func TestWizardAbandonTwiceStillNoCloudRPCs(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -730,6 +727,7 @@ func TestWizardAbandonTwiceStillNoCloudRPCs(t *testing.T) {
 }
 
 func TestWizardAbandonWithDifferentCurrentMetadata(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)

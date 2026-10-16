@@ -92,6 +92,7 @@ type wizardPage struct {
 	// abandonArmed is the q-pressed-once confirm state: the next q abandons
 	// the run (clear); any other key disarms.
 	abandonArmed bool
+	clearFn      func() error // Defaults to wizard.Clear; injected by cancellation tests.
 }
 
 // wizardTierPurpose is the per-tier "what is this for" line shown on the
@@ -136,7 +137,6 @@ func newWizardPage(ag *agentclient.Client, p theme.Palette, s theme.Styles, w, h
 // captureBaseline records the pre-wizard cloud-profile configuration in the
 // run's state so abandoning can restore it. Best-effort: with no agent (or a
 // failed read) abandon still clears the run, it just can't undo commits.
-
 
 // loadProviders caches the cloud-provider catalog from the agent for the
 // cloud step's provider list and profile lookups. Best-effort and nil-guarded,
@@ -594,10 +594,14 @@ func (wp *wizardPage) Update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 func (wp *wizardPage) abandon() (closed bool) {
 	if !wp.abandonArmed {
 		wp.abandonArmed = true
-		wp.status = "abandon setup? routing selections will be undone, but connected accounts will persist and can be managed in /config — press q again to confirm, any other key to keep going"
+		wp.status = "abandon setup? unconfirmed routing selections will be discarded, but connected accounts will persist and can be managed in /config — press q again to confirm, any other key to keep going"
 		return false
 	}
-	if err := clearFunc(); err != nil {
+	clear := wp.clearFn
+	if clear == nil {
+		clear = wizard.Clear
+	}
+	if err := clear(); err != nil {
 		wp.abandonArmed = false
 		wp.status = "could not clear wizard state: " + err.Error()
 		return false
@@ -799,9 +803,9 @@ func (wp *wizardPage) stepDesc() string {
 		return "Cercano delegates work across three task tiers: Deep reasoning for hard problems, Everyday development for main chat, and Lightweight tasks for quick helpers. One account or one suitable local model can serve all three. Start with the recommended option; assignments remain editable."
 	case wizard.StepCloud:
 		if wp.authPick {
-			return "How do you want to authenticate?"
+			return "How do you want to authenticate? Connected accounts remain if you cancel setup; manage or remove them in /config."
 		}
-		return "Pick your cloud provider."
+		return "Pick your cloud provider. Connected accounts remain if you cancel setup; manage or remove them in /config."
 	case wizard.StepOpen:
 		var b strings.Builder
 		b.WriteString("Recommended open models, one per tier \u2014 runtime compatibility and available-memory checks still apply:\n")
@@ -897,7 +901,7 @@ func (wp *wizardPage) summary() string {
 	if wizard.ModeUsesOpen(wp.state.LocusMode) {
 		b.WriteString("\nContext: existing overrides are unchanged; runtime allocation and serving-capacity checks still apply. Hardware fit is not validated by this preview.")
 	}
-	b.WriteString("\nAssignments remain editable in /config. Go back to customize or press q twice to abandon.")
+	b.WriteString("\nAssignments remain editable in /config. Connected accounts remain if you cancel setup. Go back to customize or press q twice to discard unconfirmed selections.")
 	return strings.TrimRight(b.String(), "\n")
 }
 

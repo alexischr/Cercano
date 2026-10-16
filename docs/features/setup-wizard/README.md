@@ -393,18 +393,21 @@ Wires the previously planned open-model path end to end:
 - Quitting mid-wizard resumes where the user left off (wizard state persisted
   alongside config; a completed run clears it).
 
-### 2026-07-05 (later) — abandon & rollback (carried forward)
+### Cancellation (updated 2026-10-16)
 
-- **Abandon trapdoor.** `q` (pressed twice — the first press asks for
-  confirmation in the status line) abandons the run without keeping anything:
-  eager commits are rolled back and the resume file is cleared. `esc` keeps its
-  meaning (back / pause-and-resume-later).
-- **Baseline snapshot powers the rollback.** A fresh run snapshots the cloud
-  profiles + active profile into the wizard state file before any eager
-  commits. Abandon restores it: created profiles are removed (their keychain
-  keys with them), modified profiles are restored, the previously active
-  profile is re-activated. Known limit: a key overwritten on a pre-existing
-  profile can't be restored — keys are write-only.
+- Press `q` twice to discard unconfirmed routing selections and clear the local
+  resume file. `esc` still goes back or pauses for later resume.
+- Completed account connections **persist** after cancellation. This is disclosed
+  before authentication and in the preview and cancellation prompt. Manage or
+  remove connected accounts explicitly in `/config`.
+- Cancellation does not delete profiles, restore captured account metadata, or
+  change the active account. This also applies to old saved wizard runs containing
+  a baseline snapshot: legacy data is readable but never used for rollback.
+- New sign-in uses create-only account operations; it cannot silently overwrite
+  an existing account's credentials. Existing users can reuse their active account.
+- `/setup` is the **Run setup again** entry point; it resumes a paused run or starts
+  fresh without resetting configuration.
+
 - **Meridian profiles carry the proxy base URL** (`base_url` +
   `route: meridian`); an empty route on update preserves the existing profile's
   route so route-unaware clients can't demote meridian to direct.
