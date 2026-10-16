@@ -2523,6 +2523,74 @@ const (
 	acquisitionServe = "serve"
 )
 
+// catalogMetadataToProto converts catalog.Metadata to proto.CatalogMetadata
+func catalogMetadataToProto(m catalog.Metadata) *proto.CatalogMetadata {
+	out := &proto.CatalogMetadata{
+		DisplayName:   m.DisplayName,
+		ContextLength: int64(m.ContextLength),
+		Aliases:       m.Aliases,
+		Deprecated:    m.Deprecated,
+		ReplacedBy:    m.ReplacedBy,
+	}
+
+	if !m.RetirementAt.IsZero() {
+		out.RetirementAt = m.RetirementAt.UTC().Format(time.RFC3339)
+	}
+
+	// Convert capabilities
+	switch m.Chat {
+	case catalog.CapabilitySupported:
+		out.Chat = proto.CatalogCapability_SUPPORTED
+	case catalog.CapabilityUnsupported:
+		out.Chat = proto.CatalogCapability_UNSUPPORTED
+	default:
+		out.Chat = proto.CatalogCapability_UNKNOWN
+	}
+	switch m.Tools {
+	case catalog.CapabilitySupported:
+		out.Tools = proto.CatalogCapability_SUPPORTED
+	case catalog.CapabilityUnsupported:
+		out.Tools = proto.CatalogCapability_UNSUPPORTED
+	default:
+		out.Tools = proto.CatalogCapability_UNKNOWN
+	}
+	switch m.Vision {
+	case catalog.CapabilitySupported:
+		out.Vision = proto.CatalogCapability_SUPPORTED
+	case catalog.CapabilityUnsupported:
+		out.Vision = proto.CatalogCapability_UNSUPPORTED
+	default:
+		out.Vision = proto.CatalogCapability_UNKNOWN
+	}
+	switch m.Reasoning {
+	case catalog.CapabilitySupported:
+		out.Reasoning = proto.CatalogCapability_SUPPORTED
+	case catalog.CapabilityUnsupported:
+		out.Reasoning = proto.CatalogCapability_UNSUPPORTED
+	default:
+		out.Reasoning = proto.CatalogCapability_UNKNOWN
+	}
+
+	// Convert prices (preserve nil/0 distinction)
+	if m.PriceIn != nil {
+		out.PriceIn = m.PriceIn
+	}
+	if m.PriceOut != nil {
+		out.PriceOut = m.PriceOut
+	}
+
+	return out
+}
+
+// catalogAccountObservationToProto converts catalog.AccountObservation to proto.CatalogAccountObservation
+func catalogAccountObservationToProto(obs catalog.AccountObservation) *proto.CatalogAccountObservation {
+	return &proto.CatalogAccountObservation{
+		Profile:  obs.Profile,
+		BaseUrl:  obs.BaseURL,
+		Metadata: catalogMetadataToProto(obs.Metadata),
+	}
+}
+
 // catalogModelToProto maps a browse result onto the wire. Sparse — the list
 // view carries identity plus the attributes a user picks on; the CLI fetches
 // variants and sizes on drill-in (Detail). CatalogId carries the
@@ -2552,6 +2620,16 @@ func catalogModelToProto(m catalog.Model, servable bool) *proto.RuntimeModel {
 		Deprecated:    m.Deprecated,
 		ReplacedBy:    m.ReplacedBy,
 		ContextLength: int64(m.ContextLength),
+	}
+
+	// Add catalog metadata if available
+	if m.Metadata.Present() {
+		out.Metadata = catalogMetadataToProto(m.Metadata)
+	}
+
+	// Add account observations if available
+	for _, obs := range m.Observations {
+		out.AccountObservations = append(out.AccountObservations, catalogAccountObservationToProto(obs))
 	}
 	if servable {
 		// Served by a provider: no local runtime, no on-disk format, no

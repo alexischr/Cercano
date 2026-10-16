@@ -87,3 +87,8 @@ func (m Metadata) AgentEligible(now time.Time) bool {
 
 	return true
 }
+
+// Present reports whether any metadata was explicitly supplied.
+func (m Metadata) Present() bool {
+	return m.DisplayName != "" || m.ContextLength != 0 || m.Chat != CapabilityUnknown || m.Tools != CapabilityUnknown || m.Vision != CapabilityUnknown || m.Reasoning != CapabilityUnknown || len(m.Aliases) != 0 || m.Deprecated || !m.RetirementAt.IsZero() || m.ReplacedBy != "" || m.PriceIn != nil || m.PriceOut != nil
+}

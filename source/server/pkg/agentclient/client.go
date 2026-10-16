@@ -453,6 +453,69 @@ type RuntimeModel struct {
 	// ContextLength is the model's window when browse exposes it; 0 =
 	// unknown from the list alone.
 	ContextLength int64
+	// Metadata contains catalog metadata for the model
+	Metadata *CatalogMetadata
+	// AccountObservations contains per-account observations of this model
+	AccountObservations []CatalogAccountObservation
+}
+
+// CatalogCapability represents the support status of a model feature
+type CatalogCapability int
+
+const (
+	CatalogCapabilityUnknown     CatalogCapability = 0
+	CatalogCapabilitySupported   CatalogCapability = 1
+	CatalogCapabilityUnsupported CatalogCapability = 2
+)
+
+// CatalogMetadata contains metadata about a model's capabilities and pricing
+type CatalogMetadata struct {
+	// DisplayName is the human-readable name of the model
+	DisplayName string
+	// ContextLength is the model's context window size
+	ContextLength int64
+	// Chat is the capability for chat/completion functionality
+	Chat CatalogCapability
+	// Tools is the capability for function/tool calling
+	Tools CatalogCapability
+	// Vision is the capability for image input
+	Vision CatalogCapability
+	// Reasoning is the capability for reasoning features
+	Reasoning CatalogCapability
+	// Aliases are alternative names for the model
+	Aliases []string
+	// Deprecated marks whether the model has been retired
+	Deprecated bool
+	// RetirementAt is when the model will be retired (RFC3339 string; empty means unknown)
+	RetirementAt string
+	// ReplacedBy names the successor model when Deprecated is set
+	ReplacedBy string
+	// PriceIn is the per-million-token cost in micro-USD for input tokens
+	// 0 means known free, absent means unknown
+	PriceIn *int64
+	// PriceOut is the per-million-token cost in micro-USD for output tokens
+	// 0 means known free, absent means unknown
+	PriceOut *int64
+}
+
+// CatalogAccountObservation contains metadata about a model as observed by a specific account
+type CatalogAccountObservation struct {
+	// Profile is the account profile that made this observation
+	Profile string
+	// BaseURL is the endpoint URL used for this observation
+	BaseURL string
+	// Metadata is the model metadata as observed by this account
+	Metadata *CatalogMetadata
+}
+
+// CatalogAccountStatus contains credential-free sanitized status for a catalog account
+type CatalogAccountStatus struct {
+	// Profile is the account profile name
+	Profile string
+	// Error is the last error encountered (empty means no error)
+	Error string
+	// RefreshedAt is when the account status was last refreshed (RFC3339 string)
+	RefreshedAt string
 }
 
 // Acquisition values for RuntimeModel.Acquisition.
@@ -1212,8 +1275,9 @@ func (c *Client) GetRuntimeStatus(ctx context.Context) (*RuntimeStatus, error) {
 // library. CatalogUpdatedAt is zero when no online fetch has ever
 // succeeded.
 type RuntimeModelCatalog struct {
-	Models           []RuntimeModel
-	CatalogUpdatedAt time.Time
+	Models               []RuntimeModel
+	CatalogAccountStatus []CatalogAccountStatus
+	CatalogUpdatedAt     time.Time
 	// SystemRAMBytes is the server machine's total physical memory,
 	// for rendering fit verdicts against embedded estimates. 0 when
 	// the platform probe failed.
@@ -1226,13 +1290,14 @@ type RuntimeModelCatalog struct {
 	RecommendedOpenModels map[string]string
 }
 
-func (c *Client) ListRuntimeModels(ctx context.Context) (RuntimeModelCatalog, error) {
-	resp, err := c.agent.ListRuntimeModels(ctx, &proto.ListRuntimeModelsRequest{})
+func (c *Client) ListRuntimeModelsForProfile(ctx context.Context, profileName string) (RuntimeModelCatalog, error) {
+	resp, err := c.agent.ListRuntimeModels(ctx, &proto.ListRuntimeModelsRequest{ProfileName: profileName})
 	if err != nil {
 		return RuntimeModelCatalog{}, err
 	}
 	out := RuntimeModelCatalog{
 		Models:                mapRuntimeModels(resp.GetModels()),
+		CatalogAccountStatus:  mapCatalogAccountStatus(resp.GetCatalogAccountStatus()),
 		SystemRAMBytes:        resp.GetSystemRamBytes(),
 		RecommendedOpenModels: resp.GetRecommendedOpenModels(),
 	}
@@ -1242,6 +1307,10 @@ func (c *Client) ListRuntimeModels(ctx context.Context) (RuntimeModelCatalog, er
 		}
 	}
 	return out, nil
+}
+
+func (c *Client) ListRuntimeModels(ctx context.Context) (RuntimeModelCatalog, error) {
+	return c.ListRuntimeModelsForProfile(ctx, "")
 }
 
 func (c *Client) ListRuntimeEndpoints(ctx context.Context) ([]RuntimeEndpoint, error) {
@@ -1860,38 +1929,40 @@ func mapRuntimeModel(model *proto.RuntimeModel) RuntimeModel {
 		return RuntimeModel{}
 	}
 	return RuntimeModel{
-		ID:                 model.GetId(),
-		DisplayName:        model.GetDisplayName(),
-		Runtime:            model.GetRuntime(),
-		Source:             model.GetSource(),
-		Path:               model.GetPath(),
-		Format:             model.GetFormat(),
-		Family:             model.GetFamily(),
-		Quantization:       model.GetQuantization(),
-		SizeBytes:          model.GetSizeBytes(),
-		ModifiedAt:         parseRuntimeTime(model.GetModifiedAt()),
-		DownloadState:      model.GetDownloadState(),
-		DownloadURL:        model.GetDownloadUrl(),
-		DownloadedBytes:    model.GetDownloadedBytes(),
-		DownloadTotalBytes: model.GetDownloadTotalBytes(),
-		DownloadError:      model.GetDownloadError(),
-		RuntimeState:       model.GetRuntimeState(),
-		SupportsChat:       model.GetSupportsChat(),
-		SupportsEmbed:      model.GetSupportsEmbed(),
-		SupportsTools:      model.GetSupportsTools(),
-		Active:             model.GetActive(),
-		CatalogID:          model.GetCatalogId(),
-		CatalogSource:      model.GetCatalogSource(),
-		KVBytesPerToken:    model.GetKvBytesPerToken(),
-		MaxContextTokens:   model.GetMaxContextTokens(),
-		Acquisition:        model.GetAcquisition(),
-		Publisher:          model.GetPublisher(),
-		Kind:               model.GetKind(),
-		Deprecated:         model.GetDeprecated(),
-		ReplacedBy:         model.GetReplacedBy(),
-		PriceIn:            model.GetPriceIn(),
-		PriceOut:           model.GetPriceOut(),
-		ContextLength:      model.GetContextLength(),
+		ID:                  model.GetId(),
+		DisplayName:         model.GetDisplayName(),
+		Runtime:             model.GetRuntime(),
+		Source:              model.GetSource(),
+		Path:                model.GetPath(),
+		Format:              model.GetFormat(),
+		Family:              model.GetFamily(),
+		Quantization:        model.GetQuantization(),
+		SizeBytes:           model.GetSizeBytes(),
+		ModifiedAt:          parseRuntimeTime(model.GetModifiedAt()),
+		DownloadState:       model.GetDownloadState(),
+		DownloadURL:         model.GetDownloadUrl(),
+		DownloadedBytes:     model.GetDownloadedBytes(),
+		DownloadTotalBytes:  model.GetDownloadTotalBytes(),
+		DownloadError:       model.GetDownloadError(),
+		RuntimeState:        model.GetRuntimeState(),
+		SupportsChat:        model.GetSupportsChat(),
+		SupportsEmbed:       model.GetSupportsEmbed(),
+		SupportsTools:       model.GetSupportsTools(),
+		Active:              model.GetActive(),
+		CatalogID:           model.GetCatalogId(),
+		CatalogSource:       model.GetCatalogSource(),
+		KVBytesPerToken:     model.GetKvBytesPerToken(),
+		MaxContextTokens:    model.GetMaxContextTokens(),
+		Acquisition:         model.GetAcquisition(),
+		Publisher:           model.GetPublisher(),
+		Kind:                model.GetKind(),
+		Deprecated:          model.GetDeprecated(),
+		ReplacedBy:          model.GetReplacedBy(),
+		PriceIn:             model.GetPriceIn(),
+		PriceOut:            model.GetPriceOut(),
+		ContextLength:       model.GetContextLength(),
+		Metadata:            catalogMetadataFromProto(model.GetMetadata()),
+		AccountObservations: mapCatalogAccountObservations(model.GetAccountObservations()),
 	}
 }
 
@@ -2456,6 +2527,10 @@ func (c *Client) RestartMcpServer(ctx context.Context, name string) error {
 type CloudModelInfo struct {
 	ID          string
 	DisplayName string // human-friendly label; may equal ID
+	// Metadata contains catalog metadata for cloud models
+	Metadata *CatalogMetadata
+	// AccountObservations contains per-account observations of this model
+	AccountObservations []CatalogAccountObservation
 }
 
 // ListCloudProfileModels fetches the model catalog available to a specific
@@ -2471,7 +2546,12 @@ func (c *Client) ListCloudProfileModels(ctx context.Context, profileName string)
 	}
 	out := make([]CloudModelInfo, 0, len(resp.GetModels()))
 	for _, m := range resp.GetModels() {
-		out = append(out, CloudModelInfo{ID: m.GetId(), DisplayName: m.GetDisplayName()})
+		out = append(out, CloudModelInfo{
+			ID:                  m.GetId(),
+			DisplayName:         m.GetDisplayName(),
+			Metadata:            catalogMetadataFromProto(m.GetMetadata()),
+			AccountObservations: mapCatalogAccountObservations(m.GetAccountObservations()),
+		})
 	}
 	return out, resp.GetError(), nil
 }
@@ -2698,4 +2778,109 @@ func (c *Client) StartClaudeLogin(ctx context.Context, profileName, model string
 		}
 	}()
 	return out, nil
+}
+
+// catalogMetadataFromProto converts proto.CatalogMetadata to client.CatalogMetadata
+func catalogMetadataFromProto(p *proto.CatalogMetadata) *CatalogMetadata {
+	if p == nil {
+		return nil
+	}
+	return &CatalogMetadata{
+		DisplayName:   p.GetDisplayName(),
+		ContextLength: p.GetContextLength(),
+		Chat:          CatalogCapability(p.GetChat()),
+		Tools:         CatalogCapability(p.GetTools()),
+		Vision:        CatalogCapability(p.GetVision()),
+		Reasoning:     CatalogCapability(p.GetReasoning()),
+		Aliases:       p.GetAliases(),
+		Deprecated:    p.GetDeprecated(),
+		RetirementAt:  p.GetRetirementAt(),
+		ReplacedBy:    p.GetReplacedBy(),
+		PriceIn:       p.PriceIn,
+		PriceOut:      p.PriceOut,
+	}
+}
+
+// catalogMetadataToProto converts client.CatalogMetadata to proto.CatalogMetadata
+func catalogMetadataToProto(c *CatalogMetadata) *proto.CatalogMetadata {
+	if c == nil {
+		return nil
+	}
+	return &proto.CatalogMetadata{
+		DisplayName:   c.DisplayName,
+		ContextLength: c.ContextLength,
+		Chat:          proto.CatalogCapability(c.Chat),
+		Tools:         proto.CatalogCapability(c.Tools),
+		Vision:        proto.CatalogCapability(c.Vision),
+		Reasoning:     proto.CatalogCapability(c.Reasoning),
+		Aliases:       c.Aliases,
+		Deprecated:    c.Deprecated,
+		RetirementAt:  c.RetirementAt,
+		ReplacedBy:    c.ReplacedBy,
+		PriceIn:       c.PriceIn,
+		PriceOut:      c.PriceOut,
+	}
+}
+
+// catalogAccountObservationFromProto converts proto.CatalogAccountObservation to client.CatalogAccountObservation
+func catalogAccountObservationFromProto(p *proto.CatalogAccountObservation) *CatalogAccountObservation {
+	if p == nil {
+		return nil
+	}
+	return &CatalogAccountObservation{
+		Profile:  p.GetProfile(),
+		BaseURL:  p.GetBaseUrl(),
+		Metadata: catalogMetadataFromProto(p.GetMetadata()),
+	}
+}
+
+func mapCatalogAccountObservations(observations []*proto.CatalogAccountObservation) []CatalogAccountObservation {
+	if observations == nil {
+		return nil
+	}
+	out := make([]CatalogAccountObservation, 0, len(observations))
+	for _, obs := range observations {
+		out = append(out, *catalogAccountObservationFromProto(obs))
+	}
+	return out
+}
+
+func mapCatalogAccountStatus(statuses []*proto.CatalogAccountStatus) []CatalogAccountStatus {
+	if statuses == nil {
+		return nil
+	}
+	out := make([]CatalogAccountStatus, 0, len(statuses))
+	for _, status := range statuses {
+		out = append(out, *catalogAccountStatusFromProto(status))
+	}
+	return out
+}
+
+// cloudModelInfoFromProto converts proto.CloudModelInfo to client.CloudModelInfo
+func cloudModelInfoFromProto(p *proto.CloudModelInfo) *CloudModelInfo {
+	if p == nil {
+		return nil
+	}
+	accountObs := make([]CatalogAccountObservation, 0, len(p.GetAccountObservations()))
+	for _, obs := range p.GetAccountObservations() {
+		accountObs = append(accountObs, *catalogAccountObservationFromProto(obs))
+	}
+	return &CloudModelInfo{
+		ID:                  p.GetId(),
+		DisplayName:         p.GetDisplayName(),
+		Metadata:            catalogMetadataFromProto(p.GetMetadata()),
+		AccountObservations: accountObs,
+	}
+}
+
+// catalogAccountStatusFromProto converts proto.CatalogAccountStatus to client.CatalogAccountStatus
+func catalogAccountStatusFromProto(p *proto.CatalogAccountStatus) *CatalogAccountStatus {
+	if p == nil {
+		return nil
+	}
+	return &CatalogAccountStatus{
+		Profile:     p.GetProfile(),
+		Error:       p.GetError(),
+		RefreshedAt: p.GetRefreshedAt(),
+	}
 }
