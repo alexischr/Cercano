@@ -24,6 +24,7 @@ const (
 	cloudCommitSignInClaude
 	cloudCommitDiscard
 	cloudCommitAddAccount
+	cloudCommitProviderCatalog
 )
 
 type cloudCommitAction struct {
@@ -46,6 +47,8 @@ func classifyCloudCommit(key, value string) cloudCommitAction {
 		return cloudCommitAction{kind: cloudCommitSelect, rowID: strings.TrimPrefix(key, "cloud-row:")}
 	}
 	switch key {
+	case "cloud-provider-catalog":
+		return cloudCommitAction{kind: cloudCommitProviderCatalog}
 	case "cloud-add-account":
 		return cloudCommitAction{kind: cloudCommitAddAccount}
 	case "cloud-name", "cloud-flavor", "cloud-backend", "cloud-base-url", "cloud-model":
@@ -95,7 +98,7 @@ func (sp *settingsPage) applyCloudDraftEdit(field, value string) {
 // remain in the draft until explicit Save.
 func cloudCommitNeedsAgent(ca cloudCommitAction, draftNew bool) bool {
 	switch ca.kind {
-	case cloudCommitSave,
+	case cloudCommitProviderCatalog, cloudCommitSave,
 		cloudCommitDelete, cloudCommitSignIn, cloudCommitSignInClaude:
 		return true
 	case cloudCommitDraftEdit:
@@ -126,6 +129,22 @@ func (sp *settingsPage) commitCloud(ca cloudCommitAction) (string, tea.Cmd, erro
 		}
 	}
 	switch ca.kind {
+	case cloudCommitProviderCatalog:
+		if sp.cloudProviderCatalog != nil {
+			sp.cloudProviderCatalog = nil
+			return "provider catalog hidden", nil, nil
+		}
+		if sp.agent == nil {
+			return "no agent", nil, nil
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+		defer cancel()
+		catalog, err := sp.agent.ListRuntimeModels(ctx)
+		if err != nil {
+			return "", nil, err
+		}
+		sp.cloudProviderCatalog = &catalog
+		return "Mistral catalog across configured accounts; selections remain account-specific", nil, nil
 	case cloudCommitAddAccount:
 		if sp.cloudDirty {
 			return "save or discard existing edits before adding an account", nil, nil
@@ -163,6 +182,7 @@ func (sp *settingsPage) commitCloud(ca cloudCommitAction) (string, tea.Cmd, erro
 		sp.cloudModels = nil
 		sp.cloudModelsFetched = false
 		sp.cloudModelsError = ""
+		sp.cloudProviderCatalog = nil
 		// Profile creation must succeed before its credential can be stored.
 		// Keep the pending key and dirty state on failure so Save can retry.
 		sp.profilesLoaded = false

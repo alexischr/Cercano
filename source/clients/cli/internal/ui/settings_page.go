@@ -109,9 +109,10 @@ type settingsPage struct {
 	// stale entries. cloudModelsFetched marks that the fetch has been
 	// attempted (even if it failed) so the fallback list rendering path
 	// isn't confused with "not yet loaded".
-	cloudModels        []agentclient.CloudModelInfo
-	cloudModelsFetched bool
-	cloudModelsError   string
+	cloudModels          []agentclient.CloudModelInfo
+	cloudModelsFetched   bool
+	cloudModelsError     string
+	cloudProviderCatalog *agentclient.RuntimeModelCatalog
 	// pendingCommit is true while a config/permission commit is running in a
 	// background cmd. It gates re-entry (a second Enter mid-flight is a
 	// no-op) and drives the spinner on the form's status line.

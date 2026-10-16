@@ -33,6 +33,7 @@ func (sp *settingsPage) selectCloudRow(rowID string) {
 	sp.cloudModels = nil
 	sp.cloudModelsFetched = false
 	sp.cloudModelsError = ""
+	sp.cloudProviderCatalog = nil
 	switch {
 	case rowID == "other":
 		sp.cloudDraft.Flavor = "chat_completions"
@@ -137,6 +138,9 @@ func (sp *settingsPage) cloudDetailFields(r cloudRow) []form.Field {
 		out = append(out, form.NewText("cloud-base-url", il("base-url"), d.BaseURL, "https://…"))
 	}
 	out = append(out, sp.cloudChoiceFields(r)...)
+	if r.Preset != nil && r.Preset.ID == "mistral" {
+		out = append(out, sp.mistralProviderCatalogFields()...)
+	}
 	if sp.cloudModelsError != "" {
 		out = append(out, form.NewReadOnly("cloud-model-discovery-error", il("Model catalog"), sp.cloudModelsError, "Existing model IDs are retained; access has not been confirmed"))
 	}
@@ -205,6 +209,7 @@ func (sp *settingsPage) addCloudAccount() {
 	sp.cloudModels = nil
 	sp.cloudModelsFetched = false
 	sp.cloudModelsError = ""
+	sp.cloudProviderCatalog = nil
 }
 
 // draftHasKey reports whether the row's profile already has a stored key (drives
