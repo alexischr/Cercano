@@ -96,9 +96,12 @@ facts. This does not establish signed-reasoning replay or broad model reliabilit
 The test now caps each inference request at 1,024 output tokens and refuses a
 requested model absent from the eligible live catalog rather than substituting.
 
-The live catalog also confirms `mistral-ocr-4-1`, but OCR has not yet been tested:
-the conversation image inspection tool does not expose the attachment bytes to
-the direct OCR request. A local image path is needed for that test.
+The live catalog also confirms `mistral-ocr-4-1`, but OCR has not yet been tested.
+Cercano supports attachment-byte retrieval through `ExportImage`, but the live
+RPC probe returned not found for an image still accessible to `inspect_image`.
+Attachment-tool discoverability and the possible host/worker store mismatch are
+tracked in [issue #60](https://github.com/cercano-ai/Cercano/issues/60). The OCR
+request was not sent; this is not evidence of a Mistral OCR failure.
 
 The opt-in `TestMistralLiveAdapterSmoke` test requires both
 `CERCANO_MISTRAL_LIVE_SMOKE=1` and `MISTRAL_API_KEY` in its environment. It makes
