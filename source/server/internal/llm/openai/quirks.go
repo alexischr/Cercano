@@ -5,6 +5,7 @@ package openai
 // owned by the resilience engine above the adapters, where it is bounded,
 // class-driven, and narrated to the user.
 type Quirks struct {
+	MistralContent  bool
 	ImagesAsBase64  bool
 	NormalizeErrors bool
 }
@@ -15,6 +16,8 @@ type Quirks struct {
 // backend that opts out of base64 (it fetches image URLs server-side).
 func quirksFor(backend string) Quirks {
 	switch backend {
+	case "mistral":
+		return Quirks{ImagesAsBase64: true, NormalizeErrors: true, MistralContent: true}
 	case "openai":
 		return Quirks{ImagesAsBase64: false, NormalizeErrors: true}
 	default: // gemini, groq, "" or unrecognized

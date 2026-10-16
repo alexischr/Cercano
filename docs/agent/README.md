@@ -188,6 +188,13 @@ cloud_api_key: dummy
 
 The Anthropic provider streams through Meridian, which uses your Claude Max subscription. Cercano injects `x-opencode-session` / `x-opencode-request` / `x-opencode-agent-mode` headers per request so Meridian routes through its OpenCode adapter and bumps the SDK turn cap from 3 to 4.
 
+### Mistral API accounts
+
+Mistral has a provider preset, authenticated account-filtered model selection, and
+an explicit combined Mistral catalog within Cloud Providers. Metadata and runtime
+evidence remain account-specific. See [Mistral setup and verification status](mistral.md).
+The provider remains labeled untested until separately authorized live checks pass.
+
 ### Direct Anthropic API
 
 Set a real `cloud_api_key` and leave `cloud_base_url` empty.

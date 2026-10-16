@@ -56,3 +56,14 @@ func TestMistralEndpointChangeAndProfileRecreation(t *testing.T) {
 		t.Fatalf("recreated account inherited old key/access: %v %v", listed, err)
 	}
 }
+
+func TestMistralDirectRouteRecognition(t *testing.T) {
+	for _, route := range []string{"", "direct"} {
+		if !isMistralProfile(config.CloudProfile{Flavor: "chat_completions", Route: route, BaseURL: "https://api.mistral.ai/v1"}) {
+			t.Fatalf("direct route %q not recognized", route)
+		}
+	}
+	if isMistralProfile(config.CloudProfile{Flavor: "chat_completions", Route: "subscription", BaseURL: "https://api.mistral.ai/v1"}) {
+		t.Fatal("subscription misidentified as static Mistral")
+	}
+}

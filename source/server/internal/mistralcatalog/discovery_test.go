@@ -198,3 +198,21 @@ func TestCancellationWhileWaitingForSlotIsNotSuccess(t *testing.T) {
 		t.Fatalf("cancelled discovery reported success: %+v %+v", models, status)
 	}
 }
+
+func TestFineTunedLifecycleMetadata(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data":[{"id":"ft:private:model:123","type":"fine-tuned","name":"Private tuning","aliases":["private-latest"],"deprecation":"2099-12-31","deprecation_replacement_model":"replacement-id","capabilities":{"completion_chat":true,"function_calling":true,"vision":false,"reasoning":true}}]}`)
+	}))
+	defer srv.Close()
+	models, err := Fetch(context.Background(), srv.Client(), Account{"work", srv.URL, "key"})
+	if err != nil || len(models) != 1 {
+		t.Fatalf("models=%v err=%v", models, err)
+	}
+	m := models[0]
+	if m.ID != "ft:private:model:123" || m.Metadata.DisplayName != "Private tuning" || len(m.Metadata.Aliases) != 1 || m.Metadata.ReplacedBy != "replacement-id" || m.Metadata.Reasoning != catalog.CapabilitySupported || m.Metadata.PriceIn != nil || !m.Metadata.AgentEligible(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("lost fine-tuned metadata: %+v", m)
+	}
+	if m.Metadata.AgentEligible(time.Date(2099, 12, 31, 0, 0, 0, 0, time.UTC)) {
+		t.Fatal("retired model eligible")
+	}
+}

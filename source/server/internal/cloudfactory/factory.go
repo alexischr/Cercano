@@ -5,6 +5,8 @@ package cloudfactory
 
 import (
 	"fmt"
+	"net/url"
+	"strings"
 
 	"cercano/source/server/internal/inference"
 	"cercano/source/server/internal/llm/anthropic"
@@ -85,6 +87,12 @@ func BuildCloudProvider(p config.CloudProfile, apiKey string, opts ...Options) (
 			Route:   p.Route,
 		}), nil
 	case FlavorChatCompletions:
+		if p.Backend == "" {
+			endpoint, _ := url.Parse(p.BaseURL)
+			if p.Provider == "mistral" || (endpoint != nil && endpoint.User == nil && strings.EqualFold(endpoint.Hostname(), "api.mistral.ai")) {
+				p.Backend = "mistral"
+			}
+		}
 		return openai.NewClient(openai.Config{BaseURL: p.BaseURL, APIKey: apiKey, Model: p.Model, Backend: p.Backend, AccountingProfile: p.Name, SupportsVision: visionConfirmed(opts, p.Model)}), nil
 	case FlavorResponses:
 		if p.Route == responses.RouteChatGPT {

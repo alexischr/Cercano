@@ -13,8 +13,9 @@ import (
 
 // normalizingDoer wraps an HTTPDoer to rewrite array-shaped error bodies into the
 // object shape go-openai's ErrorResponse expects, before go-openai parses them.
-// Retry is handled by the httpx.RetryTransport this wraps (see client.go). 2xx
-// (streaming) responses pass through untouched — their bodies are never buffered.
+// Retry is handled above the adapter. Successful responses normally pass through
+// untouched. Mistral's explicit quirk converts structured content, lazily per SSE
+// line for streams and with a response-size bound for non-streaming completions.
 type diagnosticConversationIDKey struct{}
 type diagnosticRequestIDKey struct{}
 
@@ -56,6 +57,9 @@ func (d *normalizingDoer) Do(req *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 	log.Printf("[openai] http response: conv=%s request_id=%s method=%s path=%s status=%d content_length=%d", diagnosticConversationID(patched), diagnosticRequestID(patched), patched.Method, patched.URL.Path, resp.StatusCode, resp.ContentLength)
+	if d.quirks.MistralContent && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return normalizeMistralResponse(resp)
+	}
 	return d.normalize(resp), nil
 }
 

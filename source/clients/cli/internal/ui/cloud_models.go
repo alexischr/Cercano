@@ -41,7 +41,7 @@ func modelOptionsFromCatalog(models []agentclient.CloudModelInfo, currentID stri
 		}
 	}
 	if currentID != "" && !foundCurrent {
-		out = append(out, form.Option{Label: currentID, Value: currentID})
+		out = append(out, form.Option{Label: currentID + " (not in current catalog; access unconfirmed)", Value: currentID})
 		seen[currentID] = true
 	}
 	for _, m := range models {
@@ -70,9 +70,17 @@ func cloudModelMetadataLabel(m agentclient.CloudModelInfo, label string) string 
 	if md.ContextLength > 0 {
 		details = append(details, fmt.Sprintf("%d context", md.ContextLength))
 	}
-	if md.Vision == agentclient.CatalogCapabilitySupported {
-		details = append(details, "vision")
+	capability := func(name string, value agentclient.CatalogCapability) string {
+		switch value {
+		case agentclient.CatalogCapabilitySupported:
+			return name + " supported"
+		case agentclient.CatalogCapabilityUnsupported:
+			return name + " unsupported"
+		default:
+			return name + " unknown"
+		}
 	}
+	details = append(details, capability("chat", md.Chat), capability("tools", md.Tools), capability("vision", md.Vision), capability("reasoning", md.Reasoning))
 	if md.PriceIn == nil || md.PriceOut == nil {
 		details = append(details, "pricing unknown")
 	} else {

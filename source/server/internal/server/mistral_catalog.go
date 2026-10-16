@@ -16,7 +16,7 @@ import (
 )
 
 func isMistralProfile(p config.CloudProfile) bool {
-	if p.Flavor != "chat_completions" || p.Route != "" {
+	if p.Flavor != "chat_completions" || (p.Route != "" && p.Route != "direct") {
 		return false
 	}
 	if p.Provider == "mistral" {

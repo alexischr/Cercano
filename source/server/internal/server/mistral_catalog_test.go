@@ -1,10 +1,15 @@
 package server
 
 import (
+	"cercano/source/server/internal/cloudfactory"
+	"cercano/source/server/internal/inference"
+	"cercano/source/server/internal/llm"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"cercano/source/server/internal/modelevidence"
@@ -15,7 +20,39 @@ import (
 
 func TestMistralServerCatalogAndKeyLifecycle(t *testing.T) {
 	s, _ := newTestServer()
+	var chatCalls atomic.Int32
 	fixture := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/chat/completions" {
+			if r.Header.Get("Authorization") != "Bearer work" {
+				t.Error("tool roundtrip used wrong account")
+			}
+			var request struct {
+				Model    string `json:"model"`
+				Messages []struct {
+					Role       string `json:"role"`
+					ToolCallID string `json:"tool_call_id"`
+					Content    string `json:"content"`
+				} `json:"messages"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Error(err)
+			}
+			if request.Model != "common" {
+				t.Errorf("wrong model %q", request.Model)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			if chatCalls.Add(1) == 1 {
+				fmt.Fprint(w, `{"choices":[{"message":{"role":"assistant","tool_calls":[{"id":"abc123XYZ","type":"function","function":{"name":"Read","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}`)
+			} else {
+				last := request.Messages[len(request.Messages)-1]
+				if last.Role != "tool" || last.ToolCallID != "abc123XYZ" || last.Content != "fixture" {
+					t.Errorf("tool correlation=%+v", last)
+				}
+				fmt.Fprint(w, `{"choices":[{"message":{"role":"assistant","content":"done"},"finish_reason":"stop"}]}`)
+			}
+			return
+		}
+
 		switch r.Header.Get("Authorization") {
 		case "Bearer personal":
 			fmt.Fprint(w, `{"data":[{"id":"common","name":"Common","max_context_length":4096,"capabilities":{"completion_chat":true,"function_calling":true,"vision":false}},{"id":"personal-only","capabilities":{"completion_chat":true,"function_calling":true}}]}`)
@@ -68,6 +105,26 @@ func TestMistralServerCatalogAndKeyLifecycle(t *testing.T) {
 	snapshot := s.modelEvidence().Snapshot(ctx, []modelmetadata.Identity{personalID, workID})
 	if len(snapshot) != 2 {
 		t.Fatalf("snapshot collapsed accounts: %+v", snapshot)
+	}
+	workProfile := cfg.CloudProfiles[1]
+	workProfile.Model = "common"
+	workKey, err := s.cfgSvc.Secrets().Get("work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := cloudfactory.BuildCloudProvider(workProfile, workKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := inference.Call{Model: "common", Messages: []llm.Message{{Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockText, Text: "read fixture"}}}}}
+	first, err := provider.Chat(ctx, call)
+	if err != nil || len(first.Blocks) != 1 || first.Blocks[0].ToolUseID != "abc123XYZ" {
+		t.Fatalf("tool call: %+v %v", first, err)
+	}
+	call.Messages = append(call.Messages, llm.Message{Role: llm.RoleAssistant, Blocks: first.Blocks}, llm.Message{Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockToolResult, ToolUseRef: "abc123XYZ", Content: "fixture"}}})
+	second, err := provider.Chat(ctx, call)
+	if err != nil || len(second.Blocks) != 1 || second.Blocks[0].Text != "done" || chatCalls.Load() != 2 {
+		t.Fatalf("tool result: %+v %v", second, err)
 	}
 	change, err := s.SetCloudProfileKey(ctx, &proto.SetCloudProfileKeyRequest{Name: "personal", ApiKey: "bad"})
 	if err != nil || !change.Ok {

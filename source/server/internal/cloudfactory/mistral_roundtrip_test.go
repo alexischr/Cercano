@@ -83,3 +83,44 @@ func TestMistralFactoryStreamingToolRoundtrip(t *testing.T) {
 		t.Fatalf("roundtrip=%+v calls=%d", second, calls.Load())
 	}
 }
+
+func TestMistralStructuredTextContent(t *testing.T) {
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: "+`{"id":"structured","choices":[{"index":0,"delta":{"role":"assistant","content":[{"type":"thinking","thinking":[{"type":"text","text":"private thought"}]},{"type":"text","text":"answer"}]},"finish_reason":"stop"}]}`+"\n\ndata: [DONE]\n\n")
+	}))
+	defer api.Close()
+	p, err := BuildCloudProvider(config.CloudProfile{Name: "work", Provider: "mistral", Flavor: "chat_completions", BaseURL: api.URL + "/v1", Model: "mistral-fixture"}, "key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, err := p.StreamChat(t.Context(), inference.Call{Model: "mistral-fixture"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	result, err := llm.CollectStream(t.Context(), stream, nil, nil)
+	if err != nil || len(result.Blocks) != 1 || result.Blocks[0].Text != "answer" {
+		t.Fatalf("structured text: %+v %v", result, err)
+	}
+}
+
+func TestMistralFactoryHTTPFailures(t *testing.T) {
+	for _, status := range []int{401, 429, 500} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(status)
+				fmt.Fprint(w, `{"message":"fixture refusal"}`)
+			}))
+			defer api.Close()
+			p, err := BuildCloudProvider(config.CloudProfile{Name: "work", Provider: "mistral", Flavor: "chat_completions", BaseURL: api.URL + "/v1", Model: "fixture"}, "key")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = p.Chat(t.Context(), inference.Call{Model: "fixture"}); err == nil {
+				t.Fatal("HTTP failure became success")
+			}
+		})
+	}
+}
