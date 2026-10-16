@@ -24,7 +24,7 @@ func RequiresStaticKey(p config.CloudProfile) bool {
 		return false
 	}
 	switch strings.ToLower(endpoint.Hostname()) {
-	case "api.deepinfra.com", "api.openai.com", "api.anthropic.com", "api.cerebras.ai":
+	case "api.deepinfra.com", "api.openai.com", "api.anthropic.com", "api.cerebras.ai", "api.mistral.ai":
 		return true
 	}
 	return false

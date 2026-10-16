@@ -77,10 +77,11 @@ type Registry interface {
 // own index cache; this second, much smaller cache exists so a per-turn or
 // per-request question does not re-enter the source's locking on every call.
 type Resolver struct {
-	reg     Registry
-	ttl     time.Duration
-	now     func() time.Time
-	timeout time.Duration
+	accountLookup func(context.Context, modelmetadata.Identity) (modelmetadata.Evidence, bool)
+	reg           Registry
+	ttl           time.Duration
+	now           func() time.Time
+	timeout       time.Duration
 
 	mu     sync.Mutex
 	cached map[modelmetadata.Identity]cacheEntry
@@ -101,6 +102,12 @@ const (
 
 // Option customizes a Resolver.
 type Option func(*Resolver)
+
+// WithAccountLookup installs an authenticated lookup whose owner handles freshness.
+// Handled identities bypass the shared cache and shipped/public fallback entirely.
+func WithAccountLookup(fn func(context.Context, modelmetadata.Identity) (modelmetadata.Evidence, bool)) Option {
+	return func(r *Resolver) { r.accountLookup = fn }
+}
 
 // WithTTL overrides how long a resolved answer is reused.
 func WithTTL(d time.Duration) Option { return func(r *Resolver) { r.ttl = d } }
@@ -136,6 +143,11 @@ func New(reg Registry, opts ...Option) *Resolver {
 func (r *Resolver) Resolve(ctx context.Context, id modelmetadata.Identity) modelmetadata.Evidence {
 	if id.Model == "" {
 		return modelmetadata.Evidence{}
+	}
+	if r.accountLookup != nil {
+		if ev, handled := r.accountLookup(ctx, id); handled {
+			return ev.Normalized()
+		}
 	}
 	if ev, ok := r.cachedFor(id); ok {
 		return ev

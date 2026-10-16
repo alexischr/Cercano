@@ -4,6 +4,7 @@ import (
 	"cercano/source/server/pkg/accountidentity"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -320,6 +321,9 @@ func inferProviderVendor(p CloudProfile) string {
 // between the two namespaces, and would put an import edge from this public
 // package into an internal one. The lists are pinned by tests on both sides.
 func vendorByHost(baseURL string) string {
+	if u, err := url.Parse(baseURL); err == nil && u.User == nil && strings.EqualFold(u.Hostname(), "api.mistral.ai") {
+		return "mistral"
+	}
 	host := strings.ToLower(baseURL)
 	switch {
 	case strings.Contains(host, "deepinfra."):

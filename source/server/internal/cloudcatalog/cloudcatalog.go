@@ -7,7 +7,10 @@
 // dependency — so it is trivially unit-testable and safe to call under a lock.
 package cloudcatalog
 
-import "strings"
+import (
+	"net/url"
+	"strings"
+)
 
 // Tier classifies how much we trust a provider today. It drives the right-side
 // annotation the CLI shows ("(untested)", "(coming soon)").
@@ -54,6 +57,7 @@ func Catalog() []Provider {
 		{ID: "together", Label: "together", Flavor: "chat_completions", Backend: "", BaseURL: "https://api.together.xyz/v1", Tier: TierUntested},
 		{ID: "openrouter", Label: "openrouter", Flavor: "chat_completions", Backend: "", BaseURL: "https://openrouter.ai/api/v1", Tier: TierUntested},
 		{ID: "deepseek", Label: "deepseek", Flavor: "chat_completions", Backend: "", BaseURL: "https://api.deepseek.com", Tier: TierUntested},
+		{ID: "mistral", Label: "mistral", Flavor: "chat_completions", BaseURL: "https://api.mistral.ai/v1", Tier: TierUntested},
 		{ID: "cerebras", Label: "cerebras", Flavor: "chat_completions", Backend: "", BaseURL: "https://api.cerebras.ai/v1", Tier: TierUntested},
 		{ID: "bedrock", Label: "bedrock", Flavor: "bedrock", BaseURL: "", Tier: TierComingSoon},
 	}
@@ -184,6 +188,9 @@ func ProviderIDFor(p ProfileRef) string {
 // providerIDByHost maps a base URL to a backend-less catalog provider by a
 // substring of its host. Returns "" when no known host matches.
 func providerIDByHost(baseURL string) string {
+	if u, err := url.Parse(baseURL); err == nil && u.User == nil && strings.EqualFold(u.Hostname(), "api.mistral.ai") {
+		return "mistral"
+	}
 	host := strings.ToLower(baseURL)
 	switch {
 	case strings.Contains(host, "deepinfra."):

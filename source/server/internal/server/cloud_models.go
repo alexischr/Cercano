@@ -31,6 +31,9 @@ func (s *Server) ListCloudProfileModels(ctx context.Context, req *proto.ListClou
 	if !ok {
 		return &proto.ListCloudProfileModelsResponse{Error: fmt.Sprintf("no profile %q", name)}, nil
 	}
+	if isMistralProfile(p) {
+		return s.listMistralProfileModels(ctx, name), nil
+	}
 	endpoint, _ := url.Parse(p.BaseURL)
 	if p.Provider == "deepinfra" || (endpoint != nil && strings.EqualFold(endpoint.Hostname(), "api.deepinfra.com")) {
 		if s.catalogRegistry == nil {

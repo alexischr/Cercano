@@ -54,6 +54,7 @@ import (
 	"cercano/source/server/internal/locus"
 	"cercano/source/server/internal/loop"
 	mcphost "cercano/source/server/internal/mcp_host"
+	"cercano/source/server/internal/mistralcatalog"
 	"cercano/source/server/internal/mistralrscompat"
 	"cercano/source/server/internal/modelevidence"
 	"cercano/source/server/internal/modelmetadata"
@@ -106,6 +107,8 @@ type McpManager interface {
 
 // Server is the gRPC server for the Agent service.
 type Server struct {
+	mistralMu             sync.Mutex
+	mistralCatalog        *mistralcatalog.Store
 	authenticationWaiters sync.Map
 	proto.UnimplementedAgentServer
 	agent       *agent.Agent
@@ -617,9 +620,9 @@ func (s *Server) modelEvidence() *modelevidence.Resolver {
 		if s.catalogRegistry == nil {
 			// Shipped evidence only. Vendors we ship knowledge about still
 			// work; everything else stays unknown.
-			s.evidenceResolver = modelevidence.New(nil)
+			s.evidenceResolver = modelevidence.New(nil, modelevidence.WithAccountLookup(s.mistralEvidence))
 		} else {
-			s.evidenceResolver = modelevidence.New(s.catalogRegistry)
+			s.evidenceResolver = modelevidence.New(s.catalogRegistry, modelevidence.WithAccountLookup(s.mistralEvidence))
 		}
 	}
 	return s.evidenceResolver
@@ -840,6 +843,9 @@ func (s *Server) SetActiveCloudProfile(ctx context.Context, req *proto.SetActive
 
 // SetCloudProfileKey implements proto.AgentServer — stores an API key for a profile.
 func (s *Server) SetCloudProfileKey(ctx context.Context, req *proto.SetCloudProfileKeyRequest) (*proto.SetCloudProfileKeyResponse, error) {
+	releaseCatalog := s.lockMistralConfiguration()
+	defer releaseCatalog()
+	s.invalidateMistralLocked(req.GetName())
 	st := s.cfgSvc.Secrets()
 	if st == nil {
 		return &proto.SetCloudProfileKeyResponse{Ok: false, Error: "keychain unavailable"}, nil
@@ -851,6 +857,7 @@ func (s *Server) SetCloudProfileKey(ctx context.Context, req *proto.SetCloudProf
 	if err := st.Set(req.GetName(), req.GetApiKey()); err != nil {
 		return &proto.SetCloudProfileKeyResponse{Ok: false, Error: err.Error()}, nil
 	}
+	releaseCatalog()
 	// If the key belongs to the active profile, rebuild so it takes effect now.
 	if s.cfgSvc.Get().ReferencesProfile(req.GetName()) {
 		_ = s.rebuildCloud()
@@ -872,6 +879,9 @@ func knownFlavor(f string) bool {
 // UpsertCloudProfile implements proto.AgentServer — creates or updates a profile's
 // metadata (the API key is managed separately via SetCloudProfileKey).
 func (s *Server) UpsertCloudProfile(ctx context.Context, req *proto.UpsertCloudProfileRequest) (*proto.UpsertCloudProfileResponse, error) {
+	releaseCatalog := s.lockMistralConfiguration()
+	defer releaseCatalog()
+	s.invalidateMistralLocked(req.GetName())
 	name := strings.TrimSpace(req.GetName())
 	if name == "" {
 		return &proto.UpsertCloudProfileResponse{Ok: false, Error: "profile name is required"}, nil
@@ -945,6 +955,7 @@ func (s *Server) UpsertCloudProfile(ctx context.Context, req *proto.UpsertCloudP
 	} else {
 		s.cfgSvc.UpsertProfile(np)
 	}
+	releaseCatalog()
 	if c.ReferencesProfile(name) {
 		if err := s.rebuildCloud(); err != nil {
 			// active is set, but the provider couldn't be built — report it, keep going.
@@ -960,6 +971,9 @@ func (s *Server) UpsertCloudProfile(ctx context.Context, req *proto.UpsertCloudP
 // RemoveCloudProfile implements proto.AgentServer — deletes a profile and its
 // keychain key. Clears the active profile (→ absent cloud) if it was active.
 func (s *Server) RemoveCloudProfile(ctx context.Context, req *proto.RemoveCloudProfileRequest) (*proto.RemoveCloudProfileResponse, error) {
+	releaseCatalog := s.lockMistralConfiguration()
+	defer releaseCatalog()
+	s.invalidateMistralLocked(req.GetName())
 	name := req.GetName()
 	referenced := s.cfgSvc.Get().ReferencesProfile(name)
 	existed, _ := s.cfgSvc.RemoveProfile(name)
@@ -970,6 +984,7 @@ func (s *Server) RemoveCloudProfile(ctx context.Context, req *proto.RemoveCloudP
 	if st := s.cfgSvc.Secrets(); st != nil {
 		_ = st.Delete(name) // best-effort; missing key is not an error
 	}
+	releaseCatalog()
 	if referenced {
 		_ = s.rebuildCloud()
 	}
@@ -2454,7 +2469,9 @@ func (s *Server) GetRuntimeStatus(ctx context.Context, req *proto.GetRuntimeStat
 func (s *Server) ListRuntimeModels(ctx context.Context, req *proto.ListRuntimeModelsRequest) (*proto.ListRuntimeModelsResponse, error) {
 	rm := s.runtimeMgr()
 	if rm == nil {
-		return &proto.ListRuntimeModelsResponse{}, nil
+		out := &proto.ListRuntimeModelsResponse{}
+		s.appendMistralModels(ctx, req.GetProfileName(), out)
+		return out, nil
 	}
 	models, err := rm.Inventory(ctx)
 	if err != nil {
@@ -2502,6 +2519,7 @@ func (s *Server) ListRuntimeModels(ctx context.Context, req *proto.ListRuntimeMo
 			}
 		}
 	}
+	s.appendMistralModels(ctx, req.GetProfileName(), resp)
 	resp.SystemRamBytes = sysram.Total()
 	// RAM-tiered open recommendations: the wizard autofills its open tier picks
 	// from these, so every suggestion is a gate-verified curated model that
