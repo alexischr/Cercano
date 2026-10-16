@@ -205,3 +205,12 @@ func cloneMetadata(m catalog.Metadata) catalog.Metadata {
 	}
 	return m
 }
+
+// RefreshProfile expires only the intended account, without touching peers.
+func (s *Store) RefreshProfile(profile string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if e := s.entries[profile]; e != nil {
+		e.next = time.Time{}
+	}
+}

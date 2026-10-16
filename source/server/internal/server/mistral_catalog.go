@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"strings"
 	"time"
@@ -45,6 +46,10 @@ func (s *Server) invalidateMistralLocked(profile string) {
 }
 
 func (s *Server) mistralModels(ctx context.Context, profile string) ([]catalog.Model, []mistralcatalog.Status) {
+	return s.mistralModelsRefresh(ctx, profile, false)
+}
+
+func (s *Server) mistralModelsRefresh(ctx context.Context, profile string, refresh bool) ([]catalog.Model, []mistralcatalog.Status) {
 	s.mistralMu.Lock()
 	if s.mistralCatalog == nil {
 		s.mistralCatalog = mistralcatalog.New(nil)
@@ -64,6 +69,9 @@ func (s *Server) mistralModels(ctx context.Context, profile string) ([]catalog.M
 		}
 	}
 	store.Sync(accounts)
+	if refresh {
+		store.RefreshProfile(profile)
+	}
 	s.mistralMu.Unlock()
 	return store.List(ctx, profile)
 }
@@ -145,4 +153,28 @@ func (s *Server) mistralEvidence(ctx context.Context, id modelmetadata.Identity)
 		return ev, true
 	}
 	return modelmetadata.Evidence{}, true
+}
+
+// validateMistralSelection confirms exact model access for the requested account.
+// A stale picker entry must not change accounts or install an unavailable route.
+func (s *Server) validateMistralSelection(ctx context.Context, profile, model string) error {
+	p, ok := s.cfgSvc.Get().Profile(profile)
+	if !ok || !isMistralProfile(p) {
+		return nil
+	}
+	models, status := s.mistralModelsRefresh(ctx, profile, true)
+	for _, st := range status {
+		if st.Error != "" {
+			return fmt.Errorf("Mistral model access could not be confirmed for account %q: %s", profile, st.Error)
+		}
+	}
+	for _, m := range models {
+		if m.ID == model {
+			if !m.Metadata.AgentEligible(time.Now()) {
+				return fmt.Errorf("Mistral model %q is retired or lacks confirmed chat/tool support for account %q", model, profile)
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("Mistral model %q is not available to account %q; refresh that account's model list", model, profile)
 }

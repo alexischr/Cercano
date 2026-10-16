@@ -49,6 +49,9 @@ func (s *Server) sessionModel(ctx context.Context, convID string, req chatroute.
 		if !ok {
 			return chatroute.Status{}, fmt.Errorf("session model routing unavailable")
 		}
+		if err := s.validateMistralSelection(ctx, route.Profile, route.Model); err != nil {
+			return chatroute.Status{}, err
+		}
 		if _, err := resolver.ResolveChatRoute(ctx, route); err != nil {
 			return chatroute.Status{}, err
 		}
