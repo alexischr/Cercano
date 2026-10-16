@@ -6,22 +6,22 @@ Implement the approved spec: one Mistral catalog assembled from configured accou
 
 Objective: establish the data contracts needed for one combined catalog without merging account-specific evidence. Files: source/server/internal/catalog/catalog.go, source/server/internal/modelmetadata/modelmetadata.go, source/proto/agent.proto, generated bindings through the repository's generation workflow, and associated contract tests. Preserve existing public/downloadable source behavior and field numbers. Tests cover absent values, account observations with differing metadata, and backward-compatible decoding.
 
-- [ ] Establish an isolated implementation worktree from the approved planning commit and read the executing-plans protocol
-- [ ] Trace the remaining exact transport and selection consumers directly before changing their contracts
-- [ ] Add model metadata presence semantics for unknown capabilities and prices, display names, aliases, and lifecycle information
-- [ ] Define per-account access and observations under one provider/model catalog entry, retaining profile and endpoint ownership plus credential-generation freshness internally without exposing keys
-- [ ] Extend transport additively for combined access information, account-filtered results, metadata details, and discovery status; keep old callers conservative
-- [ ] Extend evidence identity to distinguish the actual account configuration used for execution
-- [ ] Generate bindings and add serialization and compatibility tests; verify affected client and server packages compile
+- [x] Establish an isolated implementation worktree from the approved planning commit and read the executing-plans protocol
+- [x] Trace the remaining exact transport and selection consumers directly before changing their contracts
+- [x] Add model metadata presence semantics for unknown capabilities and prices, display names, aliases, and lifecycle information
+- [x] Define per-account access and observations under one provider/model catalog entry, retaining profile and endpoint ownership plus credential-generation freshness internally without exposing keys
+- [x] Extend transport additively for combined access information, account-filtered results, metadata details, and discovery status; keep old callers conservative
+- [x] Extend evidence identity to distinguish the actual account configuration used for execution
+- [x] Generate bindings and add serialization and compatibility tests; verify affected client and server packages compile
 
 ## Phase 2 — Authenticated discovery and master catalog
 
 Objective: fetch and aggregate authenticated Mistral model lists safely. Files: new source/server/internal/mistralcatalog/ package, source/server/internal/catalog/ contracts as necessary, and focused fixtures/tests. Use the existing HTTP stack, not a new SDK. Expected fixture outcome: accounts A and B listing X/Y and X/Z produce three combined models, with X accessible to both, Y only to A, and Z only to B. If X has different metadata, each account retains its own values.
 
-- [ ] Implement bounded authenticated model discovery with cancellation, timeout, response-size limits, redirect refusal, and sanitized status errors
+- [x] Implement bounded authenticated model discovery with cancellation, timeout, response-size limits, redirect refusal, and sanitized status errors
 - [ ] Parse documented base and fine-tuned model shapes, absent fields, capabilities, context limits, aliases, and retirement/replacement metadata
 - [ ] Preserve exact IDs; distinguish scheduled retirement from already-retired models and unknown prices from known zero
-- [ ] Cache observations per account configuration and combine successful current observations into one Mistral catalog with accessible-account lists
+- [x] Cache observations per account configuration and combine successful current observations into one Mistral catalog with accessible-account lists
 - [ ] Implement account-filtered list/detail access without revealing other accounts' private model names or metadata
 - [ ] Keep account-specific capability differences explicit in combined details; never take the largest context or most permissive capability as universal
 - [ ] Bound and coalesce concurrent refresh work, report per-account discovery failures, and prevent old in-flight responses from publishing after invalidation
@@ -47,7 +47,7 @@ Objective: present one Mistral model list with account access and select models 
 
 - [ ] Expose combined Mistral entries once with accessible accounts and explicit per-account refresh failures
 - [ ] Prevent cross-provider bare-ID deduplication from hiding Mistral entries while preserving established local/downloadable inventory handling
-- [ ] Render account-access information and account filters in shared browsing; keep account model pickers strictly filtered
+- [-] Render account-access information and account filters in shared browsing; keep account model pickers strictly filtered
 - [ ] Show model details, capability availability, context, aliases, retirement notices, and unknown prices without inventing defaults
 - [ ] Offer only eligible chat/tool models for agent selection; retain useful diagnostics for pinned inaccessible or retired IDs
 - [ ] Carry the user's intended account through selection and verify access when applying it; never choose the first accessible account automatically
