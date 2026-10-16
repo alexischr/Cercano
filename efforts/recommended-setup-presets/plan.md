@@ -57,7 +57,7 @@ Objective: apply confirmed changes using existing persistence paths and make rer
 - [ ] Show changes against current assignments before replacing them
 - [ ] Preserve accounts, credentials, unrelated settings, permission choices, and intentional overrides
 - [ ] Expose Run setup again through the existing guided-setup path and document existing command entry points
-- [ ] Handle cancellation, interruption, resume, and older saved wizard states safely
+- [-] Handle cancellation, interruption, resume, and older saved wizard states safely
 - [ ] Test rerun accept/cancel, apply failure, interrupted setup, old saved progress, and unchanged unrelated configuration
 - [ ] Confirm local-only persistence cannot introduce a cloud backup and that rerun never invokes destructive setup reset
 

@@ -1,0 +1,28 @@
+package ui
+
+import (
+ "context"
+ "net"
+ "testing"
+ "cercano/source/clients/cli/internal/wizard"
+ "cercano/source/server/pkg/agentclient"
+ "cercano/source/server/pkg/proto"
+ "google.golang.org/grpc"
+)
+
+type rollbackProbeServer struct { proto.UnimplementedAgentServer; removed []string }
+func (s *rollbackProbeServer) GetCloudProfiles(context.Context,*proto.GetCloudProfilesRequest)(*proto.GetCloudProfilesResponse,error) {
+ return &proto.GetCloudProfilesResponse{Profiles:[]*proto.CloudProfileInfo{{Name:"added-in-another-window"}}},nil
+}
+func (s *rollbackProbeServer) RemoveCloudProfile(_ context.Context,req *proto.RemoveCloudProfileRequest)(*proto.RemoveCloudProfileResponse,error) {
+ s.removed=append(s.removed,req.GetName()); return &proto.RemoveCloudProfileResponse{Ok:true},nil
+}
+func TestWizardRollbackProbe(t *testing.T) {
+ listener,err:=net.Listen("tcp","127.0.0.1:0"); if err!=nil {t.Fatal(err)}
+ server:=grpc.NewServer(); stub:= &rollbackProbeServer{}
+ proto.RegisterAgentServer(server,stub); go server.Serve(listener); defer server.Stop(); defer listener.Close()
+ client,err:=agentclient.DialExisting(context.Background(),listener.Addr().String()); if err!=nil {t.Fatal(err)}; defer client.Close()
+ wp:= &wizardPage{agent:client,state:wizard.State{Baseline:&wizard.Baseline{}}}
+ if err:=wp.rollbackBaseline();err!=nil {t.Fatal(err)}
+ if len(stub.removed)!=0 {t.Fatalf("cancellation deleted unrelated account(s): %v",stub.removed)}
+}

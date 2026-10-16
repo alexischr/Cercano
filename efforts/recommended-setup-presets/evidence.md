@@ -83,3 +83,12 @@ Remaining before the Qwen gate can be lifted: pinned-binary architecture verific
 ## Outstanding verification
 
 Exact pinned binary architecture support; compatibility-gate update requirements; actual Qwen GGUF tensor precision and runtime/tool-calling behavior; GLM memory calculation; hardware-specific safe context defaults; smaller-machine candidates; discrete-GPU-aware fit (new server capability, not improvised here). Application code changed in this dispatch is limited to `wizard_recommend.go` and its tests plus wizard characterization tests in the CLI UI package.
+
+
+## Guided re-entry preservation follow-up
+
+Active-account reuse is implemented without reauthentication or cloud-choice writes (1cdec719251e). Wizard API-key and subscription sign-in now use existing create-only contracts to prevent replacement of credentials that cancellation cannot restore (bedfbc466d9c). Focused UI/wizard tests and CLI builds passed.
+
+A fake-RPC probe found a separate destructive cancellation defect: starting with an empty baseline, then observing an account named `added-in-another-window`, `rollbackBaseline` sends RemoveCloudProfile for that unrelated account. The failing probe reported `cancellation deleted unrelated account(s): [added-in-another-window]`. No live configuration or credentials were touched. The reproducer is retained as `rollback-repro.go.txt`; copy it to the UI test package to run TestWizardRollbackProbe. It is not enabled in the normal suite while the cancellation contract is awaiting a decision.
+
+Current rollback infers ownership solely from absence in the baseline and restores all captured account metadata. Safe cancellation needs either persisted ownership/conflict-aware cleanup (including interrupted/legacy runs), or an explicitly disclosed contract that account connections persist while unconfirmed routing selections are discarded. This changes destructive/user-data behavior and requires approval before implementation. Merely adding name checks or snapshot comparisons does not establish ownership.

@@ -6,7 +6,7 @@ package slash
 func RegisterSetup(r *Registry) {
 	r.Register(Command{
 		Name: "setup",
-		Help: "Open the setup wizard.",
+		Help: "Run setup again (or resume); review recommendations without resetting settings.",
 		Handler: func(args []string) Result {
 			return Result{Kind: ResultOpenWizard}
 		},
