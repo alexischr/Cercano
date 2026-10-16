@@ -86,6 +86,20 @@ not establish strict JSON-output compliance. Each run makes at most two inferenc
 requests and allows reading only the fixed source file; no arbitrary model-selected
 path or command is executed.
 
+The same live source-reading test also passed with catalog-confirmed exact IDs
+`mistral-large-4` and `zai-glm-5-3`, selected using
+`CERCANO_MISTRAL_LIVE_MODEL`. Large 4 passed with a 256-token per-request cap.
+GLM 5.3's initial continuation hit that cap before completing its answer; a
+bounded retry with a 1,024-token cap passed, with a Markdown-fenced JSON answer.
+Both models completed streamed tool calls and correctly analyzed all three code
+facts. This does not establish signed-reasoning replay or broad model reliability.
+The test now caps each inference request at 1,024 output tokens and refuses a
+requested model absent from the eligible live catalog rather than substituting.
+
+The live catalog also confirms `mistral-ocr-4-1`, but OCR has not yet been tested:
+the conversation image inspection tool does not expose the attachment bytes to
+the direct OCR request. A local image path is needed for that test.
+
 The opt-in `TestMistralLiveAdapterSmoke` test requires both
 `CERCANO_MISTRAL_LIVE_SMOKE=1` and `MISTRAL_API_KEY` in its environment. It makes
 one discovery request and at most three bounded inference requests, stopping on

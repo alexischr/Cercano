@@ -49,8 +49,17 @@ func TestMistralLiveCodeRead(t *testing.T) {
 			break
 		}
 	}
+	if requested := os.Getenv("CERCANO_MISTRAL_LIVE_MODEL"); requested != "" {
+		selected = ""
+		for _, m := range models {
+			if m.ID == requested && m.Metadata.AgentEligible(time.Now()) {
+				selected = m.ID
+				break
+			}
+		}
+	}
 	if selected == "" {
-		t.Fatal("no preferred eligible model; no inference performed")
+		t.Fatal("requested/preferred model is not eligible in live catalog; no inference performed")
 	}
 	t.Logf("live catalog confirmed model=%s", selected)
 	provider, err := BuildCloudProvider(config.CloudProfile{Name: "live-code", Provider: "mistral", Flavor: FlavorChatCompletions, BaseURL: mistralcatalog.BaseURL, Model: selected}, key)
@@ -58,7 +67,7 @@ func TestMistralLiveCodeRead(t *testing.T) {
 		t.Fatalf("factory error type=%T", err)
 	}
 	const path = "internal/llm/openai/mistral_content.go"
-	req := inference.Call{Model: selected, MaxTokens: 256, Tools: []llm.Tool{{Name: "Read", Description: "Read the specified repository source file.", Schema: json.RawMessage(`{"type":"object","properties":{"path":{"type":"string","enum":["internal/llm/openai/mistral_content.go"]}},"required":["path"],"additionalProperties":false}`)}}, Messages: []llm.Message{{Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockText, Text: "Read internal/llm/openai/mistral_content.go using the Read tool. Then analyze the implementation and return only a JSON object with these fields: signed_reasoning_supported (boolean: does it accept signed thinking chunks?), stream_buffering (string: per-line or whole-stream), response_limit_bytes (integer). Do not guess before reading the file."}}}}}
+	req := inference.Call{Model: selected, MaxTokens: 1024, Tools: []llm.Tool{{Name: "Read", Description: "Read the specified repository source file.", Schema: json.RawMessage(`{"type":"object","properties":{"path":{"type":"string","enum":["internal/llm/openai/mistral_content.go"]}},"required":["path"],"additionalProperties":false}`)}}, Messages: []llm.Message{{Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockText, Text: "Read internal/llm/openai/mistral_content.go using the Read tool. Then analyze the implementation and return only a JSON object with these fields: signed_reasoning_supported (boolean: does it accept signed thinking chunks?), stream_buffering (string: per-line or whole-stream), response_limit_bytes (integer). Do not guess before reading the file."}}}}}
 	run := func(call inference.Call) llm.ChatResponse {
 		t.Helper()
 		stream, err := provider.StreamChat(ctx, call)
@@ -118,7 +127,7 @@ func TestMistralLiveCodeRead(t *testing.T) {
 		payload = strings.TrimSuffix(strings.TrimPrefix(payload, "```json\n"), "\n```")
 	}
 	if err := json.Unmarshal([]byte(payload), &answer); err != nil {
-		t.Fatalf("answer was not the requested JSON: %.512q", text.String())
+		t.Fatalf("answer was not the requested JSON: %.4096q", text.String())
 	}
 	if answer.Signed == nil || *answer.Signed || answer.Buffering != "per-line" || answer.Limit != 8388608 {
 		t.Fatalf("incorrect code analysis: signed=%v buffering=%q limit=%d", answer.Signed, answer.Buffering, answer.Limit)
