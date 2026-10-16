@@ -69,6 +69,23 @@ a pay-as-you-go subscription, the same production-adapter smoke test passed:
 The live test used the worktree's production discovery, factory and adapter code,
 not a standalone HTTP implementation. Live vision and reasoning remain unverified.
 
+A further live source-analysis test (`TestMistralLiveCodeRead`, opt-in with
+`CERCANO_MISTRAL_LIVE_CODE=1` and `MISTRAL_API_KEY`) passed with
+`mistral-small-latest`. Through the production streaming adapter, the model
+requested a restricted `Read` operation. The test harness read the actual
+`internal/llm/openai/mistral_content.go` file and returned it with the model's
+exact tool-call ID. The model correctly identified rejection of signed reasoning,
+per-line stream buffering, and the 8,388,608-byte response limit. Both inference
+requests returned HTTP 200. This exercises a real file read in a bounded harness,
+not the full CLI permission/tool-execution loop.
+
+The model wrapped its correct JSON answer in a Markdown fence despite the prompt
+requesting JSON only. The test initially rejected that formatting; it now accepts
+one exact JSON fence and still checks all three answer values. This result does
+not establish strict JSON-output compliance. Each run makes at most two inference
+requests and allows reading only the fixed source file; no arbitrary model-selected
+path or command is executed.
+
 The opt-in `TestMistralLiveAdapterSmoke` test requires both
 `CERCANO_MISTRAL_LIVE_SMOKE=1` and `MISTRAL_API_KEY` in its environment. It makes
 one discovery request and at most three bounded inference requests, stopping on
