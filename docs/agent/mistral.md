@@ -54,10 +54,17 @@ account isolation, sparse metadata and lifecycle fields, redirects and response
 limits, credential changes, concurrency, client/server metadata mapping, worker
 account identity, and streamed text/tool-result continuation through the factory.
 
-No live key, paid inference, or live vision/reasoning request was used for this
-implementation. A separately authorized live check should exercise catalog
-listing, streamed chat, a tool round trip, and a known vision-capable model before
-changing the provider's verification label. Documented structured text and unsigned thinking chunks are normalized by a
+A user-authorized live smoke test on 2026-10-16 passed authenticated discovery
+through the production parser (45 models). Streamed chat through
+`BuildCloudProvider` and the Mistral adapter returned HTTP 429, provider code 1300
+(`Rate limit exceeded`), classified by the adapter as `busy`. The test stopped;
+live chat completion, tool continuation, vision and reasoning remain unverified.
+The provider's verification label remains unchanged.
+
+The opt-in `TestMistralLiveAdapterSmoke` test requires both
+`CERCANO_MISTRAL_LIVE_SMOKE=1` and `MISTRAL_API_KEY` in its environment. It makes
+one discovery request and at most three bounded inference requests, stopping on
+the first failure. Normal test runs skip it. It does not persist the credential. Documented structured text and unsigned thinking chunks are normalized by a
 Mistral-only adapter. **Signed reasoning and unsupported content chunk types are
 rejected explicitly**; signed reasoning replay is not implemented or claimed.
 The local fixtures do not establish compatibility with every Magistral model.
