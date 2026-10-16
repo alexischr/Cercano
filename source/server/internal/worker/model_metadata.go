@@ -17,7 +17,7 @@ func MarshalModelMetadata(snapshot modelmetadata.Snapshot) []*proto.ModelMetadat
 		case modelmetadata.VisionUnsupported:
 			vision = proto.ModelMetadataEntry_UNSUPPORTED
 		}
-		entries = append(entries, &proto.ModelMetadataEntry{Provider: entry.Identity.Provider, BaseUrl: entry.Identity.BaseURL, Route: entry.Identity.Route, Model: entry.Identity.Model, ContextWindow: int64(evidence.ContextWindow), Vision: vision})
+		entries = append(entries, &proto.ModelMetadataEntry{Profile: entry.Identity.Profile, Provider: entry.Identity.Provider, BaseUrl: entry.Identity.BaseURL, Route: entry.Identity.Route, Model: entry.Identity.Model, ContextWindow: int64(evidence.ContextWindow), Vision: vision})
 	}
 	return entries
 }
@@ -41,7 +41,7 @@ func UnmarshalModelMetadata(entries []*proto.ModelMetadataEntry) modelmetadata.S
 			capacity = int(entry.ContextWindow)
 		}
 		snapshot = append(snapshot, modelmetadata.Entry{
-			Identity: modelmetadata.Identity{Provider: entry.Provider, BaseURL: entry.BaseUrl, Route: entry.Route, Model: entry.Model},
+			Identity: modelmetadata.Identity{Profile: entry.Profile, Provider: entry.Provider, BaseURL: entry.BaseUrl, Route: entry.Route, Model: entry.Model},
 			Evidence: modelmetadata.Evidence{ContextWindow: capacity, Vision: vision},
 		})
 	}

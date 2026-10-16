@@ -2065,6 +2065,7 @@ message ModelMetadataEntry {
     UNSUPPORTED = 2;
   }
   Vision vision = 6;
+  string profile = 7; // configured account owning this evidence; never a credential
 }
 
 // CredentialRequest asks the host to resolve/refresh the provider credential

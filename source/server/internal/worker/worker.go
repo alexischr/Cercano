@@ -1,12 +1,12 @@
 package worker
 
 import (
+	"cercano/source/server/internal/capabilities"
 	"cercano/source/server/internal/chatroute"
 	"cercano/source/server/internal/managedrouting"
 	"cercano/source/server/internal/managedsettings"
 	"cercano/source/server/internal/reasoningexperiment"
 	"cercano/source/server/internal/visioninspect"
-	"cercano/source/server/internal/capabilities"
 	"context"
 	"errors"
 	"fmt"
@@ -401,7 +401,7 @@ func (w *WorkerServer) buildDeps(ctx context.Context, start *proto.StartTurn, cr
 			if !ok {
 				continue
 			}
-			if ev, found := evidence.Lookup(modelmetadata.Identity{Provider: prof.Provider, BaseURL: prof.BaseURL, Route: prof.Route, Model: model}); found {
+			if ev, found := evidence.Lookup(modelmetadata.Identity{Profile: prof.Name, Provider: prof.Provider, BaseURL: prof.BaseURL, Route: prof.Route, Model: model}); found {
 				return ev
 			}
 		}
@@ -426,7 +426,7 @@ func (w *WorkerServer) buildDeps(ctx context.Context, start *proto.StartTurn, cr
 	} else {
 		var err error
 		provSvc, err = buildWorkerProviders(ctx, cfg, credSource, openProxy, visionConfirmed, func(p pkgcfg.CloudProfile, model string) modelmetadata.Evidence {
-			ev, _ := evidence.Lookup(modelmetadata.Identity{Provider: p.Provider, BaseURL: p.BaseURL, Route: p.Route, Model: model})
+			ev, _ := evidence.Lookup(modelmetadata.Identity{Profile: p.Name, Provider: p.Provider, BaseURL: p.BaseURL, Route: p.Route, Model: model})
 			return ev
 		})
 		if err != nil {

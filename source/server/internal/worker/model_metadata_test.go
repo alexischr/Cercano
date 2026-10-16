@@ -9,10 +9,10 @@ import (
 )
 
 func TestModelMetadataWireRoundTrip(t *testing.T) {
-	id := modelmetadata.Identity{Provider: "deepinfra", BaseURL: "https://api.deepinfra.com/v1/openai", Route: "direct", Model: "fixture/model"}
+	id := modelmetadata.Identity{Profile: "work", Provider: "deepinfra", BaseURL: "https://api.deepinfra.com/v1/openai", Route: "direct", Model: "fixture/model"}
 	snapshot := modelmetadata.Snapshot{{Identity: id, Evidence: modelmetadata.Evidence{ContextWindow: 262144, Vision: modelmetadata.VisionSupported}}}
 	other := id
-	other.BaseURL = "https://other.example"
+	other.Profile = "personal"
 	snapshot = append(snapshot, modelmetadata.Entry{Identity: other, Evidence: modelmetadata.Evidence{ContextWindow: 8192, Vision: modelmetadata.VisionUnsupported}})
 	wire := &pb.ConfigSnapshot{ModelMetadata: MarshalModelMetadata(snapshot)}
 	data, err := proto.Marshal(wire)

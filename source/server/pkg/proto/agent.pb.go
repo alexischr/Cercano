@@ -15288,6 +15288,7 @@ type ModelMetadataEntry struct {
 	Model         string                    `protobuf:"bytes,4,opt,name=model,proto3" json:"model,omitempty"`
 	ContextWindow int64                     `protobuf:"varint,5,opt,name=context_window,json=contextWindow,proto3" json:"context_window,omitempty"` // positive verified context capacity; 0 means unknown
 	Vision        ModelMetadataEntry_Vision `protobuf:"varint,6,opt,name=vision,proto3,enum=agent.ModelMetadataEntry_Vision" json:"vision,omitempty"`
+	Profile       string                    `protobuf:"bytes,7,opt,name=profile,proto3" json:"profile,omitempty"` // configured account owning this evidence; never a credential
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -15362,6 +15363,13 @@ func (x *ModelMetadataEntry) GetVision() ModelMetadataEntry_Vision {
 		return x.Vision
 	}
 	return ModelMetadataEntry_UNKNOWN
+}
+
+func (x *ModelMetadataEntry) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
 }
 
 // CredentialRequest asks the host to resolve/refresh the provider credential
@@ -20592,14 +20600,15 @@ const file_agent_proto_rawDesc = "" +
 	"\x0emodel_metadata\x18/ \x03(\v2\x19.agent.ModelMetadataEntryR\rmodelMetadata\x120\n" +
 	"\arouting\x180 \x01(\v2\x16.agent.RoutingSnapshotR\arouting\x12(\n" +
 	"\x10tier_vision_open\x181 \x01(\tR\x0etierVisionOpen\x12-\n" +
-	"\x12deepinfra_profiles\x185 \x03(\tR\x11deepinfraProfilesJ\x04\b\x0f\x10\x10J\x04\b\x11\x10\x12J\x04\b\x13\x10\x14J\x04\b\x15\x10\x16J\x04\b\x17\x10\x18J\x04\b\x18\x10\x19R\x17tier_most_capable_cloudR\x13tier_everyday_cloudR\x15tier_fast_light_cloudR\x1atier_fast_light_text_cloudR\x14tier_embedding_cloudR\x10default_provider\"\x8f\x02\n" +
+	"\x12deepinfra_profiles\x185 \x03(\tR\x11deepinfraProfilesJ\x04\b\x0f\x10\x10J\x04\b\x11\x10\x12J\x04\b\x13\x10\x14J\x04\b\x15\x10\x16J\x04\b\x17\x10\x18J\x04\b\x18\x10\x19R\x17tier_most_capable_cloudR\x13tier_everyday_cloudR\x15tier_fast_light_cloudR\x1atier_fast_light_text_cloudR\x14tier_embedding_cloudR\x10default_provider\"\xa9\x02\n" +
 	"\x12ModelMetadataEntry\x12\x1a\n" +
 	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x19\n" +
 	"\bbase_url\x18\x02 \x01(\tR\abaseUrl\x12\x14\n" +
 	"\x05route\x18\x03 \x01(\tR\x05route\x12\x14\n" +
 	"\x05model\x18\x04 \x01(\tR\x05model\x12%\n" +
 	"\x0econtext_window\x18\x05 \x01(\x03R\rcontextWindow\x128\n" +
-	"\x06vision\x18\x06 \x01(\x0e2 .agent.ModelMetadataEntry.VisionR\x06vision\"5\n" +
+	"\x06vision\x18\x06 \x01(\x0e2 .agent.ModelMetadataEntry.VisionR\x06vision\x12\x18\n" +
+	"\aprofile\x18\a \x01(\tR\aprofile\"5\n" +
 	"\x06Vision\x12\v\n" +
 	"\aUNKNOWN\x10\x00\x12\r\n" +
 	"\tSUPPORTED\x10\x01\x12\x0f\n" +
