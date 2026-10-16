@@ -89,11 +89,17 @@ func TestCloudKeyWaitsForExplicitSave(t *testing.T) {
 				t.Fatal("key save ordering or retention failed")
 			}
 			stub.rejectKey.Store(false)
+			p.cloudModels = []agentclient.CloudModelInfo{{ID: "old-private-model"}}
+			p.cloudModelsFetched = true
+			p.cloudModelsError = "old discovery error"
 			if _, _, err = p.commitCloud(classifyCloudCommit("cloud-save", "")); err != nil {
 				t.Fatal(err)
 			}
 			if <-stub.events != "profile" || <-stub.events != "key" || p.cloudDirty {
 				t.Fatal("retry did not save draft")
+			}
+			if len(p.cloudModels) != 0 || p.cloudModelsFetched || p.cloudModelsError != "" {
+				t.Fatal("saved account retained stale model cache")
 			}
 			p.commitCloud(classifyCloudCommit("cloud-save", ""))
 			if <-stub.events != "profile" || len(stub.events) != 0 {

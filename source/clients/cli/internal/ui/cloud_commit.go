@@ -160,6 +160,9 @@ func (sp *settingsPage) commitCloud(ca cloudCommitAction) (string, tea.Cmd, erro
 		if err != nil {
 			return "", nil, err
 		}
+		sp.cloudModels = nil
+		sp.cloudModelsFetched = false
+		sp.cloudModelsError = ""
 		// Profile creation must succeed before its credential can be stored.
 		// Keep the pending key and dirty state on failure so Save can retry.
 		sp.profilesLoaded = false

@@ -32,6 +32,7 @@ func (sp *settingsPage) selectCloudRow(rowID string) {
 	sp.cloudDraftNew = true
 	sp.cloudModels = nil
 	sp.cloudModelsFetched = false
+	sp.cloudModelsError = ""
 	switch {
 	case rowID == "other":
 		sp.cloudDraft.Flavor = "chat_completions"
@@ -136,6 +137,9 @@ func (sp *settingsPage) cloudDetailFields(r cloudRow) []form.Field {
 		out = append(out, form.NewText("cloud-base-url", il("base-url"), d.BaseURL, "https://…"))
 	}
 	out = append(out, sp.cloudChoiceFields(r)...)
+	if sp.cloudModelsError != "" {
+		out = append(out, form.NewReadOnly("cloud-model-discovery-error", il("Model catalog"), sp.cloudModelsError, "Existing model IDs are retained; access has not been confirmed"))
+	}
 	// ChatGPT subscription sign-in: the responses flavor can authenticate with
 	// a ChatGPT Plus/Pro subscription via device-code OAuth instead of an API
 	// key. Offer the button on responses rows; the api-key field stays as the
@@ -200,6 +204,7 @@ func (sp *settingsPage) addCloudAccount() {
 	sp.cloudDirty = true
 	sp.cloudModels = nil
 	sp.cloudModelsFetched = false
+	sp.cloudModelsError = ""
 }
 
 // draftHasKey reports whether the row's profile already has a stored key (drives
@@ -219,10 +224,15 @@ func (sp *settingsPage) draftHasKey(r cloudRow) bool {
 // row-selection so we don't re-fetch on every form re-render.
 func (sp *settingsPage) cloudModelOptions(r cloudRow, currentID string) []form.Option {
 	if !sp.cloudModelsFetched && r.IsProfile && sp.agent != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		models, _, err := sp.agent.ListCloudProfileModels(ctx, sp.cloudDraft.Name)
+		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+		models, discoveryError, err := sp.agent.ListCloudProfileModels(ctx, sp.cloudDraft.Name)
 		cancel()
-		if err == nil && len(models) > 0 {
+		sp.cloudModels = nil
+		sp.cloudModelsError = discoveryError
+		if err != nil {
+			sp.cloudModelsError = "Model discovery unavailable"
+		}
+		if err == nil && discoveryError == "" {
 			sp.cloudModels = models
 		}
 		sp.cloudModelsFetched = true
