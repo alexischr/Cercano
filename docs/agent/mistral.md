@@ -48,23 +48,33 @@ its observations. An old in-flight response cannot restore obsolete access.
 
 ## Verification status
 
-The provider remains **untested** in the provider catalog: local fixtures do not
-prove live API compatibility. Automated coverage includes authenticated discovery,
+The provider catalog label remains **untested** pending the remaining live
+verification gates, including vision. Live catalog, streamed chat and tool
+continuation have passed for `mistral-small-latest`. Automated coverage includes authenticated discovery,
 account isolation, sparse metadata and lifecycle fields, redirects and response
 limits, credential changes, concurrency, client/server metadata mapping, worker
 account identity, and streamed text/tool-result continuation through the factory.
 
-A user-authorized live smoke test on 2026-10-16 passed authenticated discovery
-through the production parser (45 models). Streamed chat through
-`BuildCloudProvider` and the Mistral adapter returned HTTP 429, provider code 1300
-(`Rate limit exceeded`), classified by the adapter as `busy`. The test stopped;
-live chat completion, tool continuation, vision and reasoning remain unverified.
-The provider's verification label remains unchanged.
+A user-authorized live smoke test on 2026-10-16 initially encountered HTTP 429,
+provider code 1300 (`Rate limit exceeded`). Diagnostic requests showed a zero
+requests-per-minute allowance despite purchased credits. After the user enabled
+a pay-as-you-go subscription, the same production-adapter smoke test passed:
+
+- Authenticated discovery parsed 54 models.
+- `BuildCloudProvider` selected `mistral-small-latest` and streamed the expected
+  reply (20 input tokens, 2 output tokens).
+- A tool call with the expected arguments and its continuation both returned
+  HTTP 200, preserving the nine-character tool-call ID. No real tools executed.
+
+The live test used the worktree's production discovery, factory and adapter code,
+not a standalone HTTP implementation. Live vision and reasoning remain unverified.
 
 The opt-in `TestMistralLiveAdapterSmoke` test requires both
 `CERCANO_MISTRAL_LIVE_SMOKE=1` and `MISTRAL_API_KEY` in its environment. It makes
 one discovery request and at most three bounded inference requests, stopping on
-the first failure. Normal test runs skip it. It does not persist the credential. Documented structured text and unsigned thinking chunks are normalized by a
+the first failure. Normal test runs skip it. It does not persist the credential.
+
+Documented structured text and unsigned thinking chunks are normalized by a
 Mistral-only adapter. **Signed reasoning and unsupported content chunk types are
 rejected explicitly**; signed reasoning replay is not implemented or claimed.
 The local fixtures do not establish compatibility with every Magistral model.
