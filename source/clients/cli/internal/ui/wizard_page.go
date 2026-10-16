@@ -294,8 +294,10 @@ func (wp *wizardPage) commitAPIKey(key string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	// The wizard cannot restore overwritten credentials on cancellation.
+	// Atomically reject existing names; account edits belong in /config.
 	if err := wp.agent.UpsertCloudProfile(ctx, agentclient.CloudProfileInfo{
-		Name: preset.ID, Flavor: preset.Flavor, Backend: preset.Backend, BaseURL: preset.BaseURL,
+		Name: preset.ID, Flavor: preset.Flavor, Backend: preset.Backend, BaseURL: preset.BaseURL, CreateOnly: true,
 	}); err != nil {
 		return err
 	}
@@ -755,7 +757,7 @@ func (wp *wizardPage) selectRow() (tea.Cmd, bool) {
 			wp.authPick = false
 			wp.advance()
 			return func() tea.Msg {
-				return openClaudeLoginModalMsg{profile: "", setActive: true}
+				return openClaudeLoginModalMsg{profile: "", setActive: true, createOnly: true}
 			}, false
 		case "chatgpt":
 			// ChatGPT subscription sign-in: hand off to the device-code modal,
@@ -767,7 +769,7 @@ func (wp *wizardPage) selectRow() (tea.Cmd, bool) {
 			wp.authPick = false
 			wp.advance()
 			return func() tea.Msg {
-				return openChatGPTLoginModalMsg{profile: "", setActive: true}
+				return openChatGPTLoginModalMsg{profile: "", setActive: true, createOnly: true}
 			}, false
 		default:
 			wp.authPick = false
