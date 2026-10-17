@@ -104,9 +104,28 @@ func (b *Broker) convLocked(conv string) *convState {
 // across the turn boundary; they will see the old turn's events stop and the
 // new turn's start.
 func (b *Broker) BeginTurn(parent context.Context, conv string) (context.Context, uint64, func()) {
+	ctx, gen, release, _ := b.beginTurn(parent, conv, false)
+	return ctx, gen, release
+}
+
+// TryBeginTurn atomically acquires an idle conversation for a host-generated
+// turn. Unlike BeginTurn, it never supersedes active user work. A denied claim
+// leaves the generation and replay buffer untouched; callers must not publish
+// or persist anything until this returns ok. User input may still supersede a
+// successfully acquired background turn through the ordinary BeginTurn path.
+func (b *Broker) TryBeginTurn(parent context.Context, conv string) (ctx context.Context, gen uint64, release func(), ok bool) {
+	return b.beginTurn(parent, conv, true)
+}
+
+func (b *Broker) beginTurn(parent context.Context, conv string, idleOnly bool) (context.Context, uint64, func(), bool) {
 	ctx, cancel := context.WithCancel(parent)
 	b.mu.Lock()
 	cs := b.convLocked(conv)
+	if idleOnly && (cs.handle != nil || parent.Err() != nil) {
+		b.mu.Unlock()
+		cancel()
+		return nil, 0, nil, false
+	}
 	if cs.handle != nil {
 		cs.handle.cancel() // supersede the turn already running on this conversation
 	}
@@ -127,7 +146,7 @@ func (b *Broker) BeginTurn(parent context.Context, conv string) (context.Context
 		}
 		b.mu.Unlock()
 	}
-	return ctx, h.gen, release
+	return ctx, h.gen, release, true
 }
 
 // IsCurrent reports whether gen is still the live generation for conv — the
