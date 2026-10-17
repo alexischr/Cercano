@@ -20,9 +20,9 @@ Objective: introduce independent task ownership backed by the existing persisten
 - [x] Define stable task identity, parent linkage, accepted/running/terminal status, inspectable output references, and explicit interrupted outcomes
 - [ ] Persist accepted work before acknowledging launch; ensure launch failures cannot leave fictitious running tasks
 - [~] Implement host-owned execution contexts, explicit task stop, task listing and inspection, and cancellable waits that do not cancel the child
-- [ ] Preserve route metadata, granted and ignored tools, suspicion warnings, errors, budgets, partial transcripts, and final results
+- [~] Preserve route metadata, granted and ignored tools, suspicion warnings, errors, budgets, partial transcripts, and final results
 - [ ] Persist terminal outcomes and pending completion information consistently, with startup reconciliation for interrupted tasks
-- [ ] Enforce task ownership and existing authorization boundaries on inspection and control
+- [~] Enforce task ownership and existing authorization boundaries on inspection and control
 - [ ] Verify concurrent stop/completion, shutdown, restart, and repeated terminal updates cannot lose results or leave tasks indefinitely running
 
 ## Phase 3 — Dispatch interface and independent worker execution

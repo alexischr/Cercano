@@ -58,4 +58,8 @@ The server scope fixture had a string/pointer mismatch; correcting its observati
 
 The user has now explicitly selected per-chat isolation: each external chat may see and manage only the background agents it launched. Application-wide ownership is not allowed. This resolves the ownership-policy question; do not ask it again. A model-supplied conversation_id and a per-connection random ID cannot substitute for a trustworthy per-chat binding when a connection is shared. Existing unrelated synchronous tools need not change.
 
+### Per-chat isolation regression coverage
+
+`TestTaskAccessIsIsolatedByChat` now exercises two owners against the real task manager and SQLite store. Each owner lists only its own task; foreign inspect, wait, and stop return not-found without leaking a record or result. The checks run both during execution and after terminal persistence. Both tasks complete successfully despite foreign stop attempts. `go test -race ./internal/taskrun ./internal/conversation` passed. This proves manager-level isolation only; the plan's authorization task remains in progress until transport binding and public controls enforce the same boundary.
+
 The external-client transport implementation remains to be established. The existing probe demonstrates that Cercano's current MCP transport drops its local chat context; it does not prove that every external client supplies a usable chat identity. Do not claim external per-chat isolation is implemented merely by adding request metadata. Native agent calls already carry host conversation context. Preserve that trusted scope, and require evidence of an external integration's binding before exposing cross-request task access through it.
