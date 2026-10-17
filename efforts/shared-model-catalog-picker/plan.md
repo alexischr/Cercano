@@ -6,17 +6,17 @@ Deliver the approved results-and-details catalog popover for cloud account model
 
 ## Phase 1 — Establish the implementation baseline
 
-- [ ] Create a feature worktree using git_worktree after plan approval; preserve unrelated work and do not implement directly on main.
-- [ ] Confirm overlay composition, form activation/focus restoration, discovery transport and saved-key/auth semantics; record any material mismatch with the spec before changing scope.
-- [ ] Add smallest reproducible tests/probes for missing-key messaging, oversized metadata dropdown labels and synchronous discovery behavior, observing current results before fixes.
+- [x] Create a feature worktree using git_worktree after plan approval; preserve unrelated work and do not implement directly on main.
+- [x] Confirm overlay composition, form activation/focus restoration, discovery transport and saved-key/auth semantics; record any material mismatch with the spec before changing scope.
+- [x] Add smallest reproducible tests/probes for missing-key messaging, oversized metadata dropdown labels and synchronous discovery behavior, observing current results before fixes.
 
 ## Phase 2 — Build the shared catalog component
 
-- [ ] Define typed component inputs and outcomes for selection versus browse, exact identity/scope, metadata, eligibility, discovery status and special actions; keep API clients/secrets outside the component.
-- [ ] Implement concise result rows, search with stable ranking, current-selection marker, independent highlighted details, filters and explicit inheritance/no-image actions.
-- [ ] Implement wide two-pane, stacked and compact detail layouts using existing theme tokens and no new dependencies.
-- [ ] Implement keyboard focus, navigation, scrolling, Enter/Cancel, refresh and narrow-view Details/Back, ensuring ordinary query characters are not intercepted as shortcuts.
-- [ ] Add component tests for navigation/search/resize, long and Unicode IDs, unknown metadata, incompatible rows, custom/unlisted IDs and distinct selection outcomes.
+- [x] Define typed component inputs and outcomes for selection versus browse, exact identity/scope, metadata, eligibility, discovery status and special actions; keep API clients/secrets outside the component.
+- [x] Implement concise result rows, search with stable ranking, current-selection marker, independent highlighted details, filters and explicit inheritance/no-image actions.
+- [x] Implement wide two-pane, stacked and compact detail layouts using existing theme tokens and no new dependencies.
+- [x] Implement keyboard focus, navigation, scrolling, Enter/Cancel, refresh and narrow-view Details/Back, ensuring ordinary query characters are not intercepted as shortcuts.
+- [x] Add component tests for navigation/search/resize, long and Unicode IDs, unknown metadata, incompatible rows, custom/unlisted IDs and distinct selection outcomes.
 
 ## Phase 3 — Make discovery asynchronous and actionable
 
