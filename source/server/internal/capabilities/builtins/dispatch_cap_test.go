@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"cercano/source/server/internal/capabilities"
+	"cercano/source/server/internal/conversation"
 	"cercano/source/server/internal/dispatch"
 	"cercano/source/server/pkg/config"
 )
@@ -27,225 +28,61 @@ func TestDispatch_Meta(t *testing.T) {
 	}
 }
 
-func TestDispatch_Execute_ForwardsSpec(t *testing.T) {
-	var captured dispatch.Spec
-	svc := capabilities.Services{
-		Dispatch: func(_ context.Context, spec dispatch.Spec) (dispatch.Result, error) {
-			captured = spec
-			return dispatch.Result{Text: "done"}, nil
-		},
-	}
-	args, _ := json.Marshal(map[string]any{
-		"task":  "do X",
-		"tools": []string{"read_file"},
-	})
-	call := &capabilities.Call{Args: args, WorkDir: "/proj", Emit: func(string) {}, Svc: svc}
-
-	res, err := Dispatch().Execute(context.Background(), call)
-	if err != nil {
-		t.Fatalf("Execute returned error: %v", err)
-	}
-
-	if captured.Mode != dispatch.Agentic {
-		t.Errorf("Spec.Mode = %v, want Agentic", captured.Mode)
-	}
-	if captured.Task != "do X" {
-		t.Errorf("Spec.Task = %q, want %q", captured.Task, "do X")
-	}
-	if len(captured.Tools) != 1 || captured.Tools[0] != "read_file" {
-		t.Errorf("Spec.Tools = %v, want [read_file]", captured.Tools)
-	}
-	// A delegated sub-agent is offloadable work: it must resolve like the
-	// co-processor (RoleCoproc), so the user's locus mode decides open vs cloud.
-	// RoleMain would pin it to the main thread's tier (cloud under cloud_primary),
-	// defeating the point of delegating recon off the frontier tier.
-	if captured.Role != dispatch.RoleCoproc {
-		t.Errorf("Spec.Role = %v, want RoleCoproc", captured.Role)
-	}
-	// No "tier" arg -> lightest tier by default, so grunt work offloads cheaply.
-	if captured.Tier != "" || captured.RoutingTask != config.TaskDispatch {
-		t.Errorf("Spec.Tier = %v, want empty tier with explicit dispatch task (saved default)", captured.Tier)
-	}
-	if captured.Emit == nil {
-		t.Fatal("Spec.Emit is nil; dispatch progress would not reach the parent turn")
-	}
-	if res.Text != "done" {
-		t.Errorf("result text = %q, want %q", res.Text, "done")
-	}
+type launchProbe struct {
+	capabilities.Tasks
+	launch func(context.Context, dispatch.Spec) (conversation.TaskRecord, error)
 }
 
-func TestDispatch_Execute_CwdArgOverridesAmbientWorkDir(t *testing.T) {
-	var captured dispatch.Spec
-	svc := capabilities.Services{
-		Dispatch: func(_ context.Context, spec dispatch.Spec) (dispatch.Result, error) {
-			captured = spec
-			return dispatch.Result{Text: "done"}, nil
-		},
-	}
-	args, _ := json.Marshal(map[string]any{
-		"task":  "check git state",
-		"tools": []string{"git_info"},
-		"cwd":   "/repo/from/args",
-	})
-	call := &capabilities.Call{Args: args, WorkDir: "/wrong/ambient", Svc: svc}
-
-	if _, err := Dispatch().Execute(context.Background(), call); err != nil {
-		t.Fatalf("Execute returned error: %v", err)
-	}
-	if captured.WorkDir != "/repo/from/args" {
-		t.Fatalf("Spec.WorkDir = %q, want explicit cwd arg", captured.WorkDir)
-	}
+func (p launchProbe) Launch(ctx context.Context, spec dispatch.Spec) (conversation.TaskRecord, error) {
+	return p.launch(ctx, spec)
 }
 
-func TestDispatch_Execute_IncludesRouteHeader(t *testing.T) {
-	svc := capabilities.Services{
-		Dispatch: func(_ context.Context, spec dispatch.Spec) (dispatch.Result, error) {
-			return dispatch.Result{
-				Text:         "done",
-				Model:        "qwen3-30b-a3b-instruct-2507",
-				Provider:     "mistralrs",
-				Tier:         string(config.TierMostCapable),
-				IsCloud:      false,
-				GrantedTools: []string{"Read"},
-			}, nil
-		},
-	}
-	args, _ := json.Marshal(map[string]any{"task": "do X", "tools": []string{"Read"}})
-	call := &capabilities.Call{Args: args, WorkDir: "/proj", Svc: svc}
-
-	res, err := Dispatch().Execute(context.Background(), call)
-	if err != nil {
-		t.Fatalf("Execute returned error: %v", err)
-	}
-	want := "[sub-agent route: open provider=mistralrs model=qwen3-30b-a3b-instruct-2507 tier=most_capable]"
-	if !strings.Contains(res.Text, want) {
-		t.Fatalf("result missing route header %q:\n%s", want, res.Text)
-	}
-	if !strings.Contains(res.Text, "[sub-agent tools: Read]") {
-		t.Fatalf("result missing tools header:\n%s", res.Text)
-	}
-}
-
-func TestDispatch_Execute_EmptySubagentTextStillIncludesDiagnostics(t *testing.T) {
-	svc := capabilities.Services{
-		Dispatch: func(_ context.Context, spec dispatch.Spec) (dispatch.Result, error) {
-			return dispatch.Result{
-				Text:         "",
-				Model:        "local-open-model",
-				Provider:     "llama_server",
-				Tier:         string(config.TierMostCapable),
-				IsCloud:      false,
-				GrantedTools: []string{"Read", "Grep"},
-			}, nil
-		},
-	}
-	args, _ := json.Marshal(map[string]any{"task": "do X", "tools": []string{"Read", "Grep"}})
-	call := &capabilities.Call{Args: args, WorkDir: "/proj", Svc: svc}
-
-	res, err := Dispatch().Execute(context.Background(), call)
-	if err != nil {
-		t.Fatalf("Execute returned error: %v", err)
-	}
-	if strings.TrimSpace(res.Text) == "" {
-		t.Fatal("empty sub-agent body must still produce diagnostic headers, got blank result")
-	}
-	if !strings.Contains(res.Text, "[sub-agent route: open provider=llama_server model=local-open-model tier=most_capable]") {
-		t.Fatalf("missing route header for empty sub-agent body:\n%s", res.Text)
-	}
-	if !strings.Contains(res.Text, "[sub-agent tools: Read, Grep]") {
-		t.Fatalf("missing tools header for empty sub-agent body:\n%s", res.Text)
-	}
-}
-
-func TestDispatch_Execute_SuspiciousWarningIsPrepended(t *testing.T) {
-	svc := capabilities.Services{
-		Dispatch: func(_ context.Context, spec dispatch.Spec) (dispatch.Result, error) {
-			return dispatch.Result{
-				Text:            "claimed done",
-				Model:           "local-open-model",
-				Provider:        "llama_server",
-				Tier:            string(config.TierMostCapable),
-				GrantedTools:    []string{"Edit"},
-				Suspicious:      true,
-				SuspicionReason: "granted mutating tools but called none",
-			}, nil
-		},
-	}
-	args, _ := json.Marshal(map[string]any{"task": "do X", "tools": []string{"Edit"}})
-	call := &capabilities.Call{Args: args, WorkDir: "/proj", Svc: svc}
-
-	res, err := Dispatch().Execute(context.Background(), call)
-	if err != nil {
-		t.Fatalf("Execute returned error: %v", err)
-	}
-	wantPrefix := "[sub-agent warning: granted mutating tools but called none]\n[sub-agent route: open provider=llama_server model=local-open-model tier=most_capable]"
-	if !strings.HasPrefix(res.Text, wantPrefix) {
-		t.Fatalf("warning should be first so parent does not trust the body blindly. got:\n%s\nwant prefix:\n%s", res.Text, wantPrefix)
-	}
-	if !strings.Contains(res.Text, "claimed done") {
-		t.Fatalf("warning/header rendering dropped body text:\n%s", res.Text)
-	}
-}
-
-func TestDispatch_Execute_TierKnob(t *testing.T) {
-	// The "tier" arg expresses reasoning demand only; it must map onto the
-	// taxonomy tier without touching Role (location stays RoleCoproc always).
-	cases := []struct {
-		arg  string
-		want config.Tier
-	}{
-		{"light", config.TierFastLight},
-		{"standard", config.TierEveryday},
-		{"deep", config.TierMostCapable},
-		{"", ""},                           // omitted -> lightest
-		{"nonsense", config.TierFastLight}, // unrecognized -> lightest
-		{"DEEP", config.TierMostCapable},   // case-insensitive
-	}
-	for _, c := range cases {
-		var captured dispatch.Spec
-		svc := capabilities.Services{
-			Dispatch: func(_ context.Context, spec dispatch.Spec) (dispatch.Result, error) {
+func TestDispatchLaunchContract(t *testing.T) {
+	for _, tier := range []string{"", "light", "standard", "deep"} {
+		t.Run(tier, func(t *testing.T) {
+			var captured dispatch.Spec
+			svc := capabilities.Services{Tasks: launchProbe{launch: func(_ context.Context, spec dispatch.Spec) (conversation.TaskRecord, error) {
 				captured = spec
-				return dispatch.Result{Text: "ok"}, nil
-			},
-		}
-		args, _ := json.Marshal(map[string]any{"task": "t", "tier": c.arg})
-		call := &capabilities.Call{Args: args, WorkDir: "/proj", Svc: svc}
-		if _, err := Dispatch().Execute(context.Background(), call); err != nil {
-			t.Fatalf("tier=%q: Execute error: %v", c.arg, err)
-		}
-		if captured.Tier != c.want {
-			t.Errorf("tier=%q: Spec.Tier = %v, want %v", c.arg, captured.Tier, c.want)
-		}
-		if captured.Role != dispatch.RoleCoproc {
-			t.Errorf("tier=%q: Spec.Role = %v, want RoleCoproc (tier must not change location)", c.arg, captured.Role)
-		}
+				return conversation.TaskRecord{ID: "task-1", ChildID: "child-1", Status: "accepted"}, nil
+			}}, Dispatch: func(context.Context, dispatch.Spec) (dispatch.Result, error) {
+				t.Fatal("synchronous hook called")
+				return dispatch.Result{}, nil
+			}}
+			args, _ := json.Marshal(map[string]any{"task": "work", "tools": []string{"Read"}, "tier": tier, "cwd": "/explicit"})
+			result, err := Dispatch().Execute(t.Context(), &capabilities.Call{Args: args, ConversationID: "owner", WorkDir: "/ambient", Svc: svc, Emit: func(string) { t.Error("main-turn callback retained") }})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if captured.Mode != dispatch.Agentic || captured.Role != dispatch.RoleCoproc || captured.RoutingTask != config.TaskDispatch || captured.Tier != tierForDispatch(tier) || captured.WorkDir != "/explicit" || captured.ConversationID != "owner" || captured.Task != "work" || len(captured.Tools) != 1 || captured.Emit != nil {
+				t.Fatalf("spec: %+v", captured)
+			}
+			var handle map[string]string
+			if err := json.Unmarshal([]byte(result.Text), &handle); err != nil {
+				t.Fatal(err)
+			}
+			if handle["task_id"] != "task-1" || handle["child_id"] != "child-1" || handle["status"] != "accepted" {
+				t.Fatalf("handle: %v", handle)
+			}
+		})
 	}
 }
-
-func TestDispatch_Execute_EmptyTask(t *testing.T) {
-	svc := capabilities.Services{
-		Dispatch: func(_ context.Context, _ dispatch.Spec) (dispatch.Result, error) {
-			return dispatch.Result{}, nil
-		},
+func TestDispatchLaunchFailsClosed(t *testing.T) {
+	for _, tc := range []struct{ parent, args string }{
+		{"", `{"task":"work","conversation_id":"forged"}`},
+		{"owner", `{"task":"work","conversation_id":"foreign"}`},
+		{"owner", `{"task":""}`},
+		{"owner", `{"task":"work","class":"invalid"}`},
+	} {
+		svc := capabilities.Services{Tasks: launchProbe{launch: func(context.Context, dispatch.Spec) (conversation.TaskRecord, error) {
+			t.Fatal("invalid launch reached manager")
+			return conversation.TaskRecord{}, nil
+		}}}
+		if _, err := Dispatch().Execute(t.Context(), &capabilities.Call{ConversationID: tc.parent, Args: json.RawMessage(tc.args), Svc: svc}); err == nil {
+			t.Fatalf("accepted %s", tc.args)
+		}
 	}
-	args, _ := json.Marshal(map[string]any{"task": ""})
-	call := &capabilities.Call{Args: args, WorkDir: "/proj", Svc: svc}
-
-	_, err := Dispatch().Execute(context.Background(), call)
-	if err == nil {
-		t.Fatal("expected error for empty task, got nil")
-	}
-}
-
-func TestDispatch_Execute_NilDispatch(t *testing.T) {
-	svc := capabilities.Services{} // Dispatch is nil
-	args, _ := json.Marshal(map[string]any{"task": "something"})
-	call := &capabilities.Call{Args: args, WorkDir: "/proj", Svc: svc}
-
-	_, err := Dispatch().Execute(context.Background(), call)
-	if err == nil {
-		t.Fatal("expected error when Dispatch is nil, got nil")
+	if _, err := Dispatch().Execute(t.Context(), &capabilities.Call{ConversationID: "owner", Args: json.RawMessage(`{"task":"work"}`)}); err == nil {
+		t.Fatal("missing service accepted")
 	}
 }
 
@@ -288,22 +125,22 @@ func TestRunCommandGrantAliasesHaveWriteTier(t *testing.T) {
 func TestDispatchSchemaDescription(t *testing.T) {
 	c := Dispatch()
 	schema := c.Schema()
-	
+
 	// Verify the schema contains the deliberate override guidance
 	if !strings.Contains(string(schema), "Omit tier for normal dispatches to honor the selected class's saved quality") {
 		t.Error("schema should instruct to omit tier for normal dispatches to honor saved quality")
 	}
-	
+
 	// Verify the schema contains the deliberate override guidance
 	if !strings.Contains(string(schema), "Supply tier only for a deliberate quality override") {
 		t.Error("schema should instruct to supply tier only for deliberate quality override")
 	}
-	
+
 	// Verify the schema contains the override behavior
 	if !strings.Contains(string(schema), "explicit values override the saved setting") {
 		t.Error("schema should document that explicit values override the saved setting")
 	}
-	
+
 	// Verify the tier options are still documented
 	if !strings.Contains(string(schema), "Explicit light selects Economy, standard selects Standard, and deep selects Premium") {
 		t.Error("schema should document tier selection behavior")

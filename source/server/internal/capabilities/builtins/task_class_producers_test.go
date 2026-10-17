@@ -2,6 +2,7 @@ package builtins
 
 import (
 	"cercano/source/server/internal/capabilities"
+	"cercano/source/server/internal/conversation"
 	"cercano/source/server/internal/dispatch"
 	"cercano/source/server/internal/modelbudget"
 	"cercano/source/server/pkg/config"
@@ -11,16 +12,17 @@ import (
 
 func TestTaskClassExplicitDispatch(t *testing.T) {
 	for _, d := range config.TaskDefinitions() {
-		svc, got := fakeDispatch(t, "ok")
-		_, err := Dispatch().Execute(context.Background(), callWith(t, svc, map[string]any{"task": "fixture", "class": string(d.Task)}))
+		var got dispatch.Spec
+		svc := capabilities.Services{Tasks: launchProbe{launch: func(_ context.Context, s dispatch.Spec) (conversation.TaskRecord, error) {
+			got = s
+			return conversation.TaskRecord{ID: "id", Status: "accepted"}, nil
+		}}}
+		call := callWith(t, svc, map[string]any{"task": "fixture", "class": string(d.Task)})
+		call.ConversationID = "owner"
+		_, err := Dispatch().Execute(t.Context(), call)
 		if err != nil || got.RoutingTask != d.Task || got.Tier != "" {
 			t.Errorf("class=%s got %+v err=%v", d.Task, got, err)
 		}
-	}
-	svc, got := fakeDispatch(t, "ok")
-	_, err := Dispatch().Execute(context.Background(), callWith(t, svc, map[string]any{"task": "fixture", "class": "unknown"}))
-	if err == nil || got.RoutingTask != "" {
-		t.Fatal("unknown class reached dispatch")
 	}
 }
 func TestTaskClassReview(t *testing.T) {

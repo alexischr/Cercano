@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync"
 
-	"cercano/source/server/internal/agenttools"
 	"cercano/source/server/internal/capabilities"
 	"cercano/source/server/internal/dispatch"
 	"cercano/source/server/pkg/config"
@@ -25,8 +24,9 @@ func (dispatchCap) Surfaces() capabilities.Surface {
 	return capabilities.SurfaceAgent | capabilities.SurfaceMCP
 }
 func (dispatchCap) Description() string {
-	return "Run a sub-agent: hand off an open-ended task to a bounded tool-use loop over a granted set of tools (default: read-only tools). Include a concise human-facing `intent` when asking for approval if it clarifies why the delegation is needed. Returns the sub-agent's final result. Tool names passed in `tools` must be the plain registered names (e.g. \"Read\", \"Glob\") — do NOT include any host/MCP prefix like \"mcp__oc__\". Prefer scoped tools such as git_info, git_status, git_diff_stat, git_push, and github_issue_close over RunCommand inside delegated workflows. For a direct user request to push/publish the current branch, prefer calling git_push directly so the confirmation prompt authorizes the actual push attempt. Granting write-capable tools (Edit, Write, RunCommand, git_*, github_issue_close) escalates this call to a confirm prompt; one approval authorizes the sub-agent's whole toolset for the run."
+	return "Launch an independent background sub-agent and return its durable task_id immediately. The task survives steering, main-turn cancellation, and client disconnect. Use task_list, task_inspect, task_wait, or task_stop to manage this chat's tasks; waiting does not cancel execution. Results, route metadata, tool evidence, and errors remain available through inspection. Tool names must be plain registered names (Read, Edit, RunCommand), not host-prefixed aliases. Write-capable grants require approval. Class selects saved routing; omit tier unless deliberately overriding quality. cwd/path selects the working directory. Requires host-bound chat identity; conversation_id arguments never establish ownership."
 }
+
 func (dispatchCap) Schema() capabilities.Schema {
 	classes := []config.Task{}
 	for _, d := range config.TaskDefinitions() {
@@ -44,7 +44,7 @@ func (dispatchCap) Schema() capabilities.Schema {
 			"cwd":             {"type": "string", "description": "Optional absolute project working directory for the sub-agent. Use this for git/GitHub workflows so scoped tools run in the intended repository."},
 			"path":            {"type": "string", "description": "Alias for cwd."},
 			"intent":          {"type": "string", "description": "Optional concise human-facing reason for the delegation, shown in permission prompts."},
-			"conversation_id": {"type": "string", "description": "Optional conversation ID to associate with this dispatch."}
+			"conversation_id": {"type": "string", "description": "Deprecated consistency check; must match the host-bound chat. Never establishes ownership."}
 		}
 	}`)
 }
@@ -77,14 +77,16 @@ func (dispatchCap) Execute(ctx context.Context, call *capabilities.Call) (*capab
 	if a.Task == "" {
 		return nil, errors.New("dispatch: 'task' is required")
 	}
-	if call.Svc.Dispatch == nil {
-		return nil, errors.New("dispatch: engine not available")
+	if strings.TrimSpace(call.ConversationID) == "" {
+		return nil, errors.New("dispatch: trusted per-chat binding missing; host integration must supply chat identity")
 	}
-	// Parent linkage: the surface-injected conversation id wins over the
-	// model-supplied argument (the model rarely knows its own id).
+	if call.Svc.Tasks == nil {
+		return nil, errors.New("dispatch: independent task service unavailable")
+	}
+	// Ownership comes only from the host-bound context.
 	convID := call.ConversationID
-	if convID == "" {
-		convID = a.ConversationID
+	if a.ConversationID != "" && a.ConversationID != convID {
+		return nil, errors.New("dispatch: conversation_id does not match the host-bound chat")
 	}
 	workDir := strings.TrimSpace(a.Cwd)
 	if workDir == "" {
@@ -100,7 +102,7 @@ func (dispatchCap) Execute(ctx context.Context, call *capabilities.Call) (*capab
 	if !config.ValidTask(task) {
 		return nil, fmt.Errorf("dispatch: unknown task class %q", task)
 	}
-	res, err := call.Svc.Dispatch(ctx, dispatch.Spec{
+	res, err := call.Svc.Tasks.Launch(ctx, dispatch.Spec{
 		Mode: dispatch.Agentic,
 		// Task class, not legacy role, owns routing.
 		Role:           dispatch.RoleCoproc,
@@ -111,77 +113,15 @@ func (dispatchCap) Execute(ctx context.Context, call *capabilities.Call) (*capab
 		WorkDir:        workDir,
 		ConversationID: convID,
 		Interactive:    false,
-		Emit: func(ev agenttools.ProgressEvent) {
-			// Structured progress is the primary channel: it carries SubAgentID so
-			// the client routes each event to its sub-agent tab. Plain-text Emit is
-			// a fallback ONLY when structured progress is unavailable — emitting
-			// both duplicated every line and leaked sub-agent activity into the
-			// parent transcript.
-			if call.EmitProgress != nil {
-				call.EmitProgress(ev)
-				return
-			}
-			if call.Emit != nil {
-				if ev.Text != "" {
-					call.Emit(ev.Text)
-				} else if ev.Summary != "" {
-					call.Emit(ev.Summary)
-				}
-			}
-		},
 	})
 	if err != nil {
 		return nil, err
 	}
-	// Lead with route metadata and the sub-agent's actual toolset so callers can
-	// see which model/runtime handled the delegated work and whether a mis-grant
-	// quietly changed the sub-agent's capabilities.
-	header := ""
-	// A suspected no-op leads the header: the sub-agent reported completion but
-	// its tool record contradicts the claim (e.g. granted Edit/RunCommand, called
-	// neither). Surface it first so the parent does not blindly trust res.Text.
-	if res.Suspicious {
-		reason := res.SuspicionReason
-		if reason == "" {
-			reason = "the delegated work likely did not happen"
-		}
-		header += "[sub-agent warning: " + reason + "]\n"
+	data, err := json.Marshal(map[string]string{"task_id": res.ID, "child_id": res.ChildID, "status": res.Status})
+	if err != nil {
+		return nil, err
 	}
-	if route := dispatchRouteHeader(res); route != "" {
-		header += route + "\n"
-	}
-	if len(res.GrantedTools) > 0 {
-		header += "[sub-agent tools: " + strings.Join(res.GrantedTools, ", ")
-		if len(res.IgnoredTools) > 0 {
-			header += " — ignored unknown: " + strings.Join(res.IgnoredTools, ", ")
-		}
-		header += "]\n"
-	}
-	if header != "" {
-		header += "\n"
-	}
-	return capabilities.NewTextResult(header + res.Text), nil
-}
-
-func dispatchRouteHeader(res dispatch.Result) string {
-	if res.Model == "" && res.Provider == "" && res.Tier == "" {
-		return ""
-	}
-	location := "open"
-	if res.IsCloud {
-		location = "cloud"
-	}
-	parts := []string{"[sub-agent route: " + location}
-	if res.Provider != "" {
-		parts = append(parts, "provider="+res.Provider)
-	}
-	if res.Model != "" {
-		parts = append(parts, "model="+res.Model)
-	}
-	if res.Tier != "" {
-		parts = append(parts, "tier="+res.Tier)
-	}
-	return strings.Join(parts, " ") + "]"
+	return capabilities.NewTextResult(string(data)), nil
 }
 
 // agentGrantTiers maps every agent-surface tool name (display aliases and
