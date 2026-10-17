@@ -2805,6 +2805,27 @@ func (c *Client) SubmitClaudeLoginCode(ctx context.Context, loginID, code string
 	return nil
 }
 
+// catalogMetadataFromProto converts proto.CatalogMetadata to client.CatalogMetadata
+func catalogMetadataFromProto(p *proto.CatalogMetadata) *CatalogMetadata {
+	if p == nil {
+		return nil
+	}
+	return &CatalogMetadata{
+		DisplayName:   p.GetDisplayName(),
+		ContextLength: p.GetContextLength(),
+		Chat:          CatalogCapability(p.GetChat()),
+		Tools:         CatalogCapability(p.GetTools()),
+		Vision:        CatalogCapability(p.GetVision()),
+		Reasoning:     CatalogCapability(p.GetReasoning()),
+		Aliases:       p.GetAliases(),
+		Deprecated:    p.GetDeprecated(),
+		RetirementAt:  p.GetRetirementAt(),
+		ReplacedBy:    p.GetReplacedBy(),
+		PriceIn:       p.PriceIn,
+		PriceOut:      p.PriceOut,
+	}
+}
+
 // catalogMetadataToProto converts client.CatalogMetadata to proto.CatalogMetadata
 func catalogMetadataToProto(c *CatalogMetadata) *proto.CatalogMetadata {
 	if c == nil {
