@@ -8,8 +8,8 @@ Execute directly, honoring the user's request not to delegate implementation. Us
 
 Objective: establish minimal reproductions of the current coupling and reusable deterministic test fixtures before replacing it. Files: server dispatch and host-service tests, worker host tests, broker tests, CLI ui queue and subagent_stale_cleanup tests. Tests: controlled child runner that remains blocked while the main turn ends, is steered, or loses its client connection; capture actual cancellation and event behavior without paid inference.
 
-- [ ] Read applicable repository instructions and create the implementation worktree from the approved planning commit
-- [ ] Trace dispatch and workflow consumers, shared synchronous execution callers, persistence migrations, worker launch boundaries, and conversation scheduling hooks
+- [x] Read applicable repository instructions and create the implementation worktree from the approved planning commit
+- [~] Trace dispatch and workflow consumers, shared synchronous execution callers, persistence migrations, worker launch boundaries, and conversation scheduling hooks
 - [ ] Add controlled child-runner and event fixtures; reproduce main-turn cancellation of child execution in both execution paths
 - [ ] Record the current stale-main-event protection and child-tab cleanup expectations so only the obsolete lifecycle expectations change
 
