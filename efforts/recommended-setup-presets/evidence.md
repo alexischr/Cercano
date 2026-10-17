@@ -99,3 +99,12 @@ Current rollback infers ownership solely from absence in the baseline and restor
 User approved keeping completed account connections on cancellation. Removed live baseline capture/rollback and all cancellation account writes. Legacy baseline fields are tolerated but not acted upon. Before authentication, in preview, and on the first q, users are told connected accounts persist and can be managed in /config. Cancellation clears only local resume state; unconfirmed selections are discarded. Regression tests exercise actual double-q cancellation with fake RPC and legacy baseline/current metadata differences. Clear failure keeps the wizard open for retry. Test HOME is isolated. The production build caught a delegated test-only clear hook; it was replaced with an instance-scoped optional seam defaulting to wizard.Clear.
 
 Verification: go test ./internal/ui ./internal/wizard ./internal/slash -count=1 and go build ./... in the CLI module passed. Earlier rollback-repro.go.txt is historical evidence; the removed rollbackBaseline function is no longer callable.
+
+
+## Preview/apply integration follow-up
+
+Actual wizard autofill now consumes the pure recommendation helper, fills empty slots only, and retains explicit current local overrides using the existing llama_server.<tier> taxonomy. Recommendations from the runtime catalog work even when shipped recommendation data is unavailable. A configured-choice regression initially failed because the delegated implementation tested a suffix rather than the actual key format; the corrected implementation enumerates known open tier keys. Existing custom picks are no longer normalized or replaced merely because they are absent from recommendations.
+
+A failing cloud-only regression demonstrated that stale hidden local picks were applied. wizardApplyPatches now emits only the mode patch for cloud-only, leaving those local settings untouched. The catalog fixture now explicitly selects open-only mode, matching the resource-filtering contract.
+
+Verification: CLI go test ./internal/ui ./internal/wizard ./internal/slash -count=1 and go build ./... passed. No runtime candidate validation or live model downloads were performed. This is a bounded integration slice, not completion of the remaining plan or full preview/apply acceptance coverage.

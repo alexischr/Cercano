@@ -465,6 +465,7 @@ func TestWizardViewRendersTierPurposes(t *testing.T) {
 
 func TestWizardOpenAutofillUsesCatalog(t *testing.T) {
 	wp := newTestWizardPage(t)
+	wp.state.LocusMode = "open_only"
 	wp.catalog = agentclient.RuntimeModelCatalog{
 		Models: []agentclient.RuntimeModel{
 			{ID: "llama_server:catalog:qwen3-14b-q4_k_m", DisplayName: "Qwen3-14B Q4_K_M", Runtime: "llama_server", Source: "catalog"},
@@ -773,5 +774,36 @@ func TestWizardAbandonWithDifferentCurrentMetadata(t *testing.T) {
 	}
 	if len(spy.setActiveCalls) > 0 {
 		t.Errorf("abandon with different metadata made %d SetActiveCloudProfile calls: %v, expected 0", len(spy.setActiveCalls), spy.setActiveCalls)
+	}
+}
+
+func TestWizardAutofillPreservesExplicitChoice(t *testing.T) {
+	wp := newTestWizardPage(t)
+	wp.state.LocusMode = "open_only"
+	wp.state.TierPicks = map[string]string{"llama_server.everyday": "custom-installed-model"}
+	wp.autofillTiers()
+	if got := wp.state.TierPicks["llama_server.everyday"]; got != "custom-installed-model" {
+		t.Fatalf("explicit choice replaced: %q", got)
+	}
+}
+func TestWizardAutofillCatalogWithoutShippedRecs(t *testing.T) {
+	wp := newTestWizardPage(t)
+	wp.state.LocusMode = "open_only"
+	wp.recsOK = false
+	wp.catalogOK = true
+	wp.catalog.RecommendedOpenModels = map[string]string{"everyday": "catalog-choice"}
+	wp.autofillTiers()
+	if got := wp.state.TierPicks["llama_server.everyday"]; got != "catalog-choice" {
+		t.Fatalf("catalog recommendation missing: %q", got)
+	}
+}
+
+func TestWizardAutofillPreservesConfiguredLocalChoice(t *testing.T) {
+	wp := newTestWizardPage(t)
+	wp.state.LocusMode = "open_only"
+	wp.curConfig = &agentclient.Config{ModelTiers: map[string]string{"llama_server.everyday": "configured-model"}}
+	wp.autofillTiers()
+	if got := wp.state.TierPicks["llama_server.everyday"]; got != "configured-model" {
+		t.Fatalf("configured choice replaced: %q", got)
 	}
 }

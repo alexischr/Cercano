@@ -271,6 +271,9 @@ func wizardFinishUpdate(st wizard.State) agentclient.ConfigUpdate {
 // the profile mutation (applyCloudChoices), not these taxonomy patches.
 func wizardApplyPatches(st wizard.State) []agentclient.ConfigUpdate {
 	patches := []agentclient.ConfigUpdate{wizardFinishUpdate(st)}
+	if !wizard.ModeUsesOpen(st.LocusMode) {
+		return patches
+	}
 	keys := make([]string, 0, len(st.TierPicks))
 	for k := range st.TierPicks {
 		// Cloud choices use the profile mutation, not Local runtime patches.
@@ -415,83 +418,51 @@ func wizardAuthRows(providerID string) []wizardRow {
 	}
 }
 
-// autofillTiers fills tier slots from the shipped recommendations. It normalizes
-// any existing picks that carry stale date-suffixed IDs, and replaces picks that
-// are no longer in the current recommendation list (e.g. when the YAML is
-// updated between runs) so resumed state stays current.
+// autofillTiers fills EMPTY tier slots from recommendations using recommendSetup.
+// It preserves non-empty explicit choices and only fills slots that are currently
+// empty. Local state slots are seeded from wp.curConfig.ModelTiers when present.
+// Never mutates config directly.
 func (wp *wizardPage) autofillTiers() {
-	if !wp.recsOK {
-		return
+	// Build inputs for recommendSetup
+	inputs := wizardRecommendInputs{
+		LocusMode:     wp.state.LocusMode,
+		CloudProvider: wp.state.CloudProvider,
+		Recs:          wp.recs,
+		RecsOK:        wp.recsOK,
+		Catalog:       wp.catalog,
+		CatalogOK:     wp.catalogOK,
 	}
+
+	// Get recommendation - this respects actual locus mode and won't make
+	// cloud recommendations in open_only mode
+	recommendation := recommendSetup(inputs)
+
+	// Convert recommendation to tier picks format
+	newPicks := recommendation.tierPicks(wp.catalog, wp.catalogOK)
+
+	// Initialize TierPicks if nil
 	if wp.state.TierPicks == nil {
 		wp.state.TierPicks = map[string]string{}
 	}
-	// Strip date suffixes from any previously-stored IDs (e.g. claude-haiku-4-5-20251001
-	// → claude-haiku-4-5). Safe to do in-place: only affects the suffix form.
-	for key, pick := range wp.state.TierPicks {
-		if n := normalizeModelLabel(pick); n != pick {
-			wp.state.TierPicks[key] = n
-		}
-	}
-	for _, t := range wizardTierOrder {
-		if wp.state.CloudProvider != "" {
-			key := string(t) + "." + wizard.SideCloud
-			candidates := wp.recs.Candidates(config.ProviderCloud, wp.state.CloudProvider, t)
-			if shouldRefill(wp.state.TierPicks[key], candidates) {
-				if m, ok := config.PickFirst(candidates, nil); ok {
-					wp.state.TierPicks[key] = m
+
+	// Preserve configured local overrides in the existing open-slot taxonomy.
+	if wp.curConfig != nil && wizard.ModeUsesOpen(wp.state.LocusMode) {
+		for _, tier := range openTierOrder() {
+			key := wizardOpenTierKey(tier)
+			if wp.state.TierPicks[key] == "" {
+				if value := wp.curConfig.ModelTiers[key]; value != "" {
+					wp.state.TierPicks[key] = value
 				}
-			}
-		}
-		key := wizardOpenTierKey(t)
-		if wp.catalogOK {
-			// Prefer the RAM-tiered curated recommendation: a gate-verified model
-			// that fits this machine. Store its display name (the open-slot
-			// convention; taxonomy and the finish-time download resolve it back).
-			if id, ok := wp.catalog.RecommendedOpenModels[string(t)]; ok {
-				label := openModelDisplay(wp.catalog, id)
-				if shouldRefill(wp.state.TierPicks[key], []string{label}) {
-					wp.state.TierPicks[key] = label
-				}
-				continue
-			}
-		}
-		candidates := wp.recs.Candidates(config.ProviderOpen, "", t)
-		if shouldRefill(wp.state.TierPicks[key], candidates) {
-			if m, ok := config.PickFirst(candidates, nil); ok {
-				wp.state.TierPicks[key] = m
 			}
 		}
 	}
 
-	// The embedding slot isn't part of wizardTierOrder (rows and summary render
-	// it specially), so it's filled here from the same RAM-tiered curated
-	// catalog recommendation used for the capability tiers above. Without this
-	// the embedding row shows "—".
-	if wp.catalogOK {
-		embKey := wizardOpenTierKey(config.TierEmbedding)
-		if id, ok := wp.catalog.RecommendedOpenModels[string(config.TierEmbedding)]; ok {
-			label := openModelDisplay(wp.catalog, id)
-			if shouldRefill(wp.state.TierPicks[embKey], []string{label}) {
-				wp.state.TierPicks[embKey] = label
-			}
+	// Fill only EMPTY slots with recommendations - preserve non-empty explicit choices
+	for key, recommendedPick := range newPicks {
+		if wp.state.TierPicks[key] == "" {
+			wp.state.TierPicks[key] = recommendedPick
 		}
 	}
-}
-
-// shouldRefill reports whether a tier slot should be (re)filled from
-// recommendations: either it is empty, or its current pick is no longer in the
-// recommendation list (stale autofill from an older YAML).
-func shouldRefill(current string, candidates []string) bool {
-	if current == "" {
-		return true
-	}
-	for _, c := range candidates {
-		if c == current {
-			return false
-		}
-	}
-	return true
 }
 
 // defaultCursor pre-positions the cursor: the locus step starts on the

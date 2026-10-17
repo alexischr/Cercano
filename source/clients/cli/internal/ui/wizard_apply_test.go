@@ -175,3 +175,10 @@ var errTestFail = &testError{"apply failed"}
 type testError struct{ msg string }
 
 func (e *testError) Error() string { return e.msg }
+
+func TestWizardCloudOnlyIgnoresStaleOpenPicks(t *testing.T) {
+	patches := wizardApplyPatches(wizard.State{LocusMode: "cloud_only", TierPicks: map[string]string{"llama_server.everyday": "hidden-old-pick"}})
+	if len(patches) != 1 {
+		t.Fatalf("cloud-only applies hidden local choices: %+v", patches)
+	}
+}
