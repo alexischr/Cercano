@@ -5523,6 +5523,11 @@ func (m Model) View() tea.View {
 		ReportAssociatedText:       true,
 	}
 	v.MouseMode = tea.MouseModeCellMotion
+	if m.claudeLoginModal != nil && m.claudeLoginModal.fullWidth() {
+		// The manual sign-in URL is printed for copying, often over SSH. Mouse
+		// tracking would send drags to the app and block terminal selection.
+		v.MouseMode = tea.MouseModeNone
+	}
 	// Drive the real terminal cursor to the input caret position. Only
 	// when the chat input owns focus (no overlay, no pending confirm).
 	if m.searchVisible() && m.searchCanOwnInput() {

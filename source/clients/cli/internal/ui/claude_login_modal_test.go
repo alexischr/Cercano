@@ -228,3 +228,24 @@ func TestClaudeLoginAutoOpenSkippedWhenHeadless(t *testing.T) {
 		t.Fatal("auto-open attempted over headless SSH")
 	}
 }
+
+// While the manual URL is printed, the terminal must own the mouse so a drag
+// selects the URL text. With mouse tracking on, drags go to the app instead and
+// the URL can't be copied, which is the whole point of the SSH fallback.
+func TestClaudeLoginModalReleasesMouseForURLSelection(t *testing.T) {
+	m := New(nil, false)
+	m.width, m.height = 140, 45
+	if got := m.View().MouseMode; got != tea.MouseModeCellMotion {
+		t.Fatalf("without the modal, mouse mode = %v, want cell motion", got)
+	}
+
+	m.claudeLoginModal = waitingModalWithCode()
+	if got := m.View().MouseMode; got != tea.MouseModeNone {
+		t.Fatalf("with the manual URL showing, mouse mode = %v, want none", got)
+	}
+
+	m.claudeLoginModal.setDone()
+	if got := m.View().MouseMode; got != tea.MouseModeCellMotion {
+		t.Fatalf("after sign-in finished, mouse mode = %v, want cell motion", got)
+	}
+}
