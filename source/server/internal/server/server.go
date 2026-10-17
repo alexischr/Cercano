@@ -67,6 +67,7 @@ import (
 	runnersvc "cercano/source/server/internal/runner"
 	"cercano/source/server/internal/secrets"
 	"cercano/source/server/internal/sysram"
+	"cercano/source/server/internal/taskrun"
 	"cercano/source/server/internal/toolstack"
 	"cercano/source/server/internal/usage"
 	"cercano/source/server/internal/visionattach"
@@ -186,6 +187,15 @@ type Server struct {
 	// become no-ops while it unwinds. Prevents two turns interleaving history
 	// writes or sharing one upstream (Meridian) session key.
 	turnBroker *broker.Broker
+
+	// taskRunMu guards host-owned background task execution. taskManager is
+	// built lazily at first use (persistSvc + dispatch engine may not be wired
+	// at NewServer time) and lives for the server's lifetime, independent of
+	// any turn. Closed in Shutdown, before the persistence store goes down;
+	// unfinished executions are then reconciled at the next start.
+	taskRunMu         sync.RWMutex
+	taskManager       *taskrun.Manager
+	taskManagerClosed bool
 }
 
 // beginTurn delegates to the turn broker. It registers a new turn for conv,
@@ -263,6 +273,7 @@ func (s *Server) SetContextLoader(l *projectctx.Loader) { s.persistSvc.SetContex
 // Call before InstallCapabilities.
 func (s *Server) SetDispatchEngine(e *dispatch.Engine) {
 	s.toolSvc.SetEngine(e)
+	s.ensureTaskManager()
 }
 
 // SetToolRegistry attaches the agent's tool registry. The CLI's /tools and
@@ -551,6 +562,8 @@ func (s *Server) SetSecrets(st secrets.Store) { s.cfgSvc.SetSecrets(st) }
 // gRPC server itself — that's the caller's job (cmd/cercano/main.go uses
 // GracefulStop).
 func (s *Server) Shutdown() {
+	// Cancel background execution before tearing down its runtime dependencies.
+	s.closeTaskManager()
 	// Drain the per-conversation worker pool (kill warm workers + stop the
 	// idle-reaper) when worker mode is armed. The in-process runner has nothing
 	// to drain; the type assertion no-ops for it.
@@ -563,6 +576,90 @@ func (s *Server) Shutdown() {
 			log.Printf("[vision] temporary attachment cleanup: %v", err)
 		}
 	}
+}
+
+// ensureTaskManager constructs the host-owned task manager exactly once per
+// server lifetime. The store is the host's durable conversation store (the
+// delegating_tasks tables live there) and the executor is the existing
+// synchronous dispatch engine — host-owned, engine-executed. Completion
+// notifications are currently logged; delivery is a separate integration step.
+//
+// Idempotent under concurrent calls; no-op after Shutdown closed the manager.
+// Returns false when no wiring was possible (store unavailable or previous
+// manager closed), signaling Launch to reject.
+func (s *Server) ensureTaskManager() bool {
+	s.taskRunMu.Lock()
+	defer s.taskRunMu.Unlock()
+	if s.taskManagerClosed {
+		return false
+	}
+	if s.taskManager != nil {
+		return true
+	}
+	store := s.persistSvc.Store()
+	if store == nil {
+		return false
+	}
+	tasks, ok := store.(conversation.TaskStore)
+	if !ok {
+		log.Printf("[taskrun] persistent store lacks TaskStore extension")
+		return false
+	}
+	engine := s.toolSvc.Engine()
+	if engine == nil {
+		return false
+	}
+	m, err := taskrun.New(tasks, engine.Dispatch, s.notifyTaskChange)
+	if err != nil {
+		log.Printf("[taskrun] manager unavailable: %v", err)
+		return false
+	}
+	s.taskManager = m
+	return true
+}
+
+// closeTaskManager stops host-owned task execution before persistence goes
+// down. Interrupted tasks are reconciled at the next start.
+func (s *Server) closeTaskManager() {
+	s.taskRunMu.Lock()
+	if s.taskManager == nil {
+		// Mark closed even when never constructed so a racing ensureTaskManager
+		// cannot start one mid-shutdown.
+		s.taskManagerClosed = true
+		s.taskRunMu.Unlock()
+		return
+	}
+	m := s.taskManager
+	s.taskManager = nil
+	s.taskManagerClosed = true
+	s.taskRunMu.Unlock()
+	// Bounded: running executors observe the host cancel (engine honors ctx)
+	// and outcome persistence carries its own 10 s timeout. Does not wait
+	// unboundedly on a wedged executor — the process is exiting anyway.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := m.Close(ctx); err != nil {
+		log.Printf("[taskrun] shutdown close: %v", err)
+	}
+}
+
+// taskRunManager returns the live manager under lock, or nil after shutdown.
+func (s *Server) taskRunManager() *taskrun.Manager {
+	s.taskRunMu.RLock()
+	defer s.taskRunMu.RUnlock()
+	return s.taskManager
+}
+
+// notifyTaskChange handles a taskrun completion notification. The current
+// ClientEvent schema has no task-change variant (proto.TaskChange rides only
+// the in-turn StreamProcessResponse), and adding one is out of scope for this
+// slice — so today this logs; a durable record exists in the task store and is
+// reconciled at restart. Never blocks or panics.
+func (s *Server) notifyTaskChange(taskID string) {
+	if s == nil {
+		return
+	}
+	log.Printf("[taskrun] task %s finished", taskID)
 }
 
 func (s *Server) stopRuntimeInstances() {
