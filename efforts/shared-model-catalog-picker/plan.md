@@ -20,26 +20,26 @@ Deliver the approved results-and-details catalog popover for cloud account model
 
 ## Phase 3 — Make discovery asynchronous and actionable
 
-- [ ] Move cloud catalog RPCs out of synchronous form construction into Bubble Tea commands/messages while preserving appropriate fallback behavior.
-- [ ] Represent missing saved credentials, unsaved account edits, sign-in required, loading, refresh, ready, empty success, failure and partial failure distinctly; use only reliable error classification.
-- [ ] Wire Add API key/Sign in actions to existing account controls without silently saving or discarding drafts; show the prerequisite message even when the popover is closed.
-- [ ] Invalidate and refresh after successful account/key save; guard results with request generations and discard stale responses after account, endpoint, auth or lifecycle changes.
-- [ ] Test cancellation, responsiveness, duplicate requests, stale cache/late replies, failed save and rapid account switching with deterministic fake-agent responses.
+- [x] Move cloud catalog RPCs out of synchronous form construction into Bubble Tea commands/messages while preserving appropriate fallback behavior.
+- [x] Represent missing saved credentials, unsaved account edits, sign-in required, loading, refresh, ready, empty success, failure and partial failure distinctly; use only reliable error classification.
+- [x] Wire Add API key/Sign in actions to existing account controls without silently saving or discarding drafts; show the prerequisite message even when the popover is closed.
+- [x] Invalidate and refresh after successful account/key save; guard results with request generations and discard stale responses after account, endpoint, auth or lifecycle changes.
+- [x] Test cancellation, responsiveness, duplicate requests, stale cache/late replies, failed save and rapid account switching with deterministic fake-agent responses.
 
 ## Phase 4 — Integrate selection and browsing
 
-- [ ] Replace cloud economy/standard/premium and image dropdowns with compact launchers for the shared picker, retaining explicit Save, inheritance, no-image override and custom-ID support.
-- [ ] Enforce account-scoped choices and caller-specific capability requirements without bypassing existing server validation or converting unknown metadata to unsupported/free.
-- [ ] Replace the existing provider-wide inline catalog fields with the shared component's read-only browse mode; retain per-account observations and partial-failure status.
-- [ ] Add integration tests covering launch/select/save, launch/cancel, credential-focus/return, save-triggered discovery and browse-without-mutation.
+- [x] Replace cloud economy/standard/premium and image dropdowns with compact launchers for the shared picker, retaining explicit Save, inheritance, no-image override and custom-ID support.
+- [x] Enforce account-scoped choices and caller-specific capability requirements without bypassing existing server validation or converting unknown metadata to unsupported/free.
+- [x] Replace the existing provider-wide inline catalog fields with the shared component's read-only browse mode; retain per-account observations and partial-failure status.
+- [x] Add integration tests covering launch/select/save, launch/cancel, credential-focus/return, save-triggered discovery and browse-without-mutation.
 
 ## Phase 5 — Verify presentation and deliver
 
-- [ ] Render and review representative ready, missing-key, loading, failure, no-match and partial-catalog states at 120x36, 100x24, 80x24 and 60x18; verify theme contrast and viewport bounds.
-- [ ] Exercise representative keyboard flows in the terminal where available; distinguish actual interactive verification from automated render fixtures in the completion report.
-- [ ] Run affected CLI overlay, form and UI tests and build the CLI; if any interface changed, add and run its corresponding integration checks.
-- [ ] Document the shared component contract and user-facing states; record verification, remaining limitations and deferred consumers.
-- [ ] Checkpoint solved units on the feature branch and present completion results; do not push, land, restart/install binaries or run paid inference without separate authorization.
+- [x] Render and review representative ready, missing-key, loading, failure, no-match and partial-catalog states at 120x36, 100x24, 80x24 and 60x18; verify theme contrast and viewport bounds.
+- [x] Exercise representative keyboard flows in the terminal where available; distinguish actual interactive verification from automated render fixtures in the completion report.
+- [x] Run affected CLI overlay, form and UI tests and build the CLI; if any interface changed, add and run its corresponding integration checks.
+- [x] Document the shared component contract and user-facing states; record verification, remaining limitations and deferred consumers.
+- [x] Checkpoint solved units on the feature branch and present completion results; do not push, land, restart/install binaries or run paid inference without separate authorization.
 
 ## Execution guardrails
 

@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"cercano/source/clients/cli/internal/form"
+	"cercano/source/clients/cli/internal/overlay"
 	"cercano/source/clients/cli/internal/theme"
 	"cercano/source/clients/cli/internal/uiconfig"
 	"cercano/source/server/pkg/agentclient"
@@ -113,6 +114,12 @@ type settingsPage struct {
 	cloudModelsFetched   bool
 	cloudModelsError     string
 	cloudProviderCatalog *agentclient.RuntimeModelCatalog
+	catalogPicker        *overlay.Catalog
+	catalogField         string
+	catalogGeneration    uint64
+	catalogBusy          bool
+	catalogCancel        context.CancelFunc
+	catalogReloadPending bool
 	// pendingCommit is true while a config/permission commit is running in a
 	// background cmd. It gates re-entry (a second Enter mid-flight is a
 	// no-op) and drives the spinner on the form's status line.
@@ -133,7 +140,7 @@ func newScopedSettingsPage(ag *agentclient.Client, p theme.Palette, s theme.Styl
 	sp.form = form.New(sp.snapshotSections())
 	sp.form.OnCommit = sp.onCommit
 	sp.form.OnReload = sp.snapshotSections
-	return sp, nil
+	return sp, sp.catalogKick()
 }
 
 func (sp *settingsPage) snapshotSections() []form.Section {
@@ -288,10 +295,17 @@ func (sp *settingsPage) applySpinnerTick() tea.Cmd {
 // handlePaste keeps terminal paste inside the active settings editor rather
 // than dropping it or letting a credential reach the conversation prompt.
 func (sp *settingsPage) handlePaste(content string) bool {
+	if sp.catalogPicker != nil {
+		sp.catalogPicker.Paste(content)
+		return true
+	}
 	return sp.form != nil && sp.form.Paste(content)
 }
 
 func (sp *settingsPage) Update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
+	if sp.catalogPicker != nil {
+		return sp.updateCatalogKey(msg), false
+	}
 	if sp.settingsPendingLeave != "" {
 		switch msg.String() {
 		case "y", "Y":
@@ -319,7 +333,13 @@ func (sp *settingsPage) Update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		sp.settingsNavigationPrompt = true
 		closed = false
 	}
+	if sp.catalogReloadPending {
+		sp.reloadCatalogForm()
+	}
 	sp.scrollToFocus()
+	if closed {
+		sp.invalidateCatalog()
+	}
 	return cmd, closed
 }
 
@@ -354,6 +374,11 @@ func (sp *settingsPage) View() string {
 		}
 		return "Unsaved " + label + " edits. Discard and leave? y/n\n" + body
 	}
+	if sp.catalogPicker != nil {
+		w := min(sp.width, 120)
+		h := min(sp.viewportHeight(), 36)
+		return composeOverlay(body, sp.catalogPicker.View(w, h, sp.palette), (sp.width-w)/2, 0)
+	}
 	return body
 }
 
@@ -361,6 +386,17 @@ func (sp *settingsPage) View() string {
 func (sp *settingsPage) onCommit(key, value string) (string, tea.Cmd, error) {
 	if strings.HasPrefix(key, "routing-") {
 		return sp.commitRouting(key, value)
+	}
+	if key == "cloud-catalog-action" {
+		if _, field := sp.catalogPrerequisite(); field != "" {
+			sp.focusCloudField(field)
+			return "", nil, nil
+		}
+		return "", sp.startCatalog(true, false), nil
+	}
+	if strings.HasPrefix(key, "cloud-pick-") {
+		field := strings.TrimPrefix(key, "cloud-pick-")
+		return "", sp.openCatalog(field, false), nil
 	}
 	// Cloud provider keys — handled before everything else.
 	if ca := classifyCloudCommit(key, value); ca.kind != cloudCommitNone {
@@ -371,6 +407,9 @@ func (sp *settingsPage) onCommit(key, value string) (string, tea.Cmd, error) {
 			// snapshot cache so the form's error-path reload refetches the
 			// server's truth instead of repainting stale state.
 			sp.profilesLoaded = false
+		}
+		if err == nil && (ca.kind == cloudCommitSelect || ca.kind == cloudCommitSave || ca.kind == cloudCommitDiscard) {
+			return status, tea.Batch(cmd, sp.catalogKick()), nil
 		}
 		return status, cmd, err
 	}

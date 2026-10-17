@@ -1793,6 +1793,16 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 		}
 		return m, nil
 
+	case cloudCatalogKickMsg:
+		if sp, ok := m.content.(*settingsPage); ok && sp == msg.page {
+			return m, sp.startCatalog(false, false)
+		}
+		return m, nil
+	case cloudCatalogResultMsg:
+		if sp, ok := m.content.(*settingsPage); ok && sp == msg.page {
+			sp.applyCatalogResult(msg)
+		}
+		return m, nil
 	case settingsCommitDoneMsg:
 		// The commit outcome still applies server-side even if the user has
 		// left the settings page — ConfigChanged events keep the chips fresh —
@@ -2349,6 +2359,7 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 				m.claudeLoginModal.setDone()
 				if sp, ok := m.content.(*settingsPage); ok {
 					sp.cloudAccountSignedIn(m.claudeLoginModal.profile, "subscription")
+					return m, sp.catalogKick()
 				}
 			} else {
 				m.claudeLoginModal.setFailed(msg.frame.Error)
@@ -2425,6 +2436,7 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 				m.chatgptLoginModal.setDone(msg.frame.AccountID)
 				if sp, ok := m.content.(*settingsPage); ok {
 					sp.cloudAccountSignedIn(m.chatgptLoginModal.profile, "chatgpt")
+					return m, sp.catalogKick()
 				}
 			} else {
 				m.chatgptLoginModal.setFailed(msg.frame.Error)

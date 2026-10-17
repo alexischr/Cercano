@@ -2,9 +2,7 @@ package ui
 
 import (
 	"cercano/source/server/pkg/agentclient"
-	"context"
 	"fmt"
-	"time"
 
 	"cercano/source/clients/cli/internal/form"
 )
@@ -26,6 +24,8 @@ type cloudDraft struct {
 // fresh catalog for THIS profile's endpoint rather than reusing a stale one
 // from the previously-selected row.
 func (sp *settingsPage) selectCloudRow(rowID string) {
+	sp.invalidateCatalog()
+	sp.catalogPicker = nil
 	sp.cloudSelected = rowID
 	sp.cloudDirty = false
 	sp.cloudDraft = cloudDraft{Choices: (&agentclient.CloudModelChoices{}).Clone()}
@@ -138,6 +138,13 @@ func (sp *settingsPage) cloudDetailFields(r cloudRow) []form.Field {
 		out = append(out, form.NewText("cloud-base-url", il("base-url"), d.BaseURL, "https://…"))
 	}
 	out = append(out, sp.cloudChoiceFields(r)...)
+	state := sp.catalogState()
+	if state.Message != "" {
+		out = append(out, form.NewReadOnly("cloud-catalog-state", il("Model catalog"), state.Message, "Existing choices are preserved until Save"))
+	}
+	if state.Action != 0 {
+		out = append(out, form.NewButton("cloud-catalog-action", il(state.ActionLabel), true))
+	}
 	if r.Preset != nil && r.Preset.ID == "mistral" {
 		out = append(out, sp.mistralProviderCatalogFields()...)
 	}
@@ -221,34 +228,6 @@ func (sp *settingsPage) draftHasKey(r cloudRow) bool {
 	return !sp.cloudDraftNew && r.IsProfile && r.HasKey
 }
 
-// cloudModelOptions returns the model Select options for the currently
-// selected anthropic-style profile row. First fetches the live catalog from
-// the profile's endpoint (through Meridian for meridian routes, direct API
-// key otherwise); falls back to the curated static Claude list when the
-// fetch fails (no Meridian running, wrong URL, timeout, etc.). Cached per
-// row-selection so we don't re-fetch on every form re-render.
-func (sp *settingsPage) cloudModelOptions(r cloudRow, currentID string) []form.Option {
-	if !sp.cloudModelsFetched && r.IsProfile && sp.agent != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
-		models, discoveryError, err := sp.agent.ListCloudProfileModels(ctx, sp.cloudDraft.Name)
-		cancel()
-		sp.cloudModels = nil
-		sp.cloudModelsError = discoveryError
-		if err != nil {
-			sp.cloudModelsError = "Model discovery unavailable"
-		}
-		if err == nil && discoveryError == "" {
-			sp.cloudModels = models
-		}
-		sp.cloudModelsFetched = true
-	}
-	models := sp.cloudModels
-	if len(models) == 0 && sp.cloudDraft.Flavor == "messages" {
-		models = fallbackClaudeModels()
-	}
-	return modelOptionsFromCatalog(models, currentID)
-}
-
 // A successful login commits account identity, not unrelated model/key edits.
 // Keep those edits pending while making the newly created account reselectable.
 func (sp *settingsPage) cloudAccountSignedIn(name, route string) {
@@ -262,6 +241,7 @@ func (sp *settingsPage) cloudAccountSignedIn(name, route string) {
 	if sp.cloudDraft.Name != name {
 		return
 	}
+	sp.invalidateCatalog()
 	if sp.cloudDraftNew {
 		sp.cloudDirty = sp.cloudDraft.apiKeyEdited || (sp.cloudDraft.Choices != nil && (len(sp.cloudDraft.Choices.TierOverrides) > 0 || sp.cloudDraft.Choices.ImageModel != ""))
 	}

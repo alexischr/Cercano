@@ -43,6 +43,9 @@ func (m Model) configStripTop() int {
 // tab bar focused, and returns the new page's init/refresh cmd.
 func (m *Model) openConfigSurface(tab configTab) tea.Cmd {
 	closeMetricsPage(m.content)
+	if sp, ok := m.content.(*settingsPage); ok {
+		sp.invalidateCatalog()
+	}
 	m.configSurface = &configSurface{active: clampConfigTab(tab), focused: true}
 	page, cmd := m.buildConfigTabPage(m.configSurface.active)
 	m.content = page
@@ -57,6 +60,9 @@ func (m *Model) closeConfigSurface() tea.Cmd {
 		return nil
 	}
 	closeMetricsPage(m.content)
+	if sp, ok := m.content.(*settingsPage); ok {
+		sp.invalidateCatalog()
+	}
 	m.configSurface = nil
 	m.content = nil
 	m.contentScrollbarDragging = false
@@ -81,6 +87,9 @@ func (m *Model) switchConfigTab(tab configTab) tea.Cmd {
 		return m.openConfigSurface(tab)
 	}
 	closeMetricsPage(m.content)
+	if sp, ok := m.content.(*settingsPage); ok {
+		sp.invalidateCatalog()
+	}
 	m.configSurface.active = tab
 	m.configSurface.focused = true
 	page, cmd := m.buildConfigTabPage(tab)
@@ -175,6 +184,10 @@ func (m Model) handleConfigSurfaceKey(msg tea.KeyPressMsg) (Model, tea.Cmd, bool
 		return m, nil, true
 	}
 
+	if sp, ok := m.content.(*settingsPage); ok && sp.catalogPicker != nil {
+		next, cmd := m.dropFocusForwarding(msg)
+		return next, cmd, true
+	}
 	if key == "esc" {
 		if !cs.focused {
 			// The body owns focus. If the active page has a transient overlay

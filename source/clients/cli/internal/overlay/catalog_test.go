@@ -74,7 +74,7 @@ func TestCatalogDisabledAndBrowse(t *testing.T) {
 func TestCatalogCompactDetailsAndScroll(t *testing.T) {
 	c := NewCatalog("Choose", "", false)
 	c.Resize(60, 18)
-	c.SetEntries([]CatalogEntry{{ID: "exact", Name: "Model", Details: []CatalogDetail{{"Long", strings.Repeat("readable ", 80)}}}})
+	c.SetEntries([]CatalogEntry{{ID: "exact", Name: "Model", Details: []CatalogDetail{{Label: "Long", Value: strings.Repeat("readable ", 80)}}}})
 	for i := 0; i < 3; i++ {
 		catKey(&c, tea.KeyTab)
 	}
@@ -96,7 +96,7 @@ func TestCatalogCompactDetailsAndScroll(t *testing.T) {
 func TestCatalogViewportBounds(t *testing.T) {
 	for _, size := range [][2]int{{120, 36}, {100, 24}, {80, 24}, {60, 18}, {25, 8}} {
 		c := NewCatalog("Choose a model", "Mistral / Work", false)
-		c.SetEntries([]CatalogEntry{{ID: strings.Repeat("long-model-", 40), Name: "模型 — Long model", Details: []CatalogDetail{{"Capabilities", "Unknown"}, {"Aliases", strings.Repeat("alias ", 50)}}}})
+		c.SetEntries([]CatalogEntry{{ID: strings.Repeat("long-model-", 40), Name: "模型 — Long model", Details: []CatalogDetail{{Label: "Capabilities", Value: "Unknown"}, {Label: "Aliases", Value: strings.Repeat("alias ", 50)}}}})
 		out := c.View(size[0], size[1], theme.Palette{})
 		lines := strings.Split(out, "\n")
 		if len(lines) > size[1] {
@@ -118,5 +118,46 @@ func TestCatalogStateAction(t *testing.T) {
 	out := ansi.Strip(c.View(100, 24, theme.Palette{}))
 	if !strings.Contains(out, "Add an API key") {
 		t.Fatal("missing guidance")
+	}
+}
+
+func TestCatalogAccountFilterKeepsObservationsSeparate(t *testing.T) {
+	c := NewCatalog("Catalog", "Mistral", true)
+	c.SetEntries([]CatalogEntry{{ID: "shared", Name: "Shared", Accounts: []string{"personal", "work"}, Details: []CatalogDetail{{Label: "Context", Value: "4096", Account: "personal"}, {Label: "Context", Value: "8192", Account: "work"}}}, {ID: "work-only", Name: "Work only", Accounts: []string{"work"}}})
+	catKey(&c, tea.KeyTab)
+	catKey(&c, tea.KeyRight)
+	if c.account != "personal" || len(c.VisibleEntries()) != 1 {
+		t.Fatal("account filtering mixed availability")
+	}
+	details := strings.Join(c.details(80), "\n")
+	if !strings.Contains(details, "4096") || strings.Contains(details, "8192") {
+		t.Fatal("account observations flattened", details)
+	}
+	catKey(&c, tea.KeyRight)
+	if c.account != "work" || len(c.VisibleEntries()) != 2 {
+		t.Fatal("work models missing")
+	}
+}
+func TestCatalogSearchActionsAndNoMatch(t *testing.T) {
+	c := NewCatalog("Choose", "Work", false)
+	c.SetEntries([]CatalogEntry{{Name: "Inherit", Action: CatalogInherit}, {ID: "actual", Name: "Actual"}, {Name: "Custom", Action: CatalogCustom}})
+	catType(&c, "actual")
+	if o := catKey(&c, tea.KeyEnter); o.ID != "actual" {
+		t.Fatal("special action outranked exact model match")
+	}
+	c = NewCatalog("Choose", "", false)
+	c.SetEntries([]CatalogEntry{{Name: "Custom", Action: CatalogCustom}})
+	catType(&c, "missing")
+	if !strings.Contains(ansi.Strip(c.View(80, 24, theme.Palette{})), "No models match") {
+		t.Fatal("special actions hid no-match state")
+	}
+}
+
+func TestCatalogCredentialActionAfterTab(t *testing.T) {
+	c := NewCatalog("Choose", "", false)
+	c.State = CatalogState{Message: "Add an API key", Action: CatalogCredentials, ActionLabel: "Add API key"}
+	catKey(&c, tea.KeyTab)
+	if catKey(&c, tea.KeyEnter).Action != CatalogCredentials {
+		t.Fatal("visible credential action lost to hidden filter focus")
 	}
 }

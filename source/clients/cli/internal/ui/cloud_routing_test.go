@@ -111,7 +111,7 @@ func TestCloudPickerCancellationDoesNotChangeDraft(t *testing.T) {
 	sp := draftTestPage()
 	fields := sp.buildCloudSection().Fields
 	for i, f := range fields {
-		if f.Key() == "cloud-image" {
+		if f.Key() == "cloud-pick-cloud-image" {
 			sp.form.SetCursor(i)
 			break
 		}

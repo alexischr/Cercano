@@ -75,6 +75,9 @@ func shouldApplyModelEdit(field string, draftNew bool) bool {
 // applyCloudDraftEdit writes one committed detail field into the draft.
 func (sp *settingsPage) applyCloudDraftEdit(field, value string) {
 	sp.cloudDirty = true
+	if field == "cloud-name" || field == "cloud-flavor" || field == "cloud-backend" || field == "cloud-base-url" {
+		sp.invalidateCatalog()
+	}
 	if sp.applyCloudChoice(field, value) {
 		return
 	}
@@ -130,21 +133,7 @@ func (sp *settingsPage) commitCloud(ca cloudCommitAction) (string, tea.Cmd, erro
 	}
 	switch ca.kind {
 	case cloudCommitProviderCatalog:
-		if sp.cloudProviderCatalog != nil {
-			sp.cloudProviderCatalog = nil
-			return "provider catalog hidden", nil, nil
-		}
-		if sp.agent == nil {
-			return "no agent", nil, nil
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
-		defer cancel()
-		catalog, err := sp.agent.ListRuntimeModels(ctx)
-		if err != nil {
-			return "", nil, err
-		}
-		sp.cloudProviderCatalog = &catalog
-		return "Mistral catalog across configured accounts; selections remain account-specific", nil, nil
+		return "", sp.openCatalog("", true), nil
 	case cloudCommitAddAccount:
 		if sp.cloudDirty {
 			return "save or discard existing edits before adding an account", nil, nil
@@ -179,6 +168,7 @@ func (sp *settingsPage) commitCloud(ca cloudCommitAction) (string, tea.Cmd, erro
 		if err != nil {
 			return "", nil, err
 		}
+		sp.invalidateCatalog()
 		sp.cloudModels = nil
 		sp.cloudModelsFetched = false
 		sp.cloudModelsError = ""
@@ -213,6 +203,7 @@ func (sp *settingsPage) commitCloud(ca cloudCommitAction) (string, tea.Cmd, erro
 			return "", nil, err
 		}
 		sp.profilesLoaded = false
+		sp.invalidateCatalog()
 		sp.cloudSelected = ""
 		return "deleted " + name, nil, nil
 	case cloudCommitSignIn:
@@ -237,6 +228,7 @@ func (sp *settingsPage) commitCloud(ca cloudCommitAction) (string, tea.Cmd, erro
 			return openClaudeLoginModalMsg{profile: profile, model: claudeModel, setActive: setActive, createOnly: createOnly}
 		}, nil
 	case cloudCommitKey:
+		sp.invalidateCatalog()
 		sp.cloudDraft.apiKey = ca.value
 		sp.cloudDraft.apiKeyEdited = true
 		sp.cloudDirty = true

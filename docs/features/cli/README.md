@@ -18,6 +18,10 @@ Cercano today is consumed via MCP (Claude Code, Cursor) and IDE extensions (VS C
 
 **Cloud → provider → Add another account** creates a separately named account using the existing authentication flow. Credentials are isolated by profile; adding an account does not replace an existing sign-in or change Primary. **Routing → Primary** offers an ordered backup list with add, remove, and move controls, including multiple accounts from the same provider. Quota exhaustion advances through the list and stays on the next account without cooldown-based return. Configuration and execution details are in [Cloud routing](../../cloud-routing.md).
 
+## Model catalog picker
+
+Cloud model choices use a shared searchable results-and-details popover, with explicit credential guidance and asynchronous discovery. See [Model catalog picker](model-catalog-picker.md) for keyboard controls, states, component reuse and verification.
+
 ## Design / Approach
 
 ### Design principles (load-bearing)

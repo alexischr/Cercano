@@ -2,6 +2,7 @@ package ui
 
 import (
 	"cercano/source/clients/cli/internal/form"
+	"github.com/charmbracelet/x/ansi"
 	"strings"
 )
 
@@ -18,11 +19,16 @@ func (sp *settingsPage) cloudChoiceFields(row cloudRow) []form.Field {
 		if current != "" {
 			label = "reset to inherited recommendation"
 		}
-		opts := append([]form.Option{{Label: label, Value: ""}}, sp.cloudModelOptions(row, current)...)
-		fields = append(fields, form.NewSelect("cloud-quality-"+quality, "  "+quality, opts, current), form.NewText("cloud-custom-"+quality, "  custom "+quality+" ID", current, "empty restores inheritance"))
+		if current != "" {
+			label = current
+		}
+		fields = append(fields, form.NewButton("cloud-pick-cloud-quality-"+quality, "  "+quality+"  "+sp.catalogChoiceLabel(label)+"  ›", true), form.NewText("cloud-custom-"+quality, "  custom "+quality+" ID", current, "empty restores inheritance"))
 	}
-	opts := append([]form.Option{{Label: "none", Value: ""}}, sp.cloudModelOptions(row, choices.ImageModel)...)
-	fields = append(fields, form.NewSelect("cloud-image", "  image model", opts, choices.ImageModel), form.NewText("cloud-custom-image", "  custom image ID", choices.ImageModel, "requires confirmed image capability"))
+	image := choices.ImageModel
+	if image == "" {
+		image = "none"
+	}
+	fields = append(fields, form.NewButton("cloud-pick-cloud-image", "  image model  "+sp.catalogChoiceLabel(image)+"  ›", true), form.NewText("cloud-custom-image", "  custom image ID", choices.ImageModel, "requires confirmed image capability"))
 	return fields
 }
 func (sp *settingsPage) applyCloudChoice(field, value string) bool {
@@ -42,4 +48,15 @@ func (sp *settingsPage) applyCloudChoice(field, value string) bool {
 		sp.cloudDraft.Choices.TierOverrides[quality] = value
 	}
 	return true
+}
+
+func (sp *settingsPage) catalogChoiceLabel(id string) string {
+	label := id
+	for _, m := range sp.cloudModels {
+		if m.ID == id && m.DisplayName != "" {
+			label = m.DisplayName
+			break
+		}
+	}
+	return ansi.Truncate(ansi.Strip(label), 32, "…")
 }

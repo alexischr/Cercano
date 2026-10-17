@@ -24,7 +24,7 @@ func (s *catalogBaselineStub) ListCloudProfileModels(ctx context.Context, _ *pro
 	}
 	return &proto.ListCloudProfileModelsResponse{Error: "no API key"}, nil
 }
-func TestCatalogBaselineProbe(t *testing.T) {
+func TestCatalogDiscoveryIsAsyncAndIgnoresStaleResults(t *testing.T) {
 	l, e := net.Listen("tcp", "127.0.0.1:0")
 	if e != nil {
 		t.Fatal(e)
@@ -39,28 +39,60 @@ func TestCatalogBaselineProbe(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer c.Close()
-	p := draftTestPage()
-	p.agent = c
-	p.cloudDraft.Name = "no-key-account"
-	done := make(chan struct{})
-	go func() { p.cloudModelOptions(cloudRow{IsProfile: true, HasKey: false}, ""); close(done) }()
+	p := &settingsPage{agent: c, cloudSelected: "profile:test", cloudDraft: cloudDraft{Name: "test"}}
+	// Form options must be cache-only: no network activity before a command runs.
+	p.cloudDetailFields(p.catalogRow())
+	select {
+	case <-stub.called:
+		t.Fatal("form construction performed discovery")
+	default:
+	}
+	cmd := p.startCatalog(false, false)
+	if cmd == nil || !p.catalogBusy {
+		t.Fatal("async command not scheduled")
+	}
+	if p.startCatalog(false, false) != nil {
+		t.Fatal("duplicate request scheduled")
+	}
+	done := make(chan cloudCatalogResultMsg, 1)
+	go func() { done <- cmd().(cloudCatalogResultMsg) }()
 	select {
 	case <-stub.called:
 	case <-time.After(time.Second):
-		t.Fatal("probe did not reach server")
+		t.Fatal("command never reached server")
 	}
-	select {
-	case <-done:
-		t.Fatal("expected synchronous call still blocked")
-	default:
-		t.Log("Observed: building model options blocks until catalog RPC finishes, even with HasKey=false")
-	}
+	// While the server is blocked, synchronous cached reads still finish.
+	p.cloudDetailFields(p.catalogRow())
+	p.selectCloudRow("other")
 	close(stub.release)
-	<-done
-	t.Logf("Observed missing-key discovery state: fetched=%v, generic error=%q", p.cloudModelsFetched, p.cloudModelsError)
-	label := cloudModelMetadataLabel(agentclient.CloudModelInfo{Metadata: &agentclient.CatalogMetadata{ContextLength: 200000, Aliases: []string{"model-alias", "another-alias"}, Deprecated: true, ReplacedBy: "replacement-model"}}, "Example model")
-	if len(label) < 100 {
-		t.Fatal("expected oversized metadata label")
+	msg := <-done
+	p.applyCatalogResult(msg)
+	if p.cloudModelsFetched || p.cloudModelsError != "" {
+		t.Fatal("stale result applied to another account")
 	}
-	t.Logf("Observed metadata-packed dropdown label: %d bytes: %s", len(label), label)
+}
+func TestCatalogPrerequisiteStates(t *testing.T) {
+	p := cloudSamplePage()
+	p.selectCloudRow("template:gemini")
+	if text, field := p.catalogPrerequisite(); text != "Add an API key to load available models." || field != "cloud-key" {
+		t.Fatalf("missing-key state: %q %q", text, field)
+	}
+	p.cloudDraft.apiKeyEdited = true
+	p.cloudDraft.apiKey = "synthetic"
+	if _, field := p.catalogPrerequisite(); field != "cloud-save" {
+		t.Fatal("unsaved credential treated as stored")
+	}
+	p.cloudDraft.apiKeyEdited = false
+	p.cloudDraft.Route = "subscription"
+	if _, field := p.catalogPrerequisite(); field != "cloud-signin-claude" {
+		t.Fatal("subscription incorrectly requests key")
+	}
+	p.selectCloudRow("profile:work-openai")
+	if text, _ := p.catalogPrerequisite(); text != "" {
+		t.Fatal("stored account blocked", text)
+	}
+	p.cloudDraft.BaseURL = "https://changed.example"
+	if _, field := p.catalogPrerequisite(); field != "cloud-save" {
+		t.Fatal("unsaved endpoint used for discovery")
+	}
 }

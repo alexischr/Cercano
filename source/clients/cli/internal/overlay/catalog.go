@@ -29,10 +29,11 @@ type CatalogOutcome struct {
 	Action      CatalogAction
 	ID, Account string
 }
-type CatalogDetail struct{ Label, Value string }
+type CatalogDetail struct{ Label, Value, Account string }
 type CatalogEntry struct {
 	ID, Account, Name string
 	Aliases           []string
+	Accounts          []string
 	Details           []CatalogDetail
 	Current           bool
 	DisabledReason    string
@@ -57,6 +58,7 @@ type Catalog struct {
 	all, compactDetail          bool
 	width, height               int
 	notice                      string
+	account                     string
 }
 
 func NewCatalog(title, scope string, browse bool) Catalog {
@@ -77,12 +79,24 @@ func (c Catalog) filtered() []CatalogEntry {
 	}
 	var found []match
 	for _, e := range c.Entries {
+		if c.account != "" {
+			found := e.Account == c.account
+			for _, a := range e.Accounts {
+				found = found || a == c.account
+			}
+			if !found {
+				continue
+			}
+		}
 		if !c.all && e.DisabledReason != "" && !e.Current {
 			continue
 		}
 		rank := 3
 		if e.Action != CatalogIdle {
 			rank = -1
+			if q != "" || e.Action == CatalogCustom {
+				rank = 4
+			}
 		} else if q == "" {
 			rank = 0
 		} else {
@@ -97,7 +111,7 @@ func (c Catalog) filtered() []CatalogEntry {
 				}
 			}
 		}
-		if rank < 3 {
+		if rank < 3 || e.Action != CatalogIdle {
 			found = append(found, match{e, rank})
 		}
 	}
@@ -215,13 +229,34 @@ func (c *Catalog) Update(msg tea.Msg) (tea.Cmd, CatalogOutcome) {
 			}
 			return nil, CatalogOutcome{}
 		}
+	case "left", "right":
+		if c.focus == 1 && c.Browse {
+			accounts := c.accounts()
+			i := 0
+			for j, a := range accounts {
+				if a == c.account {
+					i = j
+				}
+			}
+			n := 1
+			if key.String() == "left" {
+				n = -1
+			}
+			c.account = accounts[(i+n+len(accounts))%len(accounts)]
+			c.cursor = 0
+			c.detailOffset = 0
+			return nil, CatalogOutcome{}
+		}
 	case "enter":
+		if c.State.Action == CatalogCredentials {
+			return nil, CatalogOutcome{Action: CatalogCredentials}
+		}
 		if c.focus == 1 {
 			c.all = !c.all
 			c.cursor = 0
 			return nil, CatalogOutcome{}
 		}
-		if c.State.Action != CatalogIdle {
+		if c.State.Action != CatalogIdle && (c.State.Action == CatalogCredentials || len(entries) == 0) {
 			return nil, CatalogOutcome{Action: c.State.Action}
 		}
 		e, exists := c.highlighted()
@@ -275,7 +310,10 @@ func (c Catalog) details(w int) []string {
 	if !ok {
 		return []string{"No model highlighted"}
 	}
-	lines := []string{catalogText(e.Name), "ID: " + catalogText(e.ID)}
+	lines := []string{catalogText(e.Name)}
+	if e.Action == CatalogIdle {
+		lines = append(lines, "ID: "+catalogText(e.ID))
+	}
 	if e.Account != "" {
 		lines = append(lines, "Account: "+catalogText(e.Account))
 	}
@@ -289,11 +327,18 @@ func (c Catalog) details(w int) []string {
 		lines = append(lines, "Unavailable: "+catalogText(e.DisabledReason))
 	}
 	for _, d := range e.Details {
+		if c.account != "" && d.Account != "" && d.Account != c.account {
+			continue
+		}
 		v := d.Value
 		if v == "" {
 			v = "Unknown"
 		}
-		lines = append(lines, catalogText(d.Label)+": "+catalogText(v))
+		label := d.Label
+		if d.Account != "" {
+			label = d.Account + " · " + label
+		}
+		lines = append(lines, catalogText(label)+": "+catalogText(v))
 	}
 	var wrapped []string
 	for _, s := range lines {
@@ -312,25 +357,58 @@ func (c Catalog) View(width, height int, p theme.Palette) string {
 	c.height = height
 	accent := lipgloss.NewStyle().Foreground(p.Accent)
 	muted := lipgloss.NewStyle().Foreground(p.Muted)
-	lines := []string{lipgloss.NewStyle().Foreground(p.Bright).Bold(true).Render(catalogClip(c.Title, w)), muted.Render(catalogClip(c.Scope, w))}
-	c.input.SetWidth(max(1, w-2))
+	lines := []string{lipgloss.NewStyle().Foreground(p.Bright).Bold(true).Render(catalogClip(catalogText(c.Title), w)), muted.Render(catalogClip(catalogText(c.Scope), w))}
+	c.input.SetWidth(max(1, w-4))
 	lines = append(lines, catalogClip(c.input.View(), w))
 	filter := "Compatible models"
 	if c.all {
 		filter = "All models"
 	}
+	if c.Browse {
+		account := c.account
+		if account == "" {
+			account = "All accounts"
+		}
+		filter = account + " · ←→ Change account"
+	}
 	if c.focus == 1 {
 		filter = "› " + filter
 	}
 	lines = append(lines, muted.Render(catalogClip(filter+" · Tab to filters, Enter to toggle", w)))
-	status := c.State.Message
-	if c.State.Busy {
-		status = "Loading… " + status
+	status := catalogText(c.State.Message)
+	if c.State.Busy && status == "" {
+		status = "Loading available models…"
 	}
 	if status != "" {
-		lines = append(lines, catalogClip(status, w))
+		wrapped := strings.Split(ansi.Hardwrap(status, w, true), "\n")
+		lines = append(lines, wrapped[:min(len(wrapped), max(1, h/4))]...)
+	}
+	if c.State.Action == CatalogCredentials {
+		content := []string{lines[0], lines[1], "", accent.Render("Available models")}
+		content = append(content, strings.Split(ansi.Hardwrap(status, w, true), "\n")...)
+		content = append(content, "", accent.Render("Enter "+catalogText(c.State.ActionLabel)), "", "Your current selection stays unchanged.")
+		for len(content) < h-1 {
+			content = append(content, "")
+		}
+		if len(content) > h-1 {
+			content = content[:h-1]
+		}
+		content = append(content, "Esc Cancel")
+		for i, line := range content {
+			content[i] = catalogClip(line, w)
+		}
+		return lipgloss.NewStyle().Foreground(p.Primary).Background(p.Surface).Border(lipgloss.RoundedBorder()).BorderForeground(p.BorderDim).Padding(0, 1).Width(width).Render(strings.Join(content, "\n"))
 	}
 	entries := c.filtered()
+	count := 0
+	for _, e := range entries {
+		if e.Action == CatalogIdle {
+			count++
+		}
+	}
+	if strings.TrimSpace(c.Query()) != "" && count == 0 {
+		lines = append(lines, catalogClip("No models match your search. Ctrl+U clears search.", w))
+	}
 	bodyH := max(1, h-len(lines)-2)
 	wide := width >= 100 && height >= 24
 	compact := c.IsCompact()
@@ -339,6 +417,22 @@ func (c Catalog) View(width, height int, p theme.Palette) string {
 		listW = (w - 3) / 2
 		detailW = w - listW - 3
 	}
+	heading := "MODELS"
+	if c.focus == 2 {
+		heading = "› MODELS"
+	}
+	if compact && c.compactDetail {
+		heading = "DETAILS"
+	}
+	if wide {
+		right := "DETAILS"
+		if c.focus == 3 {
+			right = "› DETAILS"
+		}
+		heading = catalogPad(heading, listW) + " │ " + right
+	}
+	lines = append(lines, muted.Render(catalogClip(heading, w)))
+	bodyH = max(1, bodyH-1)
 	detailH := 0
 	listH := bodyH
 	if !wide && !compact {
@@ -422,7 +516,7 @@ func (c Catalog) View(width, height int, p theme.Palette) string {
 	if c.compactDetail {
 		footer = "PgUp/PgDn Scroll · Esc Back"
 	}
-	if c.State.ActionLabel != "" {
+	if c.State.ActionLabel != "" && (c.State.Action == CatalogCredentials || len(entries) == 0) {
 		footer = "Enter " + catalogText(c.State.ActionLabel) + " · Esc Cancel"
 	}
 	note := c.notice
@@ -439,5 +533,35 @@ func (c Catalog) View(width, height int, p theme.Palette) string {
 	for i, s := range lines {
 		lines[i] = catalogClip(s, w)
 	}
-	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(p.BorderDim).Padding(0, 1).Width(width).Render(strings.Join(lines, "\n"))
+	return lipgloss.NewStyle().Foreground(p.Primary).Background(p.Surface).Border(lipgloss.RoundedBorder()).BorderForeground(p.BorderDim).Padding(0, 1).Width(width).Render(strings.Join(lines, "\n"))
+}
+
+// Paste consumes pasted input only in search; it never forwards it to a form.
+func (c *Catalog) Paste(s string) {
+	if c.focus != 0 {
+		return
+	}
+	v := []rune(c.input.Value() + catalogText(s))
+	if len(v) > 256 {
+		v = v[:256]
+	}
+	c.input.SetValue(string(v))
+	c.input.CursorEnd()
+	c.cursor = 0
+	c.detailOffset = 0
+}
+
+func (c Catalog) accounts() []string {
+	seen := map[string]bool{"": true}
+	out := []string{""}
+	for _, e := range c.Entries {
+		for _, a := range append([]string{e.Account}, e.Accounts...) {
+			if !seen[a] {
+				out = append(out, a)
+				seen[a] = true
+			}
+		}
+	}
+	sort.Strings(out[1:])
+	return out
 }
