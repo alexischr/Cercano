@@ -108,6 +108,7 @@ type McpManager interface {
 
 // Server is the gRPC server for the Agent service.
 type Server struct {
+	pendingPrompts        pendingPromptHub
 	mistralMu             sync.Mutex
 	mistralCatalog        *mistralcatalog.Store
 	authenticationWaiters sync.Map
@@ -3437,7 +3438,8 @@ func gitInfo(dir string) (bool, string) {
 //   - Lossy attach: if this observer drains slowly, events are dropped rather
 //     than stalling the turn's publisher. A passive observer must not block
 //     the initiator.
-//   - Observe-only: no permission prompting, no persistence, no turn gating.
+//   - Live pending approvals are replayed independently of historical events.
+//     Attach never grants approval or starts a turn; Allow/Deny remain explicit.
 func (s *Server) AttachConversation(req *proto.AttachConversationRequest, stream proto.Agent_AttachConversationServer) error {
 	convID := req.GetConversationId()
 	if convID == "" {
@@ -3446,6 +3448,9 @@ func (s *Server) AttachConversation(req *proto.AttachConversationRequest, stream
 
 	replay, ch, detach := s.turnBroker.Attach(convID)
 	defer detach()
+
+	promptChanges, detachPrompts := s.pendingPrompts.subscribe(convID)
+	defer detachPrompts()
 
 	// Send the replay buffer first (events published before this Attach call).
 	for _, ev := range replay {
@@ -3457,6 +3462,13 @@ func (s *Server) AttachConversation(req *proto.AttachConversationRequest, stream
 	// Forward live events until the channel closes or the client disconnects.
 	for {
 		select {
+		case <-promptChanges:
+			for _, prompt := range s.pendingPrompts.snapshot(convID) {
+				if err := stream.Send(&proto.StreamProcessResponse{Payload: &proto.StreamProcessResponse_PermissionRequired{PermissionRequired: prompt}}); err != nil {
+					return err
+				}
+			}
+
 		case ev, ok := <-ch:
 			if !ok {
 				// Broker closed ch — turn ended or was superseded.
@@ -3520,18 +3532,16 @@ func (s *Server) streamProcessRequestWithToolLoop(req *proto.ProcessRequestReque
 		if s.permBroker == nil || !s.permBroker.HasPending() {
 			return false, nil
 		}
+		prompt := &proto.PermissionRequired{ToolUseId: toolUseID, ToolName: name, ArgsJson: string(args), Tier: string(tier), Destructive: destructive}
+		var forget func()
+		defer func() {
+			if forget != nil {
+				forget()
+			}
+		}()
 		d, err := s.permBroker.WaitWithNotify(ctx, convID, toolUseID, func() error {
-			return stream.Send(&proto.StreamProcessResponse{
-				Payload: &proto.StreamProcessResponse_PermissionRequired{
-					PermissionRequired: &proto.PermissionRequired{
-						ToolUseId:   toolUseID,
-						ToolName:    name,
-						ArgsJson:    string(args),
-						Tier:        string(tier),
-						Destructive: destructive,
-					},
-				},
-			})
+			forget = s.pendingPrompts.publish(convID, prompt)
+			return stream.Send(&proto.StreamProcessResponse{Payload: &proto.StreamProcessResponse_PermissionRequired{PermissionRequired: prompt}})
 		})
 		if err != nil {
 			return false, err
