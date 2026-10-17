@@ -80,3 +80,17 @@ func TestCompletedBackgroundReplayDoesNotDuplicateRestoredHistory(t *testing.T) 
 		t.Fatalf("restored answer duplicated by replay: count=%d", count)
 	}
 }
+
+func TestReconnectedBackgroundApprovalDoesNotOfferToReplayUserPrompt(t *testing.T) {
+	m := New(nil, false)
+	m.convID = "owner"
+	m.ensureTaskSubscription()
+	m.lastSubmittedPrompt = "unrelated original user request"
+	permission := agentclient.StreamMsg{Type: agentclient.TypePermissionRequired, ToolUseID: "approval", ToolName: "Edit", Tier: "W", ArgsJSON: "{}"}
+	m.applyConversationAttachment(conversationAttachmentMsg{parent: "owner", generation: m.taskSubscriptionGeneration, update: agentclient.ConversationUpdate{Response: &proto.StreamProcessResponse{TurnEpoch: "host", TurnGeneration: 1, BackgroundTurn: true}, Message: &permission}})
+	m.connState = agentclient.ConnStateReconnecting
+	m = send(t, m, connStateChangedMsg{state: agentclient.ConnStateConnected})
+	if m.pendingConfirm == nil || m.pendingConfirm.stale {
+		t.Fatal("background approval incorrectly offers to re-run the unrelated foreground request")
+	}
+}

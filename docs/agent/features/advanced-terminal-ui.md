@@ -36,8 +36,10 @@ search and switch to the subagent tab to follow that investigation.
 ## Controls and limitations
 
 - **Layout and color rendering** depend on terminal dimensions and capabilities.
-- Subagent tabs show progress as it arrives. They do not by themselves imply
-  that a dispatch is detached or that the parent can finish without its result.
+- Subagent tabs show independent task progress. Public dispatch returns an
+  acceptance receipt; the parent can continue while the child runs. Closing a
+  tab dismisses it, while `task_stop` explicitly stops execution. See
+  [independent tasks](../independent-tasks.md).
 - The interactive client and headless output are different presentations of
   the same agent; do not expect terminal interactions in a script.
 - The [CLI track](../../features/cli/README.md) records remaining interface work.

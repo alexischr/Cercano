@@ -385,7 +385,7 @@ worktree flow. When in doubt, ask the user which workspace they want.
 		Name:        "delegate-git-plumbing",
 		Description: "Delegate noisy git plumbing to a sub-agent so its churn stays out of the main context.",
 		Domain:      DomainCore,
-		Trigger:     "Before running git plumbing (worktree, rebase, status/diff, fast-forward, land, bisect) inline → delegate it to a sub-agent via the `dispatch` tool (aka `workflow`), which returns just the branch and SHA so porcelain and diffs stay out of the main context.",
+		Trigger:     "Before running git plumbing (worktree, rebase, status/diff, fast-forward, land, bisect) inline → delegate it to a sub-agent via the `dispatch` tool (aka `workflow`), whose completed result should contain just the branch and SHA; inspect or wait on the returned task handle so porcelain and diffs stay out of the main context.",
 		Body: `# Delegate Git Plumbing Protocol
 
 Git plumbing is noisy and its output has no lasting value once the operation
@@ -400,6 +400,10 @@ inspecting status or diff, fast-forwarding, running a land's test-gate, or
 bisecting — hand it to a sub-agent via the ` + "`dispatch`" + ` capability (its
 ` + "`workflow`" + ` alias works too). The sub-agent does the churn and returns one
 line: the resulting branch and short SHA, or "conflict at <file>".
+
+The public launch returns task_id and child_id immediately, not that result.
+Use task_inspect or task_wait to obtain the completed outcome before relying on
+its branch, SHA, or success. Do not treat an acceptance receipt as verification.
 
 Do not delegate an explicit user request to publish the current branch merely
 because it is git-related. When the user says "push" or otherwise directly

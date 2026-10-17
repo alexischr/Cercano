@@ -34,6 +34,11 @@ or `Bash`. The `SKILL.md` files under `plugins/skills/` and the embedded
 | `extract` | one-shot text analysis | Reconnaissance route | pulling specific facts out of text |
 | `classify` | one-shot text analysis | Reconnaissance route | bucketing text/files |
 
+Public `dispatch`/`workflow` returns an accepted task handle immediately, not the
+finished report. Use `task_inspect` or `task_wait` before relying on the child's
+answer; use `task_stop` to stop execution. See [independent tasks](independent-tasks.md).
+
+
 **Canonical delegation example.** Instead of running fifteen Grep/Read calls
 yourself to chase a code path, call `dispatch` with a concrete intent and a
 read-only grant:

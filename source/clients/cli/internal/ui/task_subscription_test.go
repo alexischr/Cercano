@@ -83,3 +83,15 @@ func TestTaskSubscriptionChatSwitchCancelsAndFencesOldEvents(t *testing.T) {
 		t.Fatal("stale subscription generation accepted")
 	}
 }
+
+func TestTaskUpdatesPreserveTypedInput(t *testing.T) {
+	m := New(nil, false)
+	m.convID = "owner"
+	m.ensureTaskSubscription()
+	m.input.SetValue("next request still being typed")
+	snapshot := &proto.TaskSubscriptionEvent{Payload: &proto.TaskSubscriptionEvent_Task{Task: &proto.TaskLifecycleSnapshot{TaskId: "task", ChildId: "child", Status: "completed"}}}
+	m.applyTaskSubscription(taskSubscriptionMsg{parent: "owner", generation: m.taskSubscriptionGeneration, update: agentclient.TaskUpdate{Event: snapshot}})
+	if m.input.Value() != "next request still being typed" || m.streaming {
+		t.Fatal("completion changed input or claimed the main stream")
+	}
+}

@@ -82,6 +82,8 @@ func (m *Model) applyConversationAttachment(msg conversationAttachmentMsg) tea.C
 			turn.view.SetStreaming(false)
 			turn.view.resolveStaleInProgressTools()
 			m.mirrorObservedTurn(turn)
+			turn.view = chatView{}
+			turn.mirrors = nil
 		}
 	}
 	// Foreground messages already arrive through the initiating request stream.
@@ -119,7 +121,7 @@ func (m *Model) applyConversationAttachment(msg conversationAttachmentMsg) tea.C
 			return msg.next
 		}
 		m.backgroundPrompts[key] = true
-		m.enqueueConfirmation(toolConfirm(&pendingToolCall{ToolUseID: permission.id, Name: permission.name, Args: permission.argsJSON, Permission: permission.tier, Destructive: permission.destructive}))
+		m.enqueueConfirmation(toolConfirm(&pendingToolCall{Background: true, ToolUseID: permission.id, Name: permission.name, Args: permission.argsJSON, Permission: permission.tier, Destructive: permission.destructive}))
 		return msg.next
 	}
 	if response.EventSequence == 0 {
@@ -149,6 +151,10 @@ func (m *Model) applyConversationAttachment(msg conversationAttachmentMsg) tea.C
 		turn.view.resolveStaleInProgressTools()
 	}
 	m.mirrorObservedTurn(turn)
+	if turn.done {
+		turn.view = chatView{}
+		turn.mirrors = nil
+	}
 	m.refreshViewport()
 	return tea.Batch(msg.next, m.ensureAnimTick())
 }

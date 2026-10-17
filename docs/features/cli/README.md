@@ -1,5 +1,10 @@
 # Cercano CLI
 
+**Independent delegated work:** public dispatch now returns task handles. Child
+progress survives parent-turn completion and reconnect; automatic parent replies
+use the normal chat attachment. See the [task lifecycle and control guide](../../agent/independent-tasks.md).
+
+
 ## Overview / Goal
 
 Stand-alone Cercano CLI — a Go-based terminal agent harness with retro 80s cracker/hacker chrome (amber + lime on charcoal, shadowed block-letter banner, themed chrome throughout), comparable in scope to Claude Code or Codex CLI. It consumes the shared Cercano agent over gRPC.

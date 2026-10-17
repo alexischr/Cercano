@@ -100,6 +100,9 @@ func TestPublicWorkerDispatchReturnsBeforeChildFinishes(t *testing.T) {
 	if confirmations != 1 {
 		t.Fatalf("confirmations=%d", confirmations)
 	}
+	// Evict the originating worker endpoint before allowing the child to finish.
+	// Task ownership must not depend on that worker's connection or service.
+	server.Stop()
 	records, err := manager.List(context.Background(), "owner", 20)
 	if err != nil || len(records) != 1 {
 		t.Fatalf("records=%+v err=%v", records, err)

@@ -353,6 +353,7 @@ type Model struct {
 
 // pendingToolCall is a queued tool invocation awaiting user confirmation.
 type pendingToolCall struct {
+	Background bool // approval belongs to a host-generated turn, not lastSubmittedPrompt
 	// ToolUseID identifies the paused server-side tool call. Set when the
 	// confirm prompt is raised by a PermissionRequired streaming event;
 	// empty for legacy local-/tool invocations that route directly through
@@ -2591,7 +2592,13 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 			// old process, so answering it can never resolve anything. Mark it
 			// so the y/n resolver stops pretending the gate is live and instead
 			// re-runs the user's request on yes.
-			if m.pendingConfirm != nil && (m.pendingConfirm.tool != nil || m.pendingConfirm.auth != nil) {
+			if m.pendingConfirm != nil && m.pendingConfirm.tool != nil && m.pendingConfirm.tool.Background {
+				// An attachment may reconnect to the same live waiter. Always address
+				// that exact tool-use ID; a restarted host rejects it rather than replaying
+				// an unrelated foreground prompt.
+				m.pendingConfirm.stale = false
+				m.mainChat().AppendEntry(&Entry{Role: RoleSystem, Content: "Background approval still addresses the original tool request. If the agent restarted, it will reject the expired request; no work will be rerun."})
+			} else if m.pendingConfirm != nil && (m.pendingConfirm.tool != nil || m.pendingConfirm.auth != nil) {
 				m.pendingConfirm.stale = true
 				notice := "↻ the pending tool decision was lost when the agent restarted — press [y] to re-run that request, [n] to drop it, or type a new message and press Enter."
 				if m.pendingConfirm.auth != nil {

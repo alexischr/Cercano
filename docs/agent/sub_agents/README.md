@@ -92,8 +92,8 @@ Required behavior:
 
 - Exact canonical tool names are accepted.
 - Host routing prefixes are normalized when the provider exposes names with wire-level prefixes, but callers should still pass plain registered names such as `Read`, `Write`, `Edit`, `Bash`, `Glob`, `Grep`, and `LS`.
-- Unknown requested tool names are ignored and reported back in the dispatch result.
-- The actual granted tool list is reported back in the dispatch result.
+- Unknown requested tool names are ignored and retained in the completed task result (retrieved with `task_inspect` or `task_wait`).
+- The actual granted tool list is retained in the completed task result (retrieved with `task_inspect` or `task_wait`).
 - The child registry is created as a subset of the parent registry.
 - If an explicit grant resolves to no tools, return a clear error instead of launching a helpless sub-agent.
 - If no explicit tools are provided, default to read-only tools rather than all tools.
@@ -107,7 +107,7 @@ A sub-agent run should have these properties:
 - It has a distinct sub-conversation identifier when conversation persistence is available.
 - It receives its own task prompt, selected model, working directory, and bounded iteration limit.
 - It runs a normal tool loop against a narrowed registry.
-- It returns final text plus metadata to the parent: model, token counts when available, sub-conversation id, granted tools, and ignored requested tools.
+- The public launch returns `task_id`, `child_id`, and status immediately. Final text and metadata—model, token counts when available, sub-conversation ID, granted tools, and ignored requested tools—are retained in the task result. Inspect or explicitly wait for that result; a launch receipt is not the finished answer. See [independent tasks](../independent-tasks.md).
 - It should emit lifecycle/progress events so interactive clients can display the sub-agent's activity separately from the parent turn.
 
 The important enforcement rule is that the sub-agent's provider should see only the granted tool schemas. If `Bash` is not granted, the child should not be able to call it. If `Edit` is not granted, the child should not be able to modify files through `Edit`.
