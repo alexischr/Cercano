@@ -8,8 +8,8 @@ Objective: replace provisional model and rerun assumptions with recorded evidenc
 
 - [x] Create an isolated implementation worktree after plan approval and read applicable development instructions
 - [x] Trace wizard entry, UI, account discovery, apply, cancellation, resume, reset separation, and routing persistence
-  - [ ] Identify exact files and existing tests before edits; record existing behavior and missing acceptance coverage
-  - [ ] Confirm hardware detection distinguishes unified memory, discrete GPU memory, and unknown hardware; identify reusable probes
+  - [x] Identify exact files and existing tests before edits; record existing behavior and missing acceptance coverage
+  - [x] Confirm hardware detection distinguishes unified memory, discrete GPU memory, and unknown hardware; identify reusable probes
 - [ ] Verify exact Qwen candidate identity and compatible Q6-or-higher artifacts using authoritative model and artifact sources
 - [ ] Verify GLM 4.5 Air artifacts, runtime compatibility, and practical memory requirements
 - [ ] Calculate candidate weight, unquantized cache, runtime, and application-headroom budgets before runtime experiments
@@ -29,7 +29,7 @@ Objective: produce complete, inspectable three-tier recommendations from availab
   - [ ] Honor local preference and ensure local-only recommendations contain no cloud routes or backups
   - [ ] Allow one suitable local model to serve all three tiers and reuse compatible installed artifacts
 - [~] Encode only evidence-supported local model, quantization, and context defaults
-  - [ ] Distinguish unified-memory and discrete-GPU fit and handle missing or insufficient hardware information honestly
+  - [x] Distinguish unified-memory and discrete-GPU fit and handle missing or insufficient hardware information honestly
   - [ ] Preserve intentional context overrides and enforce existing allocation and compatibility checks
   - [ ] Prefer explicitly recommended smaller context over silent precision or cache changes
 - [x] Keep recommendation generation free of configuration writes, downloads, and runtime restarts
@@ -54,7 +54,7 @@ Objective: introduce tiers, discover resources, recommend, and preview rather th
 Objective: apply confirmed changes using existing persistence paths and make rerun discoverable without conflating it with reset. Files: existing setup apply/server handlers and tests, CLI setup entry points and configuration UI, source/server/pkg/setupstate, and relevant wizard persistence tests. Tests: interface-level preview/apply and rerun tests with temporary configuration and fake credential stores.
 
 - [x] Connect confirmed recommendations to existing routing and configuration persistence
-- [ ] Show changes against current assignments before replacing them
+- [~] Show changes against current assignments before replacing them
 - [ ] Preserve accounts, credentials, unrelated settings, permission choices, and intentional overrides
 - [x] Expose Run setup again through the existing guided-setup path and document existing command entry points
 - [x] Handle cancellation, interruption, resume, and older saved wizard states safely
@@ -65,7 +65,7 @@ Objective: apply confirmed changes using existing persistence paths and make rer
 
 Objective: verify actual runtime behavior and user-facing setup paths without overstating unsupported hardware results. Files: adjacent wizard, routing, catalog, and runtime tests; effort-local evidence and validation notes. Tests: focused package tests plus interface integration coverage; bounded runtime smoke tests only where appropriate hardware and artifacts are available.
 
-- [ ] Run focused tests for each changed package and build affected CLI/server targets
+- [x] Run focused tests for each changed package and build affected CLI/server targets
 - [ ] Exercise integrated setup scenarios for one cloud account, multiple accounts, mixed use, local-only use, and existing-user rerun
 - [ ] Validate candidate runtime loads and tool-calling suitability against the calculated budgets using available suitable hardware
   - [ ] Compare planned memory/context assumptions with observed runtime allocation and server-confirmed serving capacity
