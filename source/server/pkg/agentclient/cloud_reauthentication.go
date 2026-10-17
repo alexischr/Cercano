@@ -11,6 +11,7 @@ import (
 type CloudLoginMsg struct {
 	ProfileName, Provider, AttemptID        string
 	AuthorizeURL, VerificationURL, UserCode string
+	ManualAuthorizeURL, LoginID             string // Claude only
 	Done, Ok                                bool
 	Error                                   string
 	Err                                     error
@@ -50,7 +51,7 @@ func (c *Client) ReauthenticateCloud(ctx context.Context, profile, attemptID str
 				send(CloudLoginMsg{ProfileName: profile, AttemptID: attemptID, Err: errors.New("reauthentication response identity mismatch")})
 				return
 			}
-			if !send(CloudLoginMsg{ProfileName: ev.GetProfileName(), Provider: ev.GetProvider(), AttemptID: ev.GetAttemptId(), AuthorizeURL: ev.GetAuthorizeUrl(), VerificationURL: ev.GetVerificationUrl(), UserCode: ev.GetUserCode(), Done: ev.GetDone(), Ok: ev.GetOk(), Error: ev.GetError()}) {
+			if !send(CloudLoginMsg{ProfileName: ev.GetProfileName(), Provider: ev.GetProvider(), AttemptID: ev.GetAttemptId(), AuthorizeURL: ev.GetAuthorizeUrl(), ManualAuthorizeURL: ev.GetManualAuthorizeUrl(), LoginID: ev.GetLoginId(), VerificationURL: ev.GetVerificationUrl(), UserCode: ev.GetUserCode(), Done: ev.GetDone(), Ok: ev.GetOk(), Error: ev.GetError()}) {
 				return
 			}
 			if ev.GetDone() {

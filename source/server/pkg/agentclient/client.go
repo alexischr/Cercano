@@ -2650,16 +2650,20 @@ func (c *Client) StartChatGPTLogin(ctx context.Context, profileName, model strin
 }
 
 // ClaudeLoginMsg is one frame of the Claude subscription sign-in stream. The
-// first message carries AuthorizeURL to open in a browser; the terminal
-// message has Done=true with Ok/Error and (on success) the created
-// ProfileName. Err is set only on transport failure and is terminal.
+// first message carries AuthorizeURL to open in a browser, ManualAuthorizeURL
+// to show for a browser on another machine, and LoginID to submit a pasted
+// code under (SubmitClaudeLoginCode); the terminal message has Done=true with
+// Ok/Error and (on success) the created ProfileName. Err is set only on
+// transport failure and is terminal.
 type ClaudeLoginMsg struct {
-	AuthorizeURL string
-	Done         bool
-	Ok           bool
-	Error        string
-	ProfileName  string
-	Err          error
+	AuthorizeURL       string
+	ManualAuthorizeURL string
+	LoginID            string
+	Done               bool
+	Ok                 bool
+	Error              string
+	ProfileName        string
+	Err                error
 }
 
 // StartClaudeLogin opens the Claude subscription sign-in stream and returns a
@@ -2689,13 +2693,34 @@ func (c *Client) StartClaudeLogin(ctx context.Context, profileName, model string
 				return
 			}
 			out <- ClaudeLoginMsg{
-				AuthorizeURL: ev.GetAuthorizeUrl(),
-				Done:         ev.GetDone(),
-				Ok:           ev.GetOk(),
-				Error:        ev.GetError(),
-				ProfileName:  ev.GetProfileName(),
+				AuthorizeURL:       ev.GetAuthorizeUrl(),
+				ManualAuthorizeURL: ev.GetManualAuthorizeUrl(),
+				LoginID:            ev.GetLoginId(),
+				Done:               ev.GetDone(),
+				Ok:                 ev.GetOk(),
+				Error:              ev.GetError(),
+				ProfileName:        ev.GetProfileName(),
 			}
 		}
 	}()
 	return out, nil
+}
+
+// SubmitClaudeLoginCode hands a pasted code to the Claude sign-in waiting
+// under loginID. It returns nil once the code is accepted (the login stream
+// then delivers its terminal frame). A rejected paste returns an error whose
+// message is fit to show the user; the sign-in keeps waiting for another try.
+func (c *Client) SubmitClaudeLoginCode(ctx context.Context, loginID, code string) error {
+	resp, err := c.agent.SubmitClaudeLoginCode(ctx, &proto.SubmitClaudeLoginCodeRequest{LoginId: loginID, Code: code})
+	if err != nil {
+		return err
+	}
+	if !resp.GetAccepted() {
+		msg := resp.GetError()
+		if msg == "" {
+			msg = "code not accepted"
+		}
+		return errors.New(msg)
+	}
+	return nil
 }

@@ -40,3 +40,17 @@ func openBrowserCmd(url string) tea.Cmd {
 func hyperlink(url, label string) string {
 	return "\x1b]8;;" + url + "\x1b\\" + label + "\x1b]8;;\x1b\\"
 }
+
+// browserLaunchable reports whether opening a URL is likely to put a browser
+// in front of the user. An SSH session's browser would open on the remote
+// host, out of sight; other Unix needs a graphical display, unless the session
+// forwards one (X11 over SSH), where the browser does show up.
+func browserLaunchable(getenv func(string) string, goos string) bool {
+	ssh := getenv("SSH_CONNECTION") != "" || getenv("SSH_CLIENT") != "" || getenv("SSH_TTY") != ""
+	display := getenv("DISPLAY") != "" || getenv("WAYLAND_DISPLAY") != ""
+	switch goos {
+	case "darwin", "windows":
+		return !ssh
+	}
+	return display
+}

@@ -1300,6 +1300,12 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 		return m, nil
 
 	case tea.PasteMsg:
+		if m.claudeLoginModal != nil {
+			// The sign-in modal floats over every surface; a paste while it is
+			// open is the sign-in code, never prompt or page text.
+			m.claudeLoginModal.pasteCode(msg.Content)
+			return m, nil
+		}
 		if m.contentPageActive() {
 			// A content page owns the screen. Most pages don't take pasted
 			// text, but ones with a text field (e.g. the MCP add-server form)
@@ -2355,18 +2361,19 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 			}
 			return m, nil
 		}
-		m.claudeLoginModal.setURL(msg.frame.AuthorizeURL)
+		m.claudeLoginModal.setURL(msg.frame.AuthorizeURL, msg.frame.ManualAuthorizeURL, msg.frame.LoginID)
 		var claudeCmds []tea.Cmd
 		if msg.ch != nil {
 			claudeCmds = append(claudeCmds, drainClaudeLoginCmd(msg.ch, msg.attempt))
 		}
-		// Auto-open the authorize page once, the moment we have the URL, so the
-		// user lands on it without hunting for the link in the modal.
-		if !m.claudeLoginModal.browserOpened && m.claudeLoginModal.authorizeURL != "" {
-			m.claudeLoginModal.browserOpened = true
-			claudeCmds = append(claudeCmds, openBrowserCmd(m.claudeLoginModal.authorizeURL))
-		}
+		claudeCmds = append(claudeCmds, m.claudeLoginModal.autoOpenBrowser())
 		return m, tea.Batch(claudeCmds...)
+
+	case claudeLoginCodeResultMsg:
+		if m.claudeLoginModal != nil {
+			m.claudeLoginModal.applyCodeResult(msg)
+		}
+		return m, nil
 
 	case openChatGPTLoginModalMsg:
 		if m.authLogin != nil {
@@ -5516,6 +5523,11 @@ func (m Model) View() tea.View {
 		ReportAssociatedText:       true,
 	}
 	v.MouseMode = tea.MouseModeCellMotion
+	if m.claudeLoginModal != nil && m.claudeLoginModal.fullWidth() {
+		// The manual sign-in URL is printed for copying, often over SSH. Mouse
+		// tracking would send drags to the app and block terminal selection.
+		v.MouseMode = tea.MouseModeNone
+	}
 	// Drive the real terminal cursor to the input caret position. Only
 	// when the chat input owns focus (no overlay, no pending confirm).
 	if m.searchVisible() && m.searchCanOwnInput() {

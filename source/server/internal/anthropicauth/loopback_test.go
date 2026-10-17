@@ -27,7 +27,7 @@ func TestCallbackErrorPageEscapesReflectedError(t *testing.T) {
 	// Wait serves the loopback listener and returns once /callback is hit.
 	done := make(chan error, 1)
 	go func() {
-		_, werr := p.Wait(ctx)
+		_, werr := p.Wait(ctx, nil)
 		done <- werr
 	}()
 

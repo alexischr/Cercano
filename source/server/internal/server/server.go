@@ -107,6 +107,9 @@ type McpManager interface {
 // Server is the gRPC server for the Agent service.
 type Server struct {
 	authenticationWaiters sync.Map
+	// claudeLogins maps an in-flight Claude sign-in's login id to its paste
+	// inbox (*claudeLogin); see SubmitClaudeLoginCode.
+	claudeLogins sync.Map
 	proto.UnimplementedAgentServer
 	agent       *agent.Agent
 	providerSvc providers.Resolver // owns cloud/open providers, router, coordinator, registry, catalogManager
