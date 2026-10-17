@@ -12,6 +12,7 @@ import (
 
 	"cercano/source/server/internal/updatecoord/enrollment"
 	"cercano/source/server/internal/updatecoord/state"
+	"cercano/source/server/pkg/installcontext"
 )
 
 var ErrUnavailable = errors.New("local update decision unavailable or expired")
@@ -50,6 +51,39 @@ func Discover(ctx context.Context) (*Local, error) {
 	}
 	return &Local{exe, root, identity}, nil
 }
+// DiscoverVerified returns the local decision surface for a caller whose
+// installation context was already verified by installcontext's verification
+// constructor (VerifyChildVerified). It never inspects os.Executable() or
+// argv: the stable launcher comes from the verified record's proven role,
+// and the enrollment record is re-read from disk beside that launcher and
+// must match the verified record EXACTLY — no ancestor search, no re-
+// enrollment, no locator trust. A zero/absent Verified is refused. The
+// per-user state root keeps its existing environment derivation and
+// nothing is provisioned or migrated; missing state fails closed on use
+// (Pending/Decide), as with Discover.
+func DiscoverVerified(ctx context.Context, verified installcontext.Verified) (*Local, error) {
+	launcher, e := verified.StableLauncher()
+	if e != nil {
+		return nil, ErrUnavailable
+	}
+	identity, e := enrollment.DiscoverStableLauncher(ctx, launcher)
+	if e != nil {
+		return nil, e
+	}
+	if identity != verified.Record() {
+		return nil, ErrUnavailable
+	}
+	home, e := os.UserHomeDir()
+	if e != nil {
+		return nil, e
+	}
+	root, e := state.StateRoot(runtime.GOOS, home, os.Getenv("LOCALAPPDATA"), os.Getenv("XDG_STATE_HOME"))
+	if e != nil {
+		return nil, e
+	}
+	return &Local{launcher, root, identity}, nil
+}
+
 func (l *Local) open(ctx context.Context) (*state.ForceControl, error) {
 	if l == nil {
 		return nil, ErrUnavailable
