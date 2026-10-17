@@ -493,3 +493,19 @@ func TestWizardPreviewDisclosesDiscreteFitPerGPU(t *testing.T) {
 		t.Fatalf("missing unfit pick disclosure: %s", summary)
 	}
 }
+
+func TestWizardPreviewIncludesEveryAppliedLocalAssignment(t *testing.T) {
+	wp := &wizardPage{state: wizard.State{LocusMode: "open_only", TierPicks: map[string]string{}}, curConfig: &agentclient.Config{ModelTiers: map[string]string{}}}
+	for _, tier := range openTierOrder() {
+		key := wizardOpenTierKey(tier)
+		wp.state.TierPicks[key] = "selected-" + key
+		wp.curConfig.ModelTiers[key] = "previous-" + key
+	}
+	text := wp.summary()
+	for _, tier := range openTierOrder() {
+		key := wizardOpenTierKey(tier)
+		if !strings.Contains(text, key+":") || !strings.Contains(text, "(was: previous-"+key+")") {
+			t.Errorf("missing assignment change for %s in preview: %s", key, text)
+		}
+	}
+}

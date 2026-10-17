@@ -833,7 +833,9 @@ func (wp *wizardPage) summary() string {
 			}
 		}
 	}
-	for _, t := range wizardTierOrder {
+	// Include every owned local slot, including embedding, so confirmation
+	// discloses all assignments that apply can replace.
+	for _, t := range openTierOrder() {
 		if wizard.ModeUsesCloud(wp.state.LocusMode) && wp.state.CloudProvider != "" && wp.state.AuthMethod != "existing" {
 			key := string(t) + "." + wizard.SideCloud
 			if pick := wp.state.TierPicks[key]; pick != "" {
