@@ -1,6 +1,6 @@
 # Resource-aware recommended setup
 
-Implement the approved spec.md in this directory. Use the existing wizard, persistence, routing, and curated llama-server catalog. All tasks are pending; planning has not verified model candidates or changed application code. Preserve existing configuration and runtime safety contracts. Escalate evidence that contradicts the approved premises or requires a consequential new interface/storage decision before implementing that change.
+Implement the approved spec.md in this directory. Use the existing wizard, persistence, routing, and curated llama-server catalog. Task statuses below track implementation; candidate-runtime evidence remains deferred and must not be inferred from passing software tests. Preserve existing configuration and runtime safety contracts. Escalate evidence that contradicts the approved premises or requires a consequential new interface/storage decision before implementing that change.
 
 ## Phase 1 — Establish evidence and implementation boundaries
 
@@ -25,13 +25,13 @@ Objective: produce complete, inspectable three-tier recommendations from availab
 
 - [x] Implement recommendation selection within the existing architecture for cloud-only, mixed, and local-only presets
   - [x] Populate all three tiers using one supported cloud account when that is all the user has
-  - [ ] Use multiple existing accounts where suitable without requiring a secondary provider
+  - [x] Use multiple existing accounts where suitable without requiring a secondary provider
   - [x] Honor local preference and ensure local-only recommendations contain no cloud routes or backups
   - [x] Allow one suitable local model to serve all three tiers and reuse compatible installed artifacts
 - [~] Encode only evidence-supported local model, quantization, and context defaults
   - [x] Distinguish unified-memory and discrete-GPU fit and handle missing or insufficient hardware information honestly
-  - [ ] Preserve intentional context overrides and enforce existing allocation and compatibility checks
-  - [ ] Prefer explicitly recommended smaller context over silent precision or cache changes
+  - [x] Preserve intentional context overrides and enforce existing allocation and compatibility checks
+  - [-] Prefer explicitly recommended smaller context over silent precision or cache changes
 - [x] Keep recommendation generation free of configuration writes, downloads, and runtime restarts
 - [x] Test account combinations, preferences, no usable resources, model reuse, memory boundaries, unknown hardware, and override preservation
 
@@ -71,7 +71,7 @@ Objective: verify actual runtime behavior and user-facing setup paths without ov
   - [ ] Compare planned memory/context assumptions with observed runtime allocation and server-confirmed serving capacity
   - [ ] Verify Qwen weight precision and full-context cache settings where full context is actually supported
   - [ ] Verify shared-model tier assignments do not require redundant downloads or unintended concurrent residency
-- [ ] Record unavailable hardware or unverified bands explicitly; do not label extrapolation as validation or ship unsupported recommendations
+- [x] Record unavailable hardware or unverified bands explicitly; do not label extrapolation as validation or ship unsupported recommendations
 - [x] Review preservation, cloud-use disclosure, and context safety regressions; fix any failures with focused reproductions
 
 ## Phase 6 — Documentation and completion
@@ -81,4 +81,8 @@ Objective: leave an understandable setup experience and an auditable verificatio
 - [x] Update documentation for tier meanings, template families, resource discovery, optional customization, and model/context limitations
 - [x] Document Run setup again versus destructive reset and how to change assignments later
 - [x] Complete an acceptance-criteria review against spec.md and report remaining limitations honestly
-- [ ] Checkpoint solved implementation units with scoped commits and provide final verification results without pushing
+- [x] Checkpoint solved implementation units with scoped commits and provide final verification results without pushing
+
+## Delivery scope clarification (2026-10-17)
+
+The user approved active-account defaults with explicit account customization, not automatic cross-account allocation. The multiple-account selection task is complete under that policy: existing accounts can be chosen as the pending cloud default without reauthentication; explicit task-account overrides remain untouched. The original model/artifact/context tasks remain deferred follow-up work under the previously approved runtime-validation gate. Their pending/blocked statuses do not claim validated models or new context defaults. See the current acceptance review and subsequent account-policy resolution in evidence.md.

@@ -225,3 +225,15 @@ Verification executed directly in this turn:
 - Server: `go test ./internal/server -run 'RuntimeHardware|RuntimeModels|Wizard|Setup' -count=1` and `go build ./...` passed.
 
 These are deterministic software tests, not candidate inference/benchmark results. No live credentials were inspected, no model was downloaded or loaded, and no active runtime was stopped/restarted. The original model-release acceptance criteria and multi-account allocation task remain incomplete; completion of the wizard shortcut/integration slice does not silently waive them.
+
+## Multi-account policy resolved and implemented — 2026-10-17
+
+Supersedes the preceding unresolved-policy note. The user approved defaulting templates to the active account, with explicit account customization before confirmation and no automatic cross-account optimization. Implemented an existing-account picker on the cloud screen and **Customize cloud account** on the preview. A pending `cloud_profile` field is stored in the existing wizard resume file; no credentials, new configuration store, protocol method, or routing system was introduced. Older files omit the field and retain legacy active-account behavior.
+
+The preview uses the selected account's effective model choices and discloses any default-account change. Selection makes no RPC writes. Confirmation rechecks account existence/provider before writes and activates the selected default through the existing profile API. Cloud model edits target that named account, not an independently changing active-account name. Switching accounts clears only the previous account's pending cloud model edits, preserving local picks. Explicit task-account overrides remain unchanged and are identified as such in the preview; this does not implement per-task multi-account optimization.
+
+Regression evidence: the initial test failed because the preview lacked an account customization row. A subsequent preview assertion reproduced the misleading `unchanged` label for a new account; fixed to show `was: <previous account>`. Loopback RPC tests cover confirmation-only activation, production-constructor resume of the pending account, cancellation without activation, removal of a pending account rejected before writes, and isolation of cloud edits from local picks. Existing single-account/no-write and all-mode preservation scenarios continue to pass.
+
+Verification after implementation: CLI `go test -race ./internal/ui ./internal/wizard ./internal/slash`, matching `go vet`, and `go build ./...` passed. Server tests for setupstate, agentclient, sysram, llamaserver, managedrouting and the focused server runtime/setup filter passed; server `go build ./...` passed. No candidate inference, model downloads, runtime changes, or live credential inspection occurred.
+
+Delivery now includes the recommended-first entry and approved explicit default-account customization. Original model identity/compatibility, memory-band validation, candidate-specific context defaults, and full-context runtime evidence remain deferred—not validated. Apply remains sequential through existing APIs and is not claimed atomic.

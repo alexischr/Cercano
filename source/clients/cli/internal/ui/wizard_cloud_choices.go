@@ -55,6 +55,9 @@ func (wp *wizardPage) applyCloudChoices(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if wp.state.CloudProfile != "" {
+		active = wp.state.CloudProfile
+	}
 	for _, profile := range profiles {
 		if profile.Name == active {
 			choices, err := wizardCloudChoices(wp.state, profile.Choices)

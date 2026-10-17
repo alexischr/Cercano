@@ -71,3 +71,8 @@ User-facing documentation explains the tiers, recommendations, local limitations
 ## Non-goals
 
 No exhaustive model leaderboard or benchmark program, automatic model downloading solely because hardware is capable, mandatory multi-provider signup, wholesale runtime replacement, unrelated routing redesign, or destructive migration of existing user configuration. No shipping of guessed model names or unsupported full-context promises.
+
+## Approved execution clarifications
+
+- Candidate runtime validation and new Qwen shipping defaults remain deferred by the user; finish the wizard UX and integration coverage using the existing curated recommendations. Original candidate-specific memory/context acceptance criteria below that gate remain unfulfilled, not implicitly waived or marked validated.
+- On 2026-10-17 the user approved the clarified multi-account policy: templates change previewed routing on acceptance, default cloud assignments to the active account, and allow account customization before confirmation. Automatic cross-account optimization is excluded. The wizard's default-account chooser uses existing profile APIs; explicit task-account overrides stay on the existing routing configuration surface and are preserved rather than automatically replaced.

@@ -26,6 +26,7 @@ type State struct {
 	CloudPicksEdited map[string]bool   `yaml:"cloud_picks_edited,omitempty" json:"cloud_picks_edited,omitempty"`
 	Step             Step              `yaml:"step"`
 	LocusMode        string            `yaml:"locus_mode,omitempty"`     // locus.Mode string value (the organizing answer)
+	CloudProfile     string            `yaml:"cloud_profile,omitempty"`  // pending default account; applied only on confirmation
 	CloudProvider    string            `yaml:"cloud_provider,omitempty"` // cloud preset ID
 	AuthMethod       string            `yaml:"auth_method,omitempty"`    // meridian | chatgpt | device_code | api_key
 	TierPicks        map[string]string `yaml:"tier_picks,omitempty"`     // "<tier>.<side>" → model id

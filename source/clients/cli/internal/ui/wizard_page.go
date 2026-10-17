@@ -304,6 +304,9 @@ func (wp *wizardPage) applyConfig() error {
 	if _, err := wizardCloudChoices(wp.state, nil); err != nil {
 		return err
 	}
+	if err := wp.confirmCloudAccount(ctx); err != nil {
+		return err
+	}
 	patches := wizardApplyPatches(wp.state)
 	if _, err := wp.agent.UpdateConfig(ctx, patches[0]); err != nil {
 		return err
@@ -361,6 +364,11 @@ func (wp *wizardPage) rows() []wizardRow {
 		if p := wp.existingActiveProfile(); p != nil {
 			rows = append(rows, wizardRow{Key: "use_existing", Label: "Use existing account: " + p.Name, Annotation: "keep authentication and model choices"})
 		}
+		for _, p := range wp.curProfiles {
+			if p.Name != wp.curActiveProfile {
+				rows = append(rows, wizardRow{Key: "account:" + p.Name, Label: "Use existing account: " + p.Name, Annotation: "change default account only after confirmation"})
+			}
+		}
 		for _, pr := range wp.providers {
 			ann := ""
 			disabled := false
@@ -401,7 +409,11 @@ func (wp *wizardPage) rows() []wizardRow {
 		rows = append(rows, wizardRow{Key: "continue", Label: "continue", Annotation: "accept these models"})
 		return rows
 	case wizard.StepDone:
-		return []wizardRow{{Key: "finish", Label: "Use recommended setup", Annotation: "apply the previewed settings and close"}}
+		rows := []wizardRow{{Key: "finish", Label: "Use recommended setup", Annotation: "apply the previewed settings and close"}}
+		if wizard.ModeUsesCloud(wp.state.LocusMode) && len(wp.curProfiles) > 1 {
+			rows = append(rows, wizardRow{Key: "change_account", Label: "Customize cloud account", Annotation: "choose the default account before applying"})
+		}
+		return rows
 	}
 	return nil
 }
@@ -627,8 +639,13 @@ func (wp *wizardPage) selectRow() (tea.Cmd, bool) {
 
 	switch wp.state.Step {
 	case wizard.StepCloud:
-		if !wp.authPick && row.Key == "use_existing" {
-			if p := wp.existingActiveProfile(); p != nil {
+		if !wp.authPick && (row.Key == "use_existing" || strings.HasPrefix(row.Key, "account:")) {
+			name := wp.curActiveProfile
+			if strings.HasPrefix(row.Key, "account:") {
+				name = strings.TrimPrefix(row.Key, "account:")
+			}
+			if p := wp.profileByName(name); p != nil {
+				wp.selectExistingAccount(p)
 				wp.state.CloudProvider = p.Provider
 				if wp.state.CloudProvider == "" {
 					wp.state.CloudProvider = p.Name
@@ -640,6 +657,7 @@ func (wp *wizardPage) selectRow() (tea.Cmd, bool) {
 			return nil, false
 		}
 		if !wp.authPick {
+			wp.state.CloudProfile = ""
 			if wp.state.CloudProvider != row.Key {
 				wp.state.CloudPicksEdited = nil
 			}
@@ -694,6 +712,7 @@ func (wp *wizardPage) selectRow() (tea.Cmd, bool) {
 			wp.advance()
 			if wp.state.Step == wizard.StepCloud {
 				if p := wp.existingActiveProfile(); p != nil {
+					wp.selectExistingAccount(p)
 					wp.state.CloudProvider = p.Provider
 					if wp.state.CloudProvider == "" {
 						wp.state.CloudProvider = p.Name
@@ -713,6 +732,14 @@ func (wp *wizardPage) selectRow() (tea.Cmd, bool) {
 		}
 		wp.openTierPicker(row.Key)
 	case wizard.StepDone:
+		if row.Key == "change_account" {
+			wp.state.Step = wizard.StepCloud
+			wp.authPick = false
+			wp.quickSetup = true
+			wp.cursor = 0
+			wp.persist()
+			return nil, false
+		}
 		if err := wp.applyFn(); err != nil {
 			// State stays persisted: enter retries, esc walks back.
 			wp.status = "apply failed: " + err.Error()
@@ -863,8 +890,13 @@ func (wp *wizardPage) summary() string {
 		fmt.Fprintf(&b, "  cloud:    %s (%s)%s\n", wp.state.CloudProvider, wp.state.AuthMethod, note)
 	}
 	if wizard.ModeUsesCloud(wp.state.LocusMode) && wp.state.AuthMethod == "existing" {
-		if p := wp.existingActiveProfile(); p != nil {
-			fmt.Fprintf(&b, "  account:  %s (unchanged)\n", p.Name)
+		if p := wp.selectedCloudProfile(); p != nil {
+			if p.Name == wp.curActiveProfile {
+				fmt.Fprintf(&b, "  account:  %s (unchanged)\n", p.Name)
+			} else {
+				fmt.Fprintf(&b, "  account:  %s (was: %s; changes default account on confirmation)\n", p.Name, wp.curActiveProfile)
+			}
+			b.WriteString("  Explicit task-account routes remain unchanged; this selects the cloud default.\n")
 			pending, err := wizardCloudChoices(wp.state, p.Choices)
 			if err != nil {
 				fmt.Fprintf(&b, "  Cannot apply cloud choices: %s\n", err)
