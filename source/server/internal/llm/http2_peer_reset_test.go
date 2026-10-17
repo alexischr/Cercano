@@ -91,6 +91,67 @@ func TestIsNetworkErrorHTTP2ErrorShapes(t *testing.T) {
 	}
 }
 
+// Force the client's SETTINGS ACK to precede request HEADERS. The real
+// net/http client can send these in either order depending on scheduling.
+func TestH2RstServerDoesNotAcknowledgeSettingsAck(t *testing.T) {
+	addr := startH2RstServer(t)
+	conn, err := tls.Dial("tcp", addr, &tls.Config{
+		InsecureSkipVerify: true,
+		NextProtos:         []string{"h2"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if err := conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.WriteString(conn, http2.ClientPreface); err != nil {
+		t.Fatal(err)
+	}
+	f := http2.NewFramer(conn, conn)
+	if err := f.WriteSettings(); err != nil {
+		t.Fatal(err)
+	}
+	for _, wantAck := range []bool{false, true} {
+		frame, err := f.ReadFrame()
+		if err != nil {
+			t.Fatal(err)
+		}
+		settings, ok := frame.(*http2.SettingsFrame)
+		if !ok || settings.IsAck() != wantAck {
+			t.Fatalf("got %v, want SETTINGS with ACK=%v", frame, wantAck)
+		}
+	}
+	if err := f.WriteSettingsAck(); err != nil {
+		t.Fatal(err)
+	}
+	var hb bytes.Buffer
+	enc := hpack.NewEncoder(&hb)
+	for _, field := range []hpack.HeaderField{
+		{Name: ":method", Value: "GET"},
+		{Name: ":scheme", Value: "https"},
+		{Name: ":authority", Value: addr},
+		{Name: ":path", Value: "/"},
+	} {
+		if err := enc.WriteField(field); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := f.WriteHeaders(http2.HeadersFrameParam{
+		StreamID: 1, EndHeaders: true, EndStream: true, BlockFragment: hb.Bytes(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	frame, err := f.ReadFrame()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := frame.(*http2.HeadersFrame); !ok {
+		t.Fatalf("got %v after SETTINGS ACK, want response HEADERS (no extra ACK)", frame)
+	}
+}
+
 func startH2RstServer(t *testing.T) string {
 	t.Helper()
 	ln, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{
@@ -123,10 +184,8 @@ func startH2RstServer(t *testing.T) string {
 			}
 			switch fr := frame.(type) {
 			case *http2.SettingsFrame:
-				// ACK only the client's settings, never its ACK of ours: an
-				// unsolicited SETTINGS ACK is a connection PROTOCOL_ERROR,
-				// which made this test fail whenever the client read it
-				// before the response headers.
+				// SETTINGS acknowledgments must not themselves be acknowledged.
+				// An extra ACK causes PROTOCOL_ERROR if it arrives before HEADERS.
 				if fr.IsAck() {
 					continue
 				}

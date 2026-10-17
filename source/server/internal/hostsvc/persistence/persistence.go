@@ -938,8 +938,8 @@ func (x *svc) GetConversationTurns(ctx context.Context, req *proto.GetConversati
 	return out, nil
 }
 
-// GetContextUsage reports cumulative token usage vs. the active model's
-// context-window size for a conversation.
+// GetContextUsage reports the latest request budget against its model window.
+// History-only measurements never substitute for request accounting.
 func (x *svc) GetContextUsage(ctx context.Context, req *proto.GetContextUsageRequest) (*proto.GetContextUsageResponse, error) {
 	convID := req.GetConversationId()
 	// The denominator is the locus route's PRIMARY model window — stable
@@ -983,8 +983,8 @@ func (x *svc) GetContextUsage(ctx context.Context, req *proto.GetContextUsageReq
 		// Cold start: no pass has run and no turn has been served for this
 		// conversation in any process. Rather than show a blank meter, measure
 		// raw storage pressure with a SQL aggregate (bodies stay in the DB) and
-		// warm the cache with it. It is labeled as a raw estimate, not request
-		// accounting, and the first turn or pass replaces it with real numbers.
+		// warm the history cache with it. The meter remains unknown until a
+		// request snapshot exists; raw history is available separately in details.
 		snap, ok = x.warmRawContextUsage(ctx, convID, modelWindow)
 		if !ok {
 			// Genuinely nothing to measure (no turns): honestly unknown.
@@ -992,6 +992,14 @@ func (x *svc) GetContextUsage(ctx context.Context, req *proto.GetContextUsageReq
 			// rather than showing a confident 0.
 			return resp, nil
 		}
+	}
+
+	// History measurements are not request estimates. In particular, a legacy
+	// compaction snapshot can exceed the model window by millions of tokens.
+	// Keep raw history available to details, but do not put it in the meter.
+	resp.RawTokens = int32(snap.RawTokens)
+	if snap.Source != contextUsageSourceTurn {
+		return resp, nil
 	}
 
 	sent := snap.EstimatedRequest

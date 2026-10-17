@@ -49,6 +49,14 @@ const (
 	// another provider spends the same money again. Used/Limit carry the
 	// cumulative spent tokens and the budget.
 	ErrTokenBudgetExhausted ErrorClass = "token_budget_exhausted"
+	// ErrOutputTruncated: the provider stopped at the output-token limit —
+	// a final answer or a tool call was cut off mid-flight. It is a
+	// deterministic result of the request size, not a provider fault: a retry
+	// on the same provider reproduces the same truncation and failing over
+	// spends the same oversized generation elsewhere. It must surface with the
+	// partial text/history retained so callers can hand off explicitly
+	// incomplete work instead of a silent nil success.
+	ErrOutputTruncated ErrorClass = "output_truncated"
 	// ErrNetwork: transport-level failure before an HTTP response existed
 	// (DNS, connection refused/reset, TLS).
 	ErrNetwork ErrorClass = "network"
@@ -157,9 +165,11 @@ func Failoverable(class ErrorClass, err error) bool {
 // plausibly serve the failed request. Context overflow is allowed only when the
 // target window is known and strictly larger than the failed attempt's window.
 func FailoverableToWindow(class ErrorClass, err error, failedWindow, targetWindow int, targetWindowKnown bool) bool {
-	if class == ErrLoginRequired || class == ErrCredential || class == ErrPermission || class == ErrTokenBudgetExhausted {
+	if class == ErrLoginRequired || class == ErrCredential || class == ErrPermission || class == ErrTokenBudgetExhausted || class == ErrOutputTruncated {
 		// A budget-exhausted loop already billed its cap; re-serving the same
-		// work elsewhere doubles the spend the budget exists to stop.
+		// work elsewhere doubles the spend the budget exists to stop. An
+		// output-truncated response is size-determined: another provider cuts
+		// at its own limit the same way.
 		return false
 	}
 	if class == ErrContextOverflow {

@@ -56,6 +56,13 @@ func ModelMax(model string) int { return ModelWindowFor(model).Tokens }
 func KnownModelMax(model string) (int, bool) {
 	m := normalizeModelName(model)
 	switch {
+	// Exact model entry. Capacity is user-supplied, not independently
+	// verified against official provider documentation. Deliberately narrow
+	// (exact-name equality, not a "gpt" family substring) so no other GPT
+	// model inherits this window; unmatched GPT models keep the unknown
+	// 128K default path.
+	case m == "gpt-6-astra":
+		return 1_050_000, true
 	case strings.Contains(m, "qwen3-coder-next"):
 		return 262_144, true // qwen3-coder-next:latest publishes 256K
 	case strings.Contains(m, "qwen3-coder"):

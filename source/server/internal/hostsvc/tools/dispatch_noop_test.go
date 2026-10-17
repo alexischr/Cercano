@@ -104,10 +104,13 @@ func TestRunAgenticDispatch_ReadOnlyLowSignalStillSucceeds(t *testing.T) {
 	if res.Text != "Done." {
 		t.Fatalf("result text = %q", res.Text)
 	}
+	// A successful read-only dispatch with few tool calls is a SUCCESS: it must
+	// not be written to the failure log as a degraded event. Low-signal volume
+	// is neutral telemetry only (stdout log), never dispatch.degraded.
 	logData := readFailureLog(t, logPath)
-	for _, want := range []string{"\"event\":\"dispatch.degraded\"", "\"error_class\":\"low_signal\"", "\"conversation_id\":\"parent\""} {
-		if !strings.Contains(logData, want) {
-			t.Fatalf("failure log missing %s: %s", want, logData)
+	for _, banned := range []string{"\"event\":\"dispatch.degraded\"", "\"error_class\":\"low_signal\""} {
+		if strings.Contains(logData, banned) {
+			t.Fatalf("successful low-signal run must not be logged as a failure/degraded event; found %s in %s", banned, logData)
 		}
 	}
 	if strings.Contains(logData, "Inspect the repo.") {

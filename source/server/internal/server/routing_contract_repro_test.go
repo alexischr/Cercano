@@ -171,11 +171,12 @@ func TestProviderGraphRetainsTaskAssignmentsUntilRebuild(t *testing.T) {
 	c.CloudProfiles = []config.CloudProfile{{Name: "p", Flavor: "messages"}, {Name: "b", Flavor: "messages"}}
 	c.ActiveCloudProfile = "p"
 	c.SecondaryCloudProfile = "p"
-	// Pin both Chat and Dispatch to Premium so these assertions test graph
-	// snapshot isolation independently of either task's product default.
+	// Build the graph with Chat pinned premium and Dispatch pinned Standard so the assertions below test
+	// "the built graph retains its quality until rebuild" rather than tracking
+	// whatever the product default happens to be. Pin both tasks to verify destination inheritance.
 	c.TaskAssignments = map[config.Task]config.TaskAssignment{
-		config.TaskChat:     {Quality: config.CostPremium},
-		config.TaskDispatch: {Quality: config.CostPremium},
+		config.TaskChat: {Quality: config.CostPremium},
+		config.TaskDispatch: {Quality: config.CostStandard},
 	}
 	s.cfgSvc.Set(c)
 	s.cfgSvc.Secrets().Set("p", "fixture-p")
@@ -185,10 +186,13 @@ func TestProviderGraphRetainsTaskAssignmentsUntilRebuild(t *testing.T) {
 	}
 	c.ActiveCloudProfile = "b"
 	c.SecondaryCloudProfile = "b"
-	c.TaskAssignments = map[config.Task]config.TaskAssignment{config.TaskChat: {Quality: config.CostEconomy}, config.TaskDispatch: {Quality: config.CostEconomy}}
+	c.TaskAssignments = map[config.Task]config.TaskAssignment{
+		config.TaskChat: {Quality: config.CostEconomy},
+		config.TaskDispatch: {Quality: config.CostEconomy},
+	}
 	s.cfgSvc.Set(c)
 	candidates := s.providerSvc.Candidates()
-	if candidates.TaskFor(config.TaskDispatch).Quality != config.CostPremium {
+	if candidates.TaskFor(config.TaskDispatch).Quality != config.CostStandard {
 		t.Fatal("unbuilt task configuration leaked into provider graph")
 	}
 	main, _, _, err := s.providerSvc.Main()

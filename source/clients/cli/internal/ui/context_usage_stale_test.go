@@ -112,3 +112,25 @@ func TestContextView_ApproximateUsageIsMarked(t *testing.T) {
 		t.Errorf("a raw estimate should be marked approximate, got %q", head)
 	}
 }
+
+func TestContextUsage_HistoryIsSeparateFromRequestMeter(t *testing.T) {
+	styles := theme.NewStyles(theme.Cracker())
+	c := &contextView{styles: styles, snapshot: contextSnapshot{
+		Usage:      &agentclient.ContextUsage{UsageSource: "snapshot", EstimatedRequestTokens: 887278, MessageTokens: 864125, ModelMax: 1050000, ContextWindowKnown: true},
+		Compaction: &agentclient.CompactionState{SentTokens: 4936958, Compacting: true},
+	}}
+	head := stripAnsiCSI(c.renderHeader())
+	if !strings.Contains(head, "887,278 / 1,050,000") || !strings.Contains(head, "History before request trimming: 4,936,958 tokens") || !strings.Contains(head, "background compaction running") {
+		t.Fatalf("ambiguous accounting: %s", head)
+	}
+	c.snapshot.Usage = &agentclient.ContextUsage{UsageSource: "none"}
+	head = stripAnsiCSI(c.renderHeader())
+	if !strings.Contains(head, "not computed yet") || !strings.Contains(head, "History before request trimming") {
+		t.Fatalf("history-only state: %s", head)
+	}
+	m := Model{styles: styles, ctxUsageSource: "none", cumIn: 4936958, modelMaxTokens: 1050000}
+	meter := stripAnsiCSI(m.renderContextMeter())
+	if !strings.Contains(meter, "not computed yet") || strings.Contains(meter, "4,937") {
+		t.Fatalf("history in meter: %s", meter)
+	}
+}

@@ -478,7 +478,7 @@ func (c *contextView) renderHeader() string {
 	// "Not computed yet" is not the same as "zero tokens". Say so, rather than
 	// rendering a 0 / window bar that reads as an empty context.
 	if !u.Known() {
-		return c.styles.Muted.Render("context  not computed yet")
+		return c.styles.Muted.Render("context  not computed yet") + c.historyAccountingLabel()
 	}
 	used := u.EstimatedRequestTokens
 	if used == 0 {
@@ -531,10 +531,27 @@ func (c *contextView) renderHeader() string {
 		}
 		head += badge
 	}
+	head += c.historyAccountingLabel()
 	if c.notice != "" {
 		head += "\n" + c.styles.Accent.Render(c.notice)
 	}
 	return head
+}
+
+// History is measured before request-budget trimming, not against the request
+// meter's model window. It may legitimately be larger than that window.
+func (c *contextView) historyAccountingLabel() string {
+	if cs := c.snapshot.Compaction; cs != nil && cs.SentTokens > 0 {
+		label := fmt.Sprintf("\nHistory before request trimming: %s tokens", formatThousands(cs.SentTokens))
+		if cs.Compacting {
+			label += " · background compaction running"
+		}
+		return c.styles.Muted.Render(label)
+	}
+	if u := c.snapshot.Usage; u != nil && u.RawTokens > 0 {
+		return c.styles.Muted.Render(fmt.Sprintf("\nStored history estimate: %s tokens", formatThousands(u.RawTokens)))
+	}
+	return ""
 }
 
 // handleClick toggles a turn's expansion when the click lands on its arrow cell.

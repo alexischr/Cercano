@@ -50,14 +50,18 @@ func TestAccountingDatabaseLockRecovery(t *testing.T) {
 	}
 	defer blocker.db.Exec(`ROLLBACK`)
 	gated := &lockedAccountingStore{SQLiteStore: primary, failed: make(chan struct{}), proceed: make(chan struct{})}
-	c := NewAccountingCollector(gated, testAccountingOptions())
+	options := testAccountingOptions()
+	options.WriteTimeout = 6 * time.Second // outlast busy_timeout so waiting wins over failing
+	c := NewAccountingCollector(gated, options)
 	if !c.Emit(accountingFixture("locked")) {
 		t.Fatal("admission failed while DB locked")
 	}
+	// While the legacy writer holds the lock, initialization waits for it
+	// instead of failing immediately with SQLITE_BUSY.
 	select {
 	case <-gated.failed:
-	case <-time.After(3 * time.Second):
-		t.Fatal("expected SQLite lock error")
+		t.Fatal("initializer errored while waiting for writer lock")
+	case <-time.After(150 * time.Millisecond):
 	}
 	if _, err = blocker.db.Exec(`ROLLBACK`); err != nil {
 		t.Fatal(err)
@@ -65,7 +69,7 @@ func TestAccountingDatabaseLockRecovery(t *testing.T) {
 	close(gated.proceed)
 	drainAccounting(t, c)
 	h := c.Health()
-	if h.Persisted != 1 || h.WriteFailures == 0 || h.Retries == 0 || h.Uncertain != 0 {
+	if h.Persisted != 1 || h.WriteFailures != 0 || h.Retries != 0 || h.Uncertain != 0 {
 		t.Fatalf("lock recovery=%+v", h)
 	}
 	if _, err = primary.AccountingAttempt(t.Context(), "locked"); err != nil {

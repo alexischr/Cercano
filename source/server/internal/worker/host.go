@@ -28,6 +28,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"strings"
@@ -694,7 +695,11 @@ func (w *workerRunner) RunTurn(
 		return runner.Result{}, fmt.Errorf("workerRunner: open stream: %w", err)
 	}
 
-	if err := stream.Send(&proto.HostToWorker{Msg: &proto.HostToWorker_Start{Start: startTurn}}); err != nil {
+	// io.EOF means the worker already ended the stream — an older worker
+	// rejects an unknown RPC with Unimplemented before reading anything. gRPC
+	// reports that status only through Recv, so fall through to the drain loop,
+	// whose Recv classifies it (e.g. the enterprise downgrade refusal).
+	if err := stream.Send(&proto.HostToWorker{Msg: &proto.HostToWorker_Start{Start: startTurn}}); err != nil && !errors.Is(err, io.EOF) {
 		return runner.Result{}, fmt.Errorf("workerRunner: send StartTurn: %w", err)
 	}
 
