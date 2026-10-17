@@ -46,4 +46,14 @@ Checkpoint `93eb0c88e389` fixes a reproduced duplicate-approval deadlock and add
 
 New task inspection and stop controls therefore cannot apply the internal agent's parent-conversation authorization rule unchanged on the MCP surface. A security policy decision is required before wiring this interface: bind MCP calls to a host-established conversation/session identity, or explicitly treat the local MCP client as a host-wide operator allowed to address tasks across conversations under its existing external permission gate. The latter must not be inferred merely from caller-supplied identifiers. Recommendation: conversation-scoped binding; additional session-binding implementation is needed.
 
-No task-control or asynchronous dispatch capability has been exposed yet. Existing public dispatch remains synchronous. Implementation is paused for the MCP authorization policy decision.
+No task-control or asynchronous dispatch capability has been exposed yet. Existing public dispatch remains synchronous.
+
+### Follow-up: conversation binding transport
+
+The user directed investigation of the actual host binding rather than requesting that information from them. The MCP host uses shared per-server connections, not per-conversation connections. Although the tool loop sets a conversation ID in its local Go context, `mcp_host.conn.call` sends only tool name and arguments. The receiving adapter forwards only capability name and arguments. A transport session is therefore not a reliable conversation scope.
+
+`TestConversationScopeProbe` (checkpoint `74ddb63a6603`) observes two conversation contexts on one connection and reconnects the first: all three calls arrive without metadata, a conversation ID, or a stream-transport session ID. This does not establish behavior for every external MCP client.
+
+The server scope fixture had a string/pointer mismatch; correcting its observation field and assignment makes its intended assertions execute. Race-enabled focused checks now pass for `TestMCPConversationScope*`, `TestInvokeCapabilityDoesNotBindConversationFromArguments`, and `TestConversationScopeProbe` in the server and MCP-host packages.
+
+The remaining approval is a compatibility/security consequence, not a request for the user to find an identifier: requiring a trusted host-provided binding means unbound external MCP callers must not be allowed to launch, inspect, wait on, or stop the new conversation-owned tasks. A model-supplied conversation_id and a per-connection random ID cannot substitute for that binding. Existing unrelated synchronous tools need not change. This fail-closed behavior for unbound callers needs explicit approval before exposing the new interface.
