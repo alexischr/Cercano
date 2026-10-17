@@ -416,6 +416,7 @@ func startGRPCServer(cfg config.Config, bindAddr string, events *crashlog.Writer
 		grpc.ChainStreamInterceptor(server.RecoveryStreamInterceptor(), enterpriseHost.StreamInterceptor()),
 	)
 	srv := server.NewServer(orchestrator, lazyRouter, coordinator, cloudFactory, registry)
+	srv.SetBackgroundWorkAdmission(enterpriseHost.Begin)
 	srv.SetBuildVersion(version)
 	compactionCandidates = srv.DispatchCandidates
 	srv.SetRuntimeManager(runtimeManager)

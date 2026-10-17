@@ -42,7 +42,7 @@ Objective: expose asynchronous delegation without changing unrelated synchronous
 Objective: integrate durable completion notification with the existing single-main-turn invariant. Files: server conversation orchestration, broker, host task manager and persistence, main-agent turn context assembly, worker main-turn integration, and focused tests. Tests: deterministic busy/idle/waiting cases, completion/user-input races, notification replay, disconnected clients, and multiple completions.
 
 - [ ] Make pending completions available to a busy main agent at a safe boundary without canceling inference or tool execution
-- [ ] Wake an idle or waiting main conversation automatically, including when no CLI stream is connected
+- [~] Wake an idle or waiting main conversation automatically, including when no CLI stream is connected
 - [ ] Serialize completion wake-ups with user-driven and already-active main turns; do not use turn replacement as a wake-up mechanism
 - [ ] Coalesce wake-ups while retaining every task outcome and leaving response priority to the main agent
 - [ ] Track notification delivery/handling separately from terminal task state; preserve unhandled information across cancellation and reconnect without endless wake-up loops

@@ -194,9 +194,14 @@ type Server struct {
 	// at NewServer time) and lives for the server's lifetime, independent of
 	// any turn. Closed in Shutdown, before the persistence store goes down;
 	// unfinished executions are then reconciled at the next start.
-	taskRunMu         sync.RWMutex
-	taskManager       *taskrun.Manager
-	taskManagerClosed bool
+	taskRunMu               sync.RWMutex
+	taskManager             *taskrun.Manager
+	taskManagerClosed       bool
+	taskWakeCtx             context.Context
+	taskWakeCancel          context.CancelFunc
+	taskWakeWG              sync.WaitGroup
+	backgroundWorkAdmission func(context.Context) (context.Context, func(), error)
+	taskWakePending         map[string]bool
 }
 
 // beginTurn delegates to the turn broker. It registers a new turn for conv,
@@ -657,11 +662,38 @@ func (s *Server) taskRunManager() *taskrun.Manager {
 // the in-turn StreamProcessResponse), and adding one is out of scope for this
 // slice — so today this logs; a durable record exists in the task store and is
 // reconciled at restart. Never blocks or panics.
-func (s *Server) notifyTaskChange(taskID string) {
-	if s == nil {
+func (s *Server) notifyTaskChange(parent string) {
+	s.taskRunMu.Lock()
+	if parent == "" || s.taskManagerClosed || s.taskManager == nil || s.taskWakeCtx == nil {
+		s.taskRunMu.Unlock()
 		return
 	}
-	log.Printf("[taskrun] task %s finished", taskID)
+	if s.taskWakePending == nil {
+		s.taskWakePending = make(map[string]bool)
+	}
+	_, running := s.taskWakePending[parent]
+	s.taskWakePending[parent] = true
+	if running {
+		s.taskRunMu.Unlock()
+		return
+	}
+	ctx := s.taskWakeCtx
+	s.taskWakeWG.Add(1)
+	s.taskRunMu.Unlock()
+	go func() {
+		defer s.taskWakeWG.Done()
+		for {
+			s.taskRunMu.Lock()
+			if s.taskManagerClosed || !s.taskWakePending[parent] {
+				delete(s.taskWakePending, parent)
+				s.taskRunMu.Unlock()
+				return
+			}
+			s.taskWakePending[parent] = false
+			s.taskRunMu.Unlock()
+			s.tryTaskCompletionWake(ctx, parent)
+		}
+	}()
 }
 
 func (s *Server) stopRuntimeInstances() {
@@ -3499,14 +3531,31 @@ func (s *Server) AttachConversation(req *proto.AttachConversationRequest, stream
 // by sendRunnerEvent — the only difference is the indirection through the
 // broker's channel rather than a direct stream.Send in Emit.
 func (s *Server) streamProcessRequestWithToolLoop(req *proto.ProcessRequestRequest, stream proto.Agent_StreamProcessRequestServer) error {
+	return s.streamConversationTurn(req, stream, nil)
+}
+
+// A host completion turn supplies an already acquired idle-only lease. Human
+// requests still use BeginTurn and retain their right to supersede background work.
+func (s *Server) streamConversationTurn(req *proto.ProcessRequestRequest, stream proto.Agent_StreamProcessRequestServer, reserved *completionTurnLease) error {
 	// One live turn per conversation. A new turn here supersedes any turn still
 	// running on the same conversation (cancels its ctx); this turn's own ctx
 	// is canceled if a later turn supersedes IT. turnGen fences persistence so
 	// a superseded turn's late writes never interleave into the live history.
-	ctx, turnGen, releaseTurn := s.beginTurn(stream.Context(), req.GetConversationId())
-	defer releaseTurn()
-	if err := s.persistDevMode(ctx, req); err != nil {
-		return err
+	var ctx context.Context
+	var turnGen uint64
+	var releaseTurn func()
+	if reserved != nil {
+		ctx, turnGen, releaseTurn = reserved.ctx, reserved.gen, reserved.release
+	} else {
+		ctx, turnGen, releaseTurn = s.beginTurn(stream.Context(), req.GetConversationId())
+	}
+	if reserved == nil {
+		defer func() { releaseTurn(); s.notifyTaskChange(req.GetConversationId()) }()
+	}
+	if reserved == nil {
+		if err := s.persistDevMode(ctx, req); err != nil {
+			return err
+		}
 	}
 
 	convID := req.GetConversationId()
@@ -3586,7 +3635,9 @@ func (s *Server) streamProcessRequestWithToolLoop(req *proto.ProcessRequestReque
 	// A recorded report_autonomous_blocker pause is cleared by the user's
 	// explicit message: this is the resume signal. The run stayed "running"
 	// while paused; clearing the blocker lets the host chain turns again.
-	s.clearAutonomyBlockerAtRequestStart(ctx, convID)
+	if reserved == nil {
+		s.clearAutonomyBlockerAtRequestStart(ctx, convID)
+	}
 	// The per-turn runnersvc.Request is built inside the loop below (each turn
 	// gets the latest session chat route and the request's model_override).
 
@@ -3599,7 +3650,12 @@ func (s *Server) streamProcessRequestWithToolLoop(req *proto.ProcessRequestReque
 	noProgress := 0
 	workMonitor := newAutonomyWorkMonitor()
 	input := req.GetInput()
-	inputRole := string(llm.RoleUser) // human input by default; the gate flips to "system" for host-generated continuations
+	var completionBatch []completionNotice
+	seenCompletionNotices := make(map[string]bool)
+	inputRole := string(llm.RoleUser)
+	if reserved != nil {
+		inputRole = string(llm.RoleSystem)
+	} // human input by default; the gate flips to "system" for host-generated continuations
 	images := mapInlineImages(req.GetImages())
 
 	// turnResult carries RunTurn's return values from the goroutine to the
@@ -3802,6 +3858,11 @@ func (s *Server) streamProcessRequestWithToolLoop(req *proto.ProcessRequestReque
 			s.workerPostTurn(convID, tr.result)
 		}
 
+		if reserved == nil && ctx.Err() == nil && s.turnIsCurrent(convID, turnGen) {
+			s.handleCompletionBatch(ctx, convID, completionBatch)
+			completionBatch = nil
+		}
+
 		// Turn boundary: after post-turn bookkeeping (so raw-token accounting is
 		// current) and before the final response, offer a session rollover if the
 		// conversation has grown long enough and the offer is armed. Non-blocking —
@@ -3820,7 +3881,26 @@ func (s *Server) streamProcessRequestWithToolLoop(req *proto.ProcessRequestReque
 		// signal. Never parse model prose. Evaluated BEFORE the response send
 		// so a request-ending turn can seal delivery first (pure evaluation:
 		// no durable side effects, no stream sends).
-		gate := s.evaluateAutonomyContinuation(ctx, convID, turnGen, turn+1, prevRun, havePrevRun, workMonitor, &noProgress)
+		gate := autonomyGate{}
+		if reserved == nil {
+			gate = s.evaluateAutonomyContinuation(ctx, convID, turnGen, turn+1, prevRun, havePrevRun, workMonitor, &noProgress)
+		}
+
+		if reserved == nil && ctx.Err() == nil && s.turnIsCurrent(convID, turnGen) {
+			notice, batch := s.pendingCompletionBoundary(ctx, convID, seenCompletionNotices)
+			if len(batch) > 0 {
+				if gate.cont {
+					gate.input += "\n\n" + notice
+				} else {
+					gate.input = notice
+					gate.cont = true
+				}
+				completionBatch = batch
+				for _, notice := range batch {
+					seenCompletionNotices[notice.TaskID] = true
+				}
+			}
+		}
 
 		if !gate.cont {
 			// Request end. Seal the lossless subscription (enterprise finish
@@ -3893,13 +3973,15 @@ func (s *Server) streamProcessRequestWithToolLoop(req *proto.ProcessRequestReque
 			// Reset also closes the old monitor against late drained events.
 			workMonitor = newAutonomyWorkMonitor()
 		}
-		prevRun, havePrevRun = gate.run, true
+		if gate.run.RunID != "" {
+			prevRun, havePrevRun = gate.run, true
+		}
 
 		// Announce the host-driven continuation with a structured progress event
 		// so clients can display a distinct "continuing autonomously" marker.
 		if err := stream.Send(&proto.StreamProcessResponse{
 			Payload: &proto.StreamProcessResponse_Progress{
-				Progress: &proto.ProgressUpdate{Message: autonomyContinuationAnnouncement(gate.run.RunID, turn+1)},
+				Progress: &proto.ProgressUpdate{Message: continuationAnnouncement(gate, turn+1)},
 			},
 		}); err != nil {
 			return err
