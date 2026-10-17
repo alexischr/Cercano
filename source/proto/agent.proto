@@ -964,6 +964,8 @@ message SubAgentConversation {
   string parent_id = 2;
   string title = 3;
   repeated string granted_tools = 4;
+  string task_id = 5;
+  string task_status = 6;
 }
 
 // Context-window usage for a conversation. Used is the cumulative tokens

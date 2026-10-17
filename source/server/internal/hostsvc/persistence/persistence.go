@@ -890,13 +890,28 @@ func (x *svc) ListSubAgents(ctx context.Context, req *proto.ListSubAgentsRequest
 	if err != nil {
 		return nil, fmt.Errorf("list children: %w", err)
 	}
+
+	// Try to get TaskStore for task metadata lookup
+	taskStore, _ := store.(conversation.TaskStore)
+
 	for _, c := range children {
-		out.Subagents = append(out.Subagents, &proto.SubAgentConversation{
+		sa := &proto.SubAgentConversation{
 			Id:           c.ID,
 			ParentId:     c.ParentID,
 			Title:        c.Title,
 			GrantedTools: c.GrantedTools,
-		})
+		}
+
+		// Look up task metadata if TaskStore is available
+		if taskStore != nil {
+			task, err := taskStore.GetTaskByChild(ctx, c.ParentID, c.ID)
+			if err == nil {
+				sa.TaskId = task.ID
+				sa.TaskStatus = task.Status
+			}
+		}
+
+		out.Subagents = append(out.Subagents, sa)
 	}
 	return out, nil
 }

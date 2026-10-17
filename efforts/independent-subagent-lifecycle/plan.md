@@ -57,7 +57,7 @@ Objective: display and control independent children accurately without weakening
 - [ ] Extend existing task listing, event attachment, and control transport as needed; regenerate bindings with repository tooling
 - [ ] Keep live child tabs active when the main conversation is steered, canceled, or finishes normally
 - [ ] Preserve cleanup of genuinely stale main-turn activity; distinguish actual child interruption/failure from a lost main stream
-- [ ] Rehydrate task status and available progress after reconnect and show interrupted status after agent restart
+- [~] Rehydrate task status and available progress after reconnect and show interrupted status after agent restart
 - [ ] Keep dismiss-tab and stop-task semantics distinct
 - [ ] Verify CLI input can continue while children run, and completion notifications do not steal input or cancel active main work
 - [ ] Run client/server integration cases covering reconnect, task control, independent event delivery, and worker-backed children

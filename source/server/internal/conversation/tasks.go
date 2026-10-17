@@ -15,6 +15,7 @@ type TaskStore interface {
 	InitTasks(context.Context) error
 	InsertTask(context.Context, TaskRecord) error
 	GetTask(context.Context, string, string) (TaskRecord, error)
+	GetTaskByChild(context.Context, string, string) (TaskRecord, error)
 	ListTasks(context.Context, string, int) ([]TaskRecord, error)
 	StartTask(context.Context, string, string) error
 	FinishTask(context.Context, TaskRecord) (bool, error)
@@ -91,6 +92,12 @@ const taskColumns = `id,parent_id,status,task,work_dir,child_id,result_json,erro
 
 func (s *sqliteStore) GetTask(ctx context.Context, parent, id string) (TaskRecord, error) {
 	return scanTask(s.db.QueryRowContext(ctx, `SELECT `+taskColumns+` FROM delegated_tasks WHERE parent_id=? AND id=?`, parent, id))
+}
+
+// GetTaskByChild resolves transcript identity without conflating it with a task
+// handle. Ownership remains scoped to the child's actual parent conversation.
+func (s *sqliteStore) GetTaskByChild(ctx context.Context, parent, child string) (TaskRecord, error) {
+	return scanTask(s.db.QueryRowContext(ctx, `SELECT `+taskColumns+` FROM delegated_tasks WHERE parent_id=? AND child_id=?`, parent, child))
 }
 func (s *sqliteStore) ListTasks(ctx context.Context, parent string, limit int) ([]TaskRecord, error) {
 	if limit <= 0 || limit > 100 {

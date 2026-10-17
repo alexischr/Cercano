@@ -785,6 +785,8 @@ type SubAgentInfo struct {
 	ParentID     string
 	Title        string
 	GrantedTools []string
+	TaskID       string
+	TaskStatus   string
 }
 
 // ListSubAgents returns the persisted sub-agent conversations spawned under a
@@ -802,6 +804,8 @@ func (c *Client) ListSubAgents(ctx context.Context, parentID string) ([]SubAgent
 			ParentID:     sa.GetParentId(),
 			Title:        sa.GetTitle(),
 			GrantedTools: sa.GetGrantedTools(),
+			TaskID:       sa.GetTaskId(),
+			TaskStatus:   sa.GetTaskStatus(),
 		})
 	}
 	return out, nil

@@ -103,3 +103,11 @@ Implemented per-chat coalesced completion scheduling from durable task callbacks
 Disconnected turns do not clear explicit autonomy blockers or begin an autonomous chain. Permission requests use the existing gated requester and live prompt replay. Added explicit background-work admission wired to enterpriseHost.Begin in the production bootstrap, because the gRPC policy interceptor does not run for host-generated work. Policy denial leaves notices unclaimed, and admission lifetime covers inference.
 
 Verification: race-enabled server, taskrun, broker, worker, permissions, and conversation suites pass; cmd/cercano tests pass. New deterministic tests cover busy non-interruption, coalescing, supersession without retry loops, recovery of claimed notices on a later human turn, disconnected approval/reconnect, policy denial/context retention, and callback-to-main-turn delivery. Remaining acceptance work includes real worker-main completion integration, CLI independent tab/event lifecycle, external transport binding, and the broader restart/resource cleanup audit.
+
+## CLI task-status restoration and cancellation cleanup
+
+Completed the partial child-list task metadata implementation already present in the worktree. A failing database-backed test showed that the listing service used a child conversation ID as a task handle, dropping status metadata. Added a parent-scoped GetTaskByChild lookup and coverage of differing task/child IDs, nested parent ownership, and foreign metadata isolation.
+
+The CLI now applies one task-lifecycle helper on restoration, retains sparse host-owned children, and does not infer terminal status for unknown task states. Parent cancellation preserves known task-owned children while retaining legacy activity cleanup. Terminal metadata clears streaming and unresolved tool spinners. Regression tests exercised the actual gRPC child-list/resume path rather than only assigning tab fields.
+
+Verification: full race-enabled CLI UI suite passes, as do conversation, persistence, server, taskrun, worker, and agentclient suites. This is status restoration, not independent live progress subscription: live event delivery and fresh-launch discovery remain unfinished, as do external trusted binding and the final acceptance audit.

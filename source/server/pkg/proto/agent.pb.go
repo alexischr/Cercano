@@ -5436,6 +5436,8 @@ type SubAgentConversation struct {
 	ParentId      string                 `protobuf:"bytes,2,opt,name=parent_id,json=parentId,proto3" json:"parent_id,omitempty"`
 	Title         string                 `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`
 	GrantedTools  []string               `protobuf:"bytes,4,rep,name=granted_tools,json=grantedTools,proto3" json:"granted_tools,omitempty"`
+	TaskId        string                 `protobuf:"bytes,5,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	TaskStatus    string                 `protobuf:"bytes,6,opt,name=task_status,json=taskStatus,proto3" json:"task_status,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5496,6 +5498,20 @@ func (x *SubAgentConversation) GetGrantedTools() []string {
 		return x.GrantedTools
 	}
 	return nil
+}
+
+func (x *SubAgentConversation) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *SubAgentConversation) GetTaskStatus() string {
+	if x != nil {
+		return x.TaskStatus
+	}
+	return ""
 }
 
 // Context-window usage for a conversation. Used is the cumulative tokens
@@ -20170,12 +20186,15 @@ const file_agent_proto_rawDesc = "" +
 	"\tsubagents\x18\x01 \x03(\v2\x1b.agent.SubAgentConversationR\tsubagents\"A\n" +
 	"\x16DismissSubAgentRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\"\x19\n" +
-	"\x17DismissSubAgentResponse\"~\n" +
+	"\x17DismissSubAgentResponse\"\xb8\x01\n" +
 	"\x14SubAgentConversation\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\tparent_id\x18\x02 \x01(\tR\bparentId\x12\x14\n" +
 	"\x05title\x18\x03 \x01(\tR\x05title\x12#\n" +
-	"\rgranted_tools\x18\x04 \x03(\tR\fgrantedTools\"A\n" +
+	"\rgranted_tools\x18\x04 \x03(\tR\fgrantedTools\x12\x17\n" +
+	"\atask_id\x18\x05 \x01(\tR\x06taskId\x12\x1f\n" +
+	"\vtask_status\x18\x06 \x01(\tR\n" +
+	"taskStatus\"A\n" +
 	"\x16GetContextUsageRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\"\xba\x04\n" +
 	"\x17GetContextUsageResponse\x12\x1f\n" +

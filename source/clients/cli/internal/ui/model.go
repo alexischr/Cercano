@@ -3943,18 +3943,23 @@ func (m *Model) restoreSubAgentTabs(ctx context.Context, conversationID string) 
 		view := m.ensureSubAgentTab(child.ID, child.ParentID, "", child.GrantedTools)
 		view.SetEntriesSlice(resumeEntries(turns, 0))
 		view.rebuild()
+
+		if tab := m.chatTabs.tabs[child.ID]; tab != nil {
+			tab.restored = true
+			if child.TaskID != "" {
+				tab.applyTaskLifecycle(child.TaskID, child.TaskStatus)
+			} else {
+				tab.done = true
+			}
+		}
+
 		// Sub-agent rows with only the delegated user prompt (or only synthetic
 		// lifecycle text) are stale starts that never produced a readable
 		// transcript. Dismiss them so a wedged dispatch tab does not reopen forever.
-		if tab := m.chatTabs.tabs[child.ID]; tab != nil && !subAgentTabHasSubstantiveTranscript(tab) {
+		// Skip this check for task-owned tabs since authoritative status takes precedence
+		if tab := m.chatTabs.tabs[child.ID]; tab != nil && child.TaskID == "" && !subAgentTabHasSubstantiveTranscript(tab) {
 			m.closeSubAgentTab(child.ID)
 			continue
-		}
-		// Mark done+restored so the tab renders without an activity dot and, per
-		// cleanupFinishedSubAgentTabs, survives the next turn's sweep.
-		if tab := m.chatTabs.tabs[child.ID]; tab != nil {
-			tab.done = true
-			tab.restored = true
 		}
 	}
 }

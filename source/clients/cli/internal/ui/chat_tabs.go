@@ -23,6 +23,9 @@ type chatTab struct {
 	// reopened sub-agent tab is not swept on the next turn merely because
 	// it is already finished.
 	restored bool
+	// Task metadata is authoritative for host-owned child liveness.
+	taskID     string
+	taskStatus string
 }
 
 // chatTabSurface owns every chat view, including main. Under Bubble Tea's
@@ -135,7 +138,10 @@ func (m *Model) ensureSubAgentTab(id, parentID, title string, tools []string) *c
 		startup = &subAgentStartEntry{Kind: kind, Title: title, Tools: append([]string(nil), tools...)}
 		view.AppendEntry(&Entry{SubAgentStart: startup})
 	}
-	tab := &chatTab{id: id, parentID: parentID, title: title, tools: append([]string(nil), tools...), view: view, startup: startup}
+	tab := &chatTab{
+		id: id, parentID: parentID, title: title, tools: append([]string(nil), tools...),
+		view: view, startup: startup,
+	}
 	m.chatTabs.tabs[id] = tab
 	m.chatTabs.order = append(m.chatTabs.order, id)
 	// Deliberately do NOT steal focus: the parent turn is still streaming in
@@ -418,7 +424,7 @@ func (m *Model) finishStaleSubAgentTabs(reason string) {
 			continue
 		}
 		tab := m.chatTabs.tabs[id]
-		if tab == nil || tab.done || tab.restored {
+		if tab == nil || tab.done || tab.restored || tab.taskID != "" {
 			continue
 		}
 		tab.done = true
@@ -644,4 +650,61 @@ func (m *Model) handleChatTabStripKey(keyStr string) bool {
 		return false
 	}
 	return true
+}
+
+// applyTaskLifecycle applies authoritative task lifecycle status to a chat tab.
+// For host-owned task children, this overrides transcript-based inference.
+// Returns true if the tab state was changed, false if it was already correct.
+func (tab *chatTab) applyTaskLifecycle(taskID, taskStatus string) bool {
+	if taskID == "" {
+		// No task ownership - preserve old behavior
+		return false
+	}
+
+	changed := false
+
+	// Update task metadata
+	if tab.taskID != taskID {
+		tab.taskID = taskID
+		changed = true
+	}
+	if tab.taskStatus != taskStatus {
+		tab.taskStatus = taskStatus
+		changed = true
+	}
+
+	// Apply authoritative status
+	switch taskStatus {
+	case "accepted", "running":
+		// Live even if transcript empty/sparse
+		if tab.done || tab.errored {
+			tab.done = false
+			tab.errored = false
+			changed = true
+		}
+	case "completed", "failed", "stopped", "interrupted":
+		// Terminal - mark as done with appropriate error state
+		if !tab.done || tab.errored != (taskStatus == "failed") {
+			tab.done = true
+			tab.errored = taskStatus == "failed"
+			changed = true
+		}
+	}
+
+	if tab.done {
+		if tab.view.streaming || tab.view.hasInProgressTool() {
+			changed = true
+		}
+		tab.view.SetStreaming(false)
+		if entry := tab.view.lastAssistantEntry(); entry != nil && entry.Streaming {
+			entry.Streaming = false
+			changed = true
+		}
+		tab.view.resolveStaleInProgressTools()
+		if changed {
+			tab.view.rebuild()
+		}
+	}
+
+	return changed
 }
