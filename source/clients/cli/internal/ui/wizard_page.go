@@ -119,9 +119,6 @@ func newWizardPage(ag *agentclient.Client, p theme.Palette, s theme.Styles, w, h
 		wp.recs, wp.recsOK = recs, true
 	}
 	wp.loadRuntimeCatalog()
-	if st.Step == wizard.StepOpen {
-		wp.autofillTiers()
-	}
 	wp.applyFn = wp.applyConfig
 	wp.downloadFn = func(ctx context.Context, runtime, modelID string) error {
 		_, err := wp.agent.DownloadRuntimeModel(ctx, runtime, modelID, agentclient.CatalogRef{})
@@ -130,18 +127,15 @@ func newWizardPage(ag *agentclient.Client, p theme.Palette, s theme.Styles, w, h
 	wp.commitKeyFn = wp.commitAPIKey
 	wp.loadProviders()
 	wp.discoverResources()
+	if st.Step == wizard.StepOpen {
+		wp.autofillTiers()
+	}
 	wp.cursor = wp.defaultCursor()
 	return wp
 }
 
-// captureBaseline records the pre-wizard cloud-profile configuration in the
-// run's state so abandoning can restore it. Best-effort: with no agent (or a
-// failed read) abandon still clears the run, it just can't undo commits.
-
-// loadProviders caches the cloud-provider catalog from the agent for the
-// cloud step's provider list and profile lookups. Best-effort and nil-guarded,
-// like captureBaseline: with no agent (tests) or a failed read the catalog
-// stays empty and tests seed wp.providers directly.
+// loadProviders caches the cloud-provider catalog for account selection.
+// Discovery is best-effort and read-only; tests may seed providers directly.
 func (wp *wizardPage) loadProviders() {
 	if wp.agent == nil {
 		return

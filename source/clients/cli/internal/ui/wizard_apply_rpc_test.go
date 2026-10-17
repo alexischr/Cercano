@@ -80,3 +80,18 @@ func TestWizardApplyRPCScopesEachLocus(t *testing.T) {
 		})
 	}
 }
+
+func (s *wizardApplyRPCStub) GetConfig(context.Context, *proto.GetConfigRequest) (*proto.GetConfigResponse, error) {
+	return &proto.GetConfigResponse{LocusMode: "open_only", ModelTiers: map[string]string{"llama_server.everyday": "existing-custom"}}, nil
+}
+func TestWizardResumeDiscoversOverridesBeforeAutofill(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	if err := wizard.Save(wizard.State{Step: wizard.StepOpen, LocusMode: "open_only"}); err != nil {
+		t.Fatal(err)
+	}
+	base, _ := newWizardApplyRPC(t)
+	wp := newWizardPage(base.agent, base.palette, base.styles, 80, 24)
+	if got := wp.state.TierPicks["llama_server.everyday"]; got != "existing-custom" {
+		t.Fatalf("resume lost configured assignment: %q", got)
+	}
+}
