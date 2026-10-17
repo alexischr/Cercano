@@ -41,7 +41,7 @@ Objective: introduce tiers, discover resources, recommend, and preview rather th
 
 - [ ] Add a concise branded introduction to Deep reasoning, Everyday development, and Lightweight tasks
 - [ ] Discover existing resources and provide account connection or local setup when needed
-- [ ] Present a ready-to-use recommendation with optional customization
+- [~] Present a ready-to-use recommendation with optional customization
   - [ ] Ask preference questions only where answers affect assignments
   - [ ] Let working cloud users start without a local download, with local setup available later
   - [ ] Make all tier assignments, cloud use, backups, context recommendations, and download requirements visible

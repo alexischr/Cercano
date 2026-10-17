@@ -39,10 +39,12 @@ type wizardPage struct {
 	// (GetCloudProviders) once at construction. The agent owns the catalog;
 	// the cloud step renders and looks up providers against this cached copy.
 	// Empty when there's no agent (tests seed it directly).
-	providers []agentclient.CloudProvider
-	state     wizard.State
-	cursor    int
-	authPick  bool // cloud step, phase 2: provider chosen, picking auth
+	providers        []agentclient.CloudProvider
+	state            wizard.State
+	cursor           int
+	authPick         bool // cloud step, phase 2: provider chosen, picking auth
+	customizingLocus bool // presentation only; saved wizard steps remain compatible
+	quickSetup       bool // skip optional model editing, never skip confirmation
 	// picker, when non-nil, is the floating per-slot model picker on the
 	// tiers step; keys route to it until it closes.
 	picker *overlay.RowList
@@ -328,6 +330,12 @@ func (wp *wizardPage) SetSize(w, h int) { wp.width, wp.height = w, h }
 func (wp *wizardPage) rows() []wizardRow {
 	switch wp.state.Step {
 	case wizard.StepLocus:
+		if !wp.customizingLocus {
+			return []wizardRow{
+				{Key: "recommended", Label: "Review recommended setup", Annotation: strings.ReplaceAll(wp.recommendedLocus(), "_", " ") + " — review before applying"},
+				{Key: "customize", Label: "Customize setup", Annotation: "choose cloud/local use and model assignments"},
+			}
+		}
 		rows := []wizardRow{
 			{Key: "cloud_primary", Label: "cloud primary", Annotation: "highest-quality frontier model in the cloud; open co-processor for background work."},
 			{Key: "open_only", Label: "open only", Annotation: "fast and fully private — work never leaves this machine."},
@@ -559,9 +567,8 @@ func (wp *wizardPage) Update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	return nil, false
 }
 
-// abandon is the trapdoor: two presses of q close the wizard without keeping
-// anything — eager commits are rolled back to the baseline and the resume
-// file is cleared. The first press only arms and asks.
+// abandon discards unconfirmed selections and clears resume state. Completed
+// account connections persist. The first press only arms and asks.
 func (wp *wizardPage) abandon() (closed bool) {
 	if !wp.abandonArmed {
 		wp.abandonArmed = true
@@ -587,6 +594,12 @@ func (wp *wizardPage) back() (closed bool) {
 	if wp.state.Step == wizard.StepCloud && wp.authPick {
 		wp.authPick = false
 		wp.cursor = wp.defaultCursor()
+		return false
+	}
+	wp.quickSetup = false
+	if wp.state.Step == wizard.StepLocus && wp.customizingLocus {
+		wp.customizingLocus = false
+		wp.cursor = 0
 		return false
 	}
 	if wp.state.Step == wizard.StepLocus {
@@ -669,6 +682,28 @@ func (wp *wizardPage) selectRow() (tea.Cmd, bool) {
 			wp.advance()
 		}
 	case wizard.StepLocus:
+		if row.Key == "customize" {
+			wp.customizingLocus = true
+			wp.quickSetup = false
+			wp.cursor = wp.defaultCursor()
+			return nil, false
+		}
+		if row.Key == "recommended" {
+			wp.quickSetup = true
+			wp.state.LocusMode = wp.recommendedLocus()
+			wp.advance()
+			if wp.state.Step == wizard.StepCloud {
+				if p := wp.existingActiveProfile(); p != nil {
+					wp.state.CloudProvider = p.Provider
+					if wp.state.CloudProvider == "" {
+						wp.state.CloudProvider = p.Name
+					}
+					wp.state.AuthMethod = "existing"
+					wp.advance()
+				}
+			}
+			return nil, false
+		}
 		wp.state.LocusMode = row.Key
 		wp.advance()
 	case wizard.StepOpen:
@@ -722,6 +757,12 @@ func (wp *wizardPage) advance() {
 	}
 	if wp.state.Step == wizard.StepOpen {
 		wp.autofillTiers()
+		if wp.quickSetup {
+			if err := wp.state.Advance(); err != nil {
+				wp.status = err.Error()
+				return
+			}
+		}
 	}
 	wp.persist()
 	wp.cursor = wp.defaultCursor()
@@ -771,7 +812,7 @@ func (wp *wizardPage) stepTitle() string {
 func (wp *wizardPage) stepDesc() string {
 	switch wp.state.Step {
 	case wizard.StepLocus:
-		return "Cercano delegates work across three task tiers: Deep reasoning for hard problems, Everyday development for main chat, and Lightweight tasks for quick helpers. One account or one suitable local model can serve all three. Start with the recommended option; assignments remain editable."
+		return "Welcome to Cercano. Cercano delegates work across three task tiers: Deep reasoning for hard problems, Everyday development for main chat, and Lightweight tasks for quick helpers. One account or one suitable local model can serve all three. Start with the recommended option; assignments remain editable."
 	case wizard.StepCloud:
 		if wp.authPick {
 			return "How do you want to authenticate? Connected accounts remain if you cancel setup; manage or remove them in /config."

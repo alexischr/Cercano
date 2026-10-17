@@ -27,6 +27,9 @@ func newTestWizardPage(t *testing.T) *wizardPage {
 	// openai (responses), openai, …) so the step-navigation presses below land on
 	// the providers the assertions expect.
 	wp.providers = wizardTestProviders()
+	// Existing navigation tests exercise the optional customization path.
+	wp.cursor = 1
+	wp.selectRow()
 	return wp
 }
 

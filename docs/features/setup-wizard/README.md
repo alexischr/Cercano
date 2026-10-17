@@ -449,3 +449,9 @@ Wires the previously planned open-model path end to end:
 - **Meridian profiles carry the proxy base URL** (`base_url` +
   `route: meridian`); an empty route on update preserves the existing profile's
   route so route-unaware clients can't demote meridian to direct.
+
+### Recommended-first entry
+
+Setup opens with **Review recommended setup** and **Customize setup**. Review uses discovered resources and preserves existing choices; an existing active cloud account can reach the preview without signing in again or downloading local models when the recommended mode is cloud-only. Existing configured modes take precedence. If an account is needed, setup asks for a connection before previewing the result.
+
+Customization retains the cloud/local strategy and individual model screens. The recommended path skips optional model editing, not consent: only **Use recommended setup** applies the preview. Press Esc from the preview to customize. Assignments remain editable in `/config`, and local models can be managed later through `/m` or `/setup`. Resumed runs use the existing saved steps; the shortcut itself is not a new persisted configuration setting.
