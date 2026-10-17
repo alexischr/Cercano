@@ -856,12 +856,12 @@ func (wp *wizardPage) summary() string {
 			b.WriteByte('\n')
 		}
 	}
+
+	// Add model download disclosure for open models
 	if wizard.ModeUsesOpen(wp.state.LocusMode) {
-		b.WriteString("\nAfter confirmation, missing open models download in the background \u2014 watch progress with /m.")
-		if wp.state.LocusMode != "open_only" {
-			b.WriteString(" Cercano uses your cloud model until they finish.")
-		}
+		wp.addModelDownloadDisclosure(&b)
 	}
+
 	if wp.state.LocusMode == "open_only" {
 		b.WriteString("\nLocal-only: no cloud routes or backups. Local models must be ready before use.")
 	} else if wp.state.LocusMode == "open_primary" {
@@ -874,6 +874,44 @@ func (wp *wizardPage) summary() string {
 	}
 	b.WriteString("\nAssignments remain editable in /config. Connected accounts remain if you cancel setup. Go back to customize or press q twice to discard unconfirmed selections.")
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// addModelDownloadDisclosure adds information about required model downloads
+// based on the actual state.TierPicks, resolving against the catalog.
+func (wp *wizardPage) addModelDownloadDisclosure(b *strings.Builder) {
+	if !wp.catalogOK {
+		b.WriteString("\nRuntime catalog unavailable: cannot determine requirements for open models.")
+		return
+	}
+	if wp.catalog.SystemRAMBytes == 0 {
+		b.WriteString("\nMachine memory is unknown; hardware fit unknown. Runtime checks still apply.")
+	}
+	seen := map[string]bool{}
+	downloads := 0
+	for _, tier := range openTierOrder() {
+		pick := wp.state.TierPicks[wizardOpenTierKey(tier)]
+		if pick == "" {
+			continue
+		}
+		model, ok := openModelByLabel(wp.catalog, pick)
+		key := pick
+		if ok {
+			key = model.ID
+		}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		if !ok {
+			fmt.Fprintf(b, "\nReadiness not verified: %s (download status unknown)", pick)
+		} else if model.DownloadState != "downloaded" {
+			fmt.Fprintf(b, "\nDownload after confirmation: %s (%s)", model.ID, firstNonEmpty(model.DisplayName, model.ID))
+			downloads++
+		}
+	}
+	if downloads > 0 {
+		b.WriteString("\nAfter confirmation, missing models download in the background — track progress with /m.")
+	}
 }
 
 // locusMainSide maps a locus mode to the side (wizard.SideCloud/SideOpen)
