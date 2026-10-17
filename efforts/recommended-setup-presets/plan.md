@@ -53,7 +53,7 @@ Objective: introduce tiers, discover resources, recommend, and preview rather th
 
 Objective: apply confirmed changes using existing persistence paths and make rerun discoverable without conflating it with reset. Files: existing setup apply/server handlers and tests, CLI setup entry points and configuration UI, source/server/pkg/setupstate, and relevant wizard persistence tests. Tests: interface-level preview/apply and rerun tests with temporary configuration and fake credential stores.
 
-- [ ] Connect confirmed recommendations to existing routing and configuration persistence
+- [x] Connect confirmed recommendations to existing routing and configuration persistence
 - [ ] Show changes against current assignments before replacing them
 - [ ] Preserve accounts, credentials, unrelated settings, permission choices, and intentional overrides
 - [x] Expose Run setup again through the existing guided-setup path and document existing command entry points

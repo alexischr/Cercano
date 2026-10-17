@@ -275,12 +275,13 @@ func wizardApplyPatches(st wizard.State) []agentclient.ConfigUpdate {
 		return patches
 	}
 	keys := make([]string, 0, len(st.TierPicks))
-	for k := range st.TierPicks {
-		// Cloud choices use the profile mutation, not Local runtime patches.
-		if strings.HasSuffix(k, "."+wizard.SideCloud) {
-			continue
+	// Only current wizard-owned local slots may be applied. Resumed state
+	// can contain retired or unrelated keys; they must not mutate config.
+	for _, tier := range openTierOrder() {
+		key := wizardOpenTierKey(tier)
+		if _, present := st.TierPicks[key]; present {
+			keys = append(keys, key)
 		}
-		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
@@ -302,6 +303,11 @@ func (wp *wizardPage) applyConfig() error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	// Reject inconsistent picker state before the first configuration write.
+	// Cloud fast/light slots share one Economy override.
+	if _, err := wizardCloudChoices(wp.state, nil); err != nil {
+		return err
+	}
 	patches := wizardApplyPatches(wp.state)
 	if _, err := wp.agent.UpdateConfig(ctx, patches[0]); err != nil {
 		return err

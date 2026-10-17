@@ -182,3 +182,12 @@ func TestWizardCloudOnlyIgnoresStaleOpenPicks(t *testing.T) {
 		t.Fatalf("cloud-only applies hidden local choices: %+v", patches)
 	}
 }
+
+func TestWizardApplyIgnoresUnownedResumeKeys(t *testing.T) {
+	patches := wizardApplyPatches(wizard.State{LocusMode: "open_only", TierPicks: map[string]string{
+		"llama_server.everyday": "wanted", "ollama.everyday": "unrelated", "retired.local": "stale", "everyday.cloud": "cloud",
+	}})
+	if len(patches) != 2 || patches[1].ModelTierKey != "llama_server.everyday" {
+		t.Fatalf("unowned keys applied: %+v", patches)
+	}
+}
