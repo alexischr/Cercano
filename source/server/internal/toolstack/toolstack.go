@@ -77,6 +77,7 @@ func NewEngine(d EngineDeps) *dispatch.Engine {
 // but they are populated to keep the host and worker Services identical, so a
 // future capability that reads them cannot silently diverge between the two.
 type CapDeps struct {
+	Tasks     capabilities.Tasks
 	Cloud     inference.Provider
 	Open      inference.Provider
 	Config    *config.Config
@@ -129,6 +130,7 @@ type CapDeps struct {
 // honored and a missing engine yields a clear error rather than a nil call.
 func InstallCapabilities(svc tools.Catalog, d CapDeps) {
 	capReg := capabilities.NewRegistry(capabilities.Services{
+		Tasks:         d.Tasks,
 		CloudProvider: d.Cloud,
 		OpenProvider:  d.Open,
 		Config:        d.Config,

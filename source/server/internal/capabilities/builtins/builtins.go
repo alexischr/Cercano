@@ -56,6 +56,9 @@ func Register(reg *capabilities.Registry) {
 	reg.MustRegister(GitAdd())
 	reg.MustRegister(GitCommit())
 	reg.MustRegister(Dispatch())
+	for _, op := range []string{"list", "inspect", "wait", "stop"} {
+		reg.MustRegister(TaskControl(op))
+	}
 	reg.MustRegister(SuggestPlan())
 	reg.MustRegister(RequestPlanApproval())
 	reg.MustRegister(PlanExit())

@@ -40,10 +40,21 @@ type AttachmentLookup interface {
 	LookupAttachment(convID, attachmentID string) (data []byte, mediaType string, ok bool)
 }
 
+// Tasks is the host-owned task boundary. Callers must supply the trusted parent
+// conversation from their execution context, never from tool arguments.
+type Tasks interface {
+	Launch(context.Context, dispatch.Spec) (conversation.TaskRecord, error)
+	List(context.Context, string, int) ([]conversation.TaskRecord, error)
+	Inspect(context.Context, string, string) (conversation.TaskRecord, error)
+	Wait(context.Context, string, string) (conversation.TaskRecord, error)
+	Stop(context.Context, string, string) (conversation.TaskRecord, error)
+}
+
 // Services holds the static collaborators a capability may need. Injected once
 // when the registry is built. There is no ProviderSet type — the agent holds
 // cloud + local providers as two discrete fields, so Services mirrors that.
 type Services struct {
+	Tasks         Tasks              // nil means independent task execution is unavailable
 	CloudProvider inference.Provider // may be nil (local-only deployments)
 	OpenProvider  inference.Provider
 	Engine        engine.InferenceEngine

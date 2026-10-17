@@ -63,3 +63,11 @@ The user has now explicitly selected per-chat isolation: each external chat may 
 `TestTaskAccessIsIsolatedByChat` now exercises two owners against the real task manager and SQLite store. Each owner lists only its own task; foreign inspect, wait, and stop return not-found without leaking a record or result. The checks run both during execution and after terminal persistence. Both tasks complete successfully despite foreign stop attempts. `go test -race ./internal/taskrun ./internal/conversation` passed. This proves manager-level isolation only; the plan's authorization task remains in progress until transport binding and public controls enforce the same boundary.
 
 The external-client transport implementation remains to be established. The existing probe demonstrates that Cercano's current MCP transport drops its local chat context; it does not prove that every external client supplies a usable chat identity. Do not claim external per-chat isolation is implemented merely by adding request metadata. Native agent calls already carry host conversation context. Preserve that trusted scope, and require evidence of an external integration's binding before exposing cross-request task access through it.
+
+## Approved unbound-client policy and task controls
+
+The user approved failing closed for asynchronous task operations when a client lacks trustworthy per-chat identity. Missing binding is an integration failure, not normal operation. Do not silently fall back to synchronous dispatch or infer identity from tool arguments or shared transport sessions. Unrelated synchronous capabilities remain unchanged.
+
+Added a separate capabilities.Tasks interface and host task-service adapter, plus task_list, task_inspect, task_wait, and task_stop. Controls require surface-injected ConversationID; a model-provided conversation_id is never used for ownership. Wait is bounded and does not stop execution. Public dispatch itself still uses the synchronous hook pending worker/launch integration. The worker task proxy and external trusted binding remain unwired.
+
+Verified with `go test -race ./internal/capabilities/... ./internal/toolstack ./internal/server ./internal/taskrun`. Tests cover unbound external RPC rejection with no result payload, active/completed foreign-task rejection, and wait cancellation without child cancellation.

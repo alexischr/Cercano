@@ -292,6 +292,7 @@ func (s *Server) ToolRegistry() *agenttools.Registry { return s.toolSvc.Registry
 func (s *Server) InstallCapabilities() {
 	cfgSnapshot := s.cfgSvc.Get()
 	toolstack.InstallCapabilities(s.toolSvc, toolstack.CapDeps{
+		Tasks:     serverTasks{s},
 		Cloud:     s.providerSvc.Cloud(),
 		Open:      s.providerSvc.Open(),
 		Config:    &cfgSnapshot,
