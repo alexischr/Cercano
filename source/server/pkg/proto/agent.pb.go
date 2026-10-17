@@ -296,7 +296,7 @@ func (x ModelMetadataEntry_Vision) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ModelMetadataEntry_Vision.Descriptor instead.
 func (ModelMetadataEntry_Vision) EnumDescriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{204, 0}
+	return file_agent_proto_rawDescGZIP(), []int{206, 0}
 }
 
 // ExportImageRequest identifies one attached image. If conversation_id is
@@ -12822,17 +12822,21 @@ func (x *StartClaudeLoginRequest) GetCreateOnly() bool {
 }
 
 // StartClaudeLoginEvent is one frame of the Claude sign-in stream. The first
-// frame carries the authorize URL to open in the browser; the terminal frame
-// (done=true) reports ok/error and the profile name.
+// frame carries the authorize URL to open in the browser, the manual URL to
+// show for copying to a browser on another machine, and the login id to submit
+// a pasted code under; the terminal frame (done=true) reports ok/error and the
+// profile name.
 type StartClaudeLoginEvent struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AuthorizeUrl  string                 `protobuf:"bytes,1,opt,name=authorize_url,json=authorizeUrl,proto3" json:"authorize_url,omitempty"`
-	Done          bool                   `protobuf:"varint,2,opt,name=done,proto3" json:"done,omitempty"`
-	Ok            bool                   `protobuf:"varint,3,opt,name=ok,proto3" json:"ok,omitempty"`
-	Error         string                 `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
-	ProfileName   string                 `protobuf:"bytes,5,opt,name=profile_name,json=profileName,proto3" json:"profile_name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	AuthorizeUrl       string                 `protobuf:"bytes,1,opt,name=authorize_url,json=authorizeUrl,proto3" json:"authorize_url,omitempty"`
+	Done               bool                   `protobuf:"varint,2,opt,name=done,proto3" json:"done,omitempty"`
+	Ok                 bool                   `protobuf:"varint,3,opt,name=ok,proto3" json:"ok,omitempty"`
+	Error              string                 `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
+	ProfileName        string                 `protobuf:"bytes,5,opt,name=profile_name,json=profileName,proto3" json:"profile_name,omitempty"`
+	ManualAuthorizeUrl string                 `protobuf:"bytes,6,opt,name=manual_authorize_url,json=manualAuthorizeUrl,proto3" json:"manual_authorize_url,omitempty"`
+	LoginId            string                 `protobuf:"bytes,7,opt,name=login_id,json=loginId,proto3" json:"login_id,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *StartClaudeLoginEvent) Reset() {
@@ -12900,6 +12904,124 @@ func (x *StartClaudeLoginEvent) GetProfileName() string {
 	return ""
 }
 
+func (x *StartClaudeLoginEvent) GetManualAuthorizeUrl() string {
+	if x != nil {
+		return x.ManualAuthorizeUrl
+	}
+	return ""
+}
+
+func (x *StartClaudeLoginEvent) GetLoginId() string {
+	if x != nil {
+		return x.LoginId
+	}
+	return ""
+}
+
+type SubmitClaudeLoginCodeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	LoginId       string                 `protobuf:"bytes,1,opt,name=login_id,json=loginId,proto3" json:"login_id,omitempty"` // from the login stream's first frame
+	Code          string                 `protobuf:"bytes,2,opt,name=code,proto3" json:"code,omitempty"`                      // as pasted: "<code>#<state>" or the loopback callback URL
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubmitClaudeLoginCodeRequest) Reset() {
+	*x = SubmitClaudeLoginCodeRequest{}
+	mi := &file_agent_proto_msgTypes[185]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubmitClaudeLoginCodeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubmitClaudeLoginCodeRequest) ProtoMessage() {}
+
+func (x *SubmitClaudeLoginCodeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_proto_msgTypes[185]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubmitClaudeLoginCodeRequest.ProtoReflect.Descriptor instead.
+func (*SubmitClaudeLoginCodeRequest) Descriptor() ([]byte, []int) {
+	return file_agent_proto_rawDescGZIP(), []int{185}
+}
+
+func (x *SubmitClaudeLoginCodeRequest) GetLoginId() string {
+	if x != nil {
+		return x.LoginId
+	}
+	return ""
+}
+
+func (x *SubmitClaudeLoginCodeRequest) GetCode() string {
+	if x != nil {
+		return x.Code
+	}
+	return ""
+}
+
+type SubmitClaudeLoginCodeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Accepted      bool                   `protobuf:"varint,1,opt,name=accepted,proto3" json:"accepted,omitempty"` // the sign-in completed; the stream's terminal frame follows
+	Error         string                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`        // why the paste was rejected; the sign-in is still waiting
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubmitClaudeLoginCodeResponse) Reset() {
+	*x = SubmitClaudeLoginCodeResponse{}
+	mi := &file_agent_proto_msgTypes[186]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubmitClaudeLoginCodeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubmitClaudeLoginCodeResponse) ProtoMessage() {}
+
+func (x *SubmitClaudeLoginCodeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_proto_msgTypes[186]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubmitClaudeLoginCodeResponse.ProtoReflect.Descriptor instead.
+func (*SubmitClaudeLoginCodeResponse) Descriptor() ([]byte, []int) {
+	return file_agent_proto_rawDescGZIP(), []int{186}
+}
+
+func (x *SubmitClaudeLoginCodeResponse) GetAccepted() bool {
+	if x != nil {
+		return x.Accepted
+	}
+	return false
+}
+
+func (x *SubmitClaudeLoginCodeResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
 // AttachConversationRequest names the conversation to observe (see the
 // AttachConversation RPC). Declared at file end to keep the generated message
 // ordering — and thus the regen diff — minimal.
@@ -12912,7 +13034,7 @@ type AttachConversationRequest struct {
 
 func (x *AttachConversationRequest) Reset() {
 	*x = AttachConversationRequest{}
-	mi := &file_agent_proto_msgTypes[185]
+	mi := &file_agent_proto_msgTypes[187]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12924,7 +13046,7 @@ func (x *AttachConversationRequest) String() string {
 func (*AttachConversationRequest) ProtoMessage() {}
 
 func (x *AttachConversationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[185]
+	mi := &file_agent_proto_msgTypes[187]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12937,7 +13059,7 @@ func (x *AttachConversationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachConversationRequest.ProtoReflect.Descriptor instead.
 func (*AttachConversationRequest) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{185}
+	return file_agent_proto_rawDescGZIP(), []int{187}
 }
 
 func (x *AttachConversationRequest) GetConversationId() string {
@@ -12973,7 +13095,7 @@ type HostToWorker struct {
 
 func (x *HostToWorker) Reset() {
 	*x = HostToWorker{}
-	mi := &file_agent_proto_msgTypes[186]
+	mi := &file_agent_proto_msgTypes[188]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -12985,7 +13107,7 @@ func (x *HostToWorker) String() string {
 func (*HostToWorker) ProtoMessage() {}
 
 func (x *HostToWorker) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[186]
+	mi := &file_agent_proto_msgTypes[188]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -12998,7 +13120,7 @@ func (x *HostToWorker) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HostToWorker.ProtoReflect.Descriptor instead.
 func (*HostToWorker) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{186}
+	return file_agent_proto_rawDescGZIP(), []int{188}
 }
 
 func (x *HostToWorker) GetMsg() isHostToWorker_Msg {
@@ -13238,7 +13360,7 @@ type PermissionUpdate struct {
 
 func (x *PermissionUpdate) Reset() {
 	*x = PermissionUpdate{}
-	mi := &file_agent_proto_msgTypes[187]
+	mi := &file_agent_proto_msgTypes[189]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13250,7 +13372,7 @@ func (x *PermissionUpdate) String() string {
 func (*PermissionUpdate) ProtoMessage() {}
 
 func (x *PermissionUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[187]
+	mi := &file_agent_proto_msgTypes[189]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13263,7 +13385,7 @@ func (x *PermissionUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PermissionUpdate.ProtoReflect.Descriptor instead.
 func (*PermissionUpdate) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{187}
+	return file_agent_proto_rawDescGZIP(), []int{189}
 }
 
 func (x *PermissionUpdate) GetMode() string {
@@ -13309,7 +13431,7 @@ type WorkerToHost struct {
 
 func (x *WorkerToHost) Reset() {
 	*x = WorkerToHost{}
-	mi := &file_agent_proto_msgTypes[188]
+	mi := &file_agent_proto_msgTypes[190]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13321,7 +13443,7 @@ func (x *WorkerToHost) String() string {
 func (*WorkerToHost) ProtoMessage() {}
 
 func (x *WorkerToHost) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[188]
+	mi := &file_agent_proto_msgTypes[190]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13334,7 +13456,7 @@ func (x *WorkerToHost) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkerToHost.ProtoReflect.Descriptor instead.
 func (*WorkerToHost) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{188}
+	return file_agent_proto_rawDescGZIP(), []int{190}
 }
 
 func (x *WorkerToHost) GetMsg() isWorkerToHost_Msg {
@@ -13644,7 +13766,7 @@ type StartTurn struct {
 
 func (x *StartTurn) Reset() {
 	*x = StartTurn{}
-	mi := &file_agent_proto_msgTypes[189]
+	mi := &file_agent_proto_msgTypes[191]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13656,7 +13778,7 @@ func (x *StartTurn) String() string {
 func (*StartTurn) ProtoMessage() {}
 
 func (x *StartTurn) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[189]
+	mi := &file_agent_proto_msgTypes[191]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13669,7 +13791,7 @@ func (x *StartTurn) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartTurn.ProtoReflect.Descriptor instead.
 func (*StartTurn) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{189}
+	return file_agent_proto_rawDescGZIP(), []int{191}
 }
 
 func (x *StartTurn) GetAccounting() *AccountingWork {
@@ -13813,7 +13935,7 @@ type WorkerModelAuthorizationRequest struct {
 
 func (x *WorkerModelAuthorizationRequest) Reset() {
 	*x = WorkerModelAuthorizationRequest{}
-	mi := &file_agent_proto_msgTypes[190]
+	mi := &file_agent_proto_msgTypes[192]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13825,7 +13947,7 @@ func (x *WorkerModelAuthorizationRequest) String() string {
 func (*WorkerModelAuthorizationRequest) ProtoMessage() {}
 
 func (x *WorkerModelAuthorizationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[190]
+	mi := &file_agent_proto_msgTypes[192]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13838,7 +13960,7 @@ func (x *WorkerModelAuthorizationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkerModelAuthorizationRequest.ProtoReflect.Descriptor instead.
 func (*WorkerModelAuthorizationRequest) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{190}
+	return file_agent_proto_rawDescGZIP(), []int{192}
 }
 
 func (x *WorkerModelAuthorizationRequest) GetId() uint64 {
@@ -13886,7 +14008,7 @@ type WorkerModelAuthorizationResponse struct {
 
 func (x *WorkerModelAuthorizationResponse) Reset() {
 	*x = WorkerModelAuthorizationResponse{}
-	mi := &file_agent_proto_msgTypes[191]
+	mi := &file_agent_proto_msgTypes[193]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13898,7 +14020,7 @@ func (x *WorkerModelAuthorizationResponse) String() string {
 func (*WorkerModelAuthorizationResponse) ProtoMessage() {}
 
 func (x *WorkerModelAuthorizationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[191]
+	mi := &file_agent_proto_msgTypes[193]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13911,7 +14033,7 @@ func (x *WorkerModelAuthorizationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkerModelAuthorizationResponse.ProtoReflect.Descriptor instead.
 func (*WorkerModelAuthorizationResponse) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{191}
+	return file_agent_proto_rawDescGZIP(), []int{193}
 }
 
 func (x *WorkerModelAuthorizationResponse) GetId() uint64 {
@@ -13943,7 +14065,7 @@ type LLMMessage struct {
 
 func (x *LLMMessage) Reset() {
 	*x = LLMMessage{}
-	mi := &file_agent_proto_msgTypes[192]
+	mi := &file_agent_proto_msgTypes[194]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -13955,7 +14077,7 @@ func (x *LLMMessage) String() string {
 func (*LLMMessage) ProtoMessage() {}
 
 func (x *LLMMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[192]
+	mi := &file_agent_proto_msgTypes[194]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -13968,7 +14090,7 @@ func (x *LLMMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LLMMessage.ProtoReflect.Descriptor instead.
 func (*LLMMessage) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{192}
+	return file_agent_proto_rawDescGZIP(), []int{194}
 }
 
 func (x *LLMMessage) GetRole() string {
@@ -14035,7 +14157,7 @@ type WorkerEvent struct {
 
 func (x *WorkerEvent) Reset() {
 	*x = WorkerEvent{}
-	mi := &file_agent_proto_msgTypes[193]
+	mi := &file_agent_proto_msgTypes[195]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14047,7 +14169,7 @@ func (x *WorkerEvent) String() string {
 func (*WorkerEvent) ProtoMessage() {}
 
 func (x *WorkerEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[193]
+	mi := &file_agent_proto_msgTypes[195]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14060,7 +14182,7 @@ func (x *WorkerEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkerEvent.ProtoReflect.Descriptor instead.
 func (*WorkerEvent) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{193}
+	return file_agent_proto_rawDescGZIP(), []int{195}
 }
 
 func (x *WorkerEvent) GetKind() WorkerEventKind {
@@ -14247,7 +14369,7 @@ type PermissionRequest struct {
 
 func (x *PermissionRequest) Reset() {
 	*x = PermissionRequest{}
-	mi := &file_agent_proto_msgTypes[194]
+	mi := &file_agent_proto_msgTypes[196]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14259,7 +14381,7 @@ func (x *PermissionRequest) String() string {
 func (*PermissionRequest) ProtoMessage() {}
 
 func (x *PermissionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[194]
+	mi := &file_agent_proto_msgTypes[196]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14272,7 +14394,7 @@ func (x *PermissionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PermissionRequest.ProtoReflect.Descriptor instead.
 func (*PermissionRequest) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{194}
+	return file_agent_proto_rawDescGZIP(), []int{196}
 }
 
 func (x *PermissionRequest) GetId() uint64 {
@@ -14330,7 +14452,7 @@ type PermissionResponse struct {
 
 func (x *PermissionResponse) Reset() {
 	*x = PermissionResponse{}
-	mi := &file_agent_proto_msgTypes[195]
+	mi := &file_agent_proto_msgTypes[197]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14342,7 +14464,7 @@ func (x *PermissionResponse) String() string {
 func (*PermissionResponse) ProtoMessage() {}
 
 func (x *PermissionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[195]
+	mi := &file_agent_proto_msgTypes[197]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14355,7 +14477,7 @@ func (x *PermissionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PermissionResponse.ProtoReflect.Descriptor instead.
 func (*PermissionResponse) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{195}
+	return file_agent_proto_rawDescGZIP(), []int{197}
 }
 
 func (x *PermissionResponse) GetId() uint64 {
@@ -14400,7 +14522,7 @@ type SessionProfileRequest struct {
 
 func (x *SessionProfileRequest) Reset() {
 	*x = SessionProfileRequest{}
-	mi := &file_agent_proto_msgTypes[196]
+	mi := &file_agent_proto_msgTypes[198]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14412,7 +14534,7 @@ func (x *SessionProfileRequest) String() string {
 func (*SessionProfileRequest) ProtoMessage() {}
 
 func (x *SessionProfileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[196]
+	mi := &file_agent_proto_msgTypes[198]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14425,7 +14547,7 @@ func (x *SessionProfileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionProfileRequest.ProtoReflect.Descriptor instead.
 func (*SessionProfileRequest) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{196}
+	return file_agent_proto_rawDescGZIP(), []int{198}
 }
 
 func (x *SessionProfileRequest) GetId() uint64 {
@@ -14460,7 +14582,7 @@ type SessionProfileResponse struct {
 
 func (x *SessionProfileResponse) Reset() {
 	*x = SessionProfileResponse{}
-	mi := &file_agent_proto_msgTypes[197]
+	mi := &file_agent_proto_msgTypes[199]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14472,7 +14594,7 @@ func (x *SessionProfileResponse) String() string {
 func (*SessionProfileResponse) ProtoMessage() {}
 
 func (x *SessionProfileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[197]
+	mi := &file_agent_proto_msgTypes[199]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14485,7 +14607,7 @@ func (x *SessionProfileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionProfileResponse.ProtoReflect.Descriptor instead.
 func (*SessionProfileResponse) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{197}
+	return file_agent_proto_rawDescGZIP(), []int{199}
 }
 
 func (x *SessionProfileResponse) GetId() uint64 {
@@ -14521,7 +14643,7 @@ type PersistTurn struct {
 
 func (x *PersistTurn) Reset() {
 	*x = PersistTurn{}
-	mi := &file_agent_proto_msgTypes[198]
+	mi := &file_agent_proto_msgTypes[200]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14533,7 +14655,7 @@ func (x *PersistTurn) String() string {
 func (*PersistTurn) ProtoMessage() {}
 
 func (x *PersistTurn) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[198]
+	mi := &file_agent_proto_msgTypes[200]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14546,7 +14668,7 @@ func (x *PersistTurn) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PersistTurn.ProtoReflect.Descriptor instead.
 func (*PersistTurn) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{198}
+	return file_agent_proto_rawDescGZIP(), []int{200}
 }
 
 func (x *PersistTurn) GetMessage() *LLMMessage {
@@ -14587,7 +14709,7 @@ type EnsureSubagentConversation struct {
 
 func (x *EnsureSubagentConversation) Reset() {
 	*x = EnsureSubagentConversation{}
-	mi := &file_agent_proto_msgTypes[199]
+	mi := &file_agent_proto_msgTypes[201]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14599,7 +14721,7 @@ func (x *EnsureSubagentConversation) String() string {
 func (*EnsureSubagentConversation) ProtoMessage() {}
 
 func (x *EnsureSubagentConversation) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[199]
+	mi := &file_agent_proto_msgTypes[201]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14612,7 +14734,7 @@ func (x *EnsureSubagentConversation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnsureSubagentConversation.ProtoReflect.Descriptor instead.
 func (*EnsureSubagentConversation) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{199}
+	return file_agent_proto_rawDescGZIP(), []int{201}
 }
 
 func (x *EnsureSubagentConversation) GetId() string {
@@ -14673,7 +14795,7 @@ type TurnDone struct {
 
 func (x *TurnDone) Reset() {
 	*x = TurnDone{}
-	mi := &file_agent_proto_msgTypes[200]
+	mi := &file_agent_proto_msgTypes[202]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14685,7 +14807,7 @@ func (x *TurnDone) String() string {
 func (*TurnDone) ProtoMessage() {}
 
 func (x *TurnDone) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[200]
+	mi := &file_agent_proto_msgTypes[202]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14698,7 +14820,7 @@ func (x *TurnDone) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TurnDone.ProtoReflect.Descriptor instead.
 func (*TurnDone) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{200}
+	return file_agent_proto_rawDescGZIP(), []int{202}
 }
 
 func (x *TurnDone) GetFinalText() string {
@@ -14761,7 +14883,7 @@ type TurnError struct {
 
 func (x *TurnError) Reset() {
 	*x = TurnError{}
-	mi := &file_agent_proto_msgTypes[201]
+	mi := &file_agent_proto_msgTypes[203]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14773,7 +14895,7 @@ func (x *TurnError) String() string {
 func (*TurnError) ProtoMessage() {}
 
 func (x *TurnError) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[201]
+	mi := &file_agent_proto_msgTypes[203]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14786,7 +14908,7 @@ func (x *TurnError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TurnError.ProtoReflect.Descriptor instead.
 func (*TurnError) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{201}
+	return file_agent_proto_rawDescGZIP(), []int{203}
 }
 
 func (x *TurnError) GetMessage() string {
@@ -14812,7 +14934,7 @@ type Cancel struct {
 
 func (x *Cancel) Reset() {
 	*x = Cancel{}
-	mi := &file_agent_proto_msgTypes[202]
+	mi := &file_agent_proto_msgTypes[204]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14824,7 +14946,7 @@ func (x *Cancel) String() string {
 func (*Cancel) ProtoMessage() {}
 
 func (x *Cancel) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[202]
+	mi := &file_agent_proto_msgTypes[204]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14837,7 +14959,7 @@ func (x *Cancel) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Cancel.ProtoReflect.Descriptor instead.
 func (*Cancel) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{202}
+	return file_agent_proto_rawDescGZIP(), []int{204}
 }
 
 // ConfigSnapshot carries the config fields the worker needs to build its
@@ -14923,7 +15045,7 @@ type ConfigSnapshot struct {
 
 func (x *ConfigSnapshot) Reset() {
 	*x = ConfigSnapshot{}
-	mi := &file_agent_proto_msgTypes[203]
+	mi := &file_agent_proto_msgTypes[205]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -14935,7 +15057,7 @@ func (x *ConfigSnapshot) String() string {
 func (*ConfigSnapshot) ProtoMessage() {}
 
 func (x *ConfigSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[203]
+	mi := &file_agent_proto_msgTypes[205]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -14948,7 +15070,7 @@ func (x *ConfigSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigSnapshot.ProtoReflect.Descriptor instead.
 func (*ConfigSnapshot) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{203}
+	return file_agent_proto_rawDescGZIP(), []int{205}
 }
 
 func (x *ConfigSnapshot) GetLocusMode() string {
@@ -15295,7 +15417,7 @@ type ModelMetadataEntry struct {
 
 func (x *ModelMetadataEntry) Reset() {
 	*x = ModelMetadataEntry{}
-	mi := &file_agent_proto_msgTypes[204]
+	mi := &file_agent_proto_msgTypes[206]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15307,7 +15429,7 @@ func (x *ModelMetadataEntry) String() string {
 func (*ModelMetadataEntry) ProtoMessage() {}
 
 func (x *ModelMetadataEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[204]
+	mi := &file_agent_proto_msgTypes[206]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15320,7 +15442,7 @@ func (x *ModelMetadataEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelMetadataEntry.ProtoReflect.Descriptor instead.
 func (*ModelMetadataEntry) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{204}
+	return file_agent_proto_rawDescGZIP(), []int{206}
 }
 
 func (x *ModelMetadataEntry) GetProvider() string {
@@ -15385,7 +15507,7 @@ type CredentialRequest struct {
 
 func (x *CredentialRequest) Reset() {
 	*x = CredentialRequest{}
-	mi := &file_agent_proto_msgTypes[205]
+	mi := &file_agent_proto_msgTypes[207]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15397,7 +15519,7 @@ func (x *CredentialRequest) String() string {
 func (*CredentialRequest) ProtoMessage() {}
 
 func (x *CredentialRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[205]
+	mi := &file_agent_proto_msgTypes[207]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15410,7 +15532,7 @@ func (x *CredentialRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CredentialRequest.ProtoReflect.Descriptor instead.
 func (*CredentialRequest) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{205}
+	return file_agent_proto_rawDescGZIP(), []int{207}
 }
 
 func (x *CredentialRequest) GetId() uint64 {
@@ -15441,7 +15563,7 @@ type CredentialResponse struct {
 
 func (x *CredentialResponse) Reset() {
 	*x = CredentialResponse{}
-	mi := &file_agent_proto_msgTypes[206]
+	mi := &file_agent_proto_msgTypes[208]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15453,7 +15575,7 @@ func (x *CredentialResponse) String() string {
 func (*CredentialResponse) ProtoMessage() {}
 
 func (x *CredentialResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[206]
+	mi := &file_agent_proto_msgTypes[208]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15466,7 +15588,7 @@ func (x *CredentialResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CredentialResponse.ProtoReflect.Descriptor instead.
 func (*CredentialResponse) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{206}
+	return file_agent_proto_rawDescGZIP(), []int{208}
 }
 
 func (x *CredentialResponse) GetId() uint64 {
@@ -15523,7 +15645,7 @@ type OpenInferenceRequest struct {
 
 func (x *OpenInferenceRequest) Reset() {
 	*x = OpenInferenceRequest{}
-	mi := &file_agent_proto_msgTypes[207]
+	mi := &file_agent_proto_msgTypes[209]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15535,7 +15657,7 @@ func (x *OpenInferenceRequest) String() string {
 func (*OpenInferenceRequest) ProtoMessage() {}
 
 func (x *OpenInferenceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[207]
+	mi := &file_agent_proto_msgTypes[209]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15548,7 +15670,7 @@ func (x *OpenInferenceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OpenInferenceRequest.ProtoReflect.Descriptor instead.
 func (*OpenInferenceRequest) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{207}
+	return file_agent_proto_rawDescGZIP(), []int{209}
 }
 
 func (x *OpenInferenceRequest) GetId() uint64 {
@@ -15615,7 +15737,7 @@ type LLMChatRequest struct {
 
 func (x *LLMChatRequest) Reset() {
 	*x = LLMChatRequest{}
-	mi := &file_agent_proto_msgTypes[208]
+	mi := &file_agent_proto_msgTypes[210]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15627,7 +15749,7 @@ func (x *LLMChatRequest) String() string {
 func (*LLMChatRequest) ProtoMessage() {}
 
 func (x *LLMChatRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[208]
+	mi := &file_agent_proto_msgTypes[210]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15640,7 +15762,7 @@ func (x *LLMChatRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LLMChatRequest.ProtoReflect.Descriptor instead.
 func (*LLMChatRequest) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{208}
+	return file_agent_proto_rawDescGZIP(), []int{210}
 }
 
 func (x *LLMChatRequest) GetModel() string {
@@ -15732,7 +15854,7 @@ type LLMTool struct {
 
 func (x *LLMTool) Reset() {
 	*x = LLMTool{}
-	mi := &file_agent_proto_msgTypes[209]
+	mi := &file_agent_proto_msgTypes[211]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15744,7 +15866,7 @@ func (x *LLMTool) String() string {
 func (*LLMTool) ProtoMessage() {}
 
 func (x *LLMTool) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[209]
+	mi := &file_agent_proto_msgTypes[211]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15757,7 +15879,7 @@ func (x *LLMTool) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LLMTool.ProtoReflect.Descriptor instead.
 func (*LLMTool) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{209}
+	return file_agent_proto_rawDescGZIP(), []int{211}
 }
 
 func (x *LLMTool) GetName() string {
@@ -15801,7 +15923,7 @@ type OpenInferenceEvent struct {
 
 func (x *OpenInferenceEvent) Reset() {
 	*x = OpenInferenceEvent{}
-	mi := &file_agent_proto_msgTypes[210]
+	mi := &file_agent_proto_msgTypes[212]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15813,7 +15935,7 @@ func (x *OpenInferenceEvent) String() string {
 func (*OpenInferenceEvent) ProtoMessage() {}
 
 func (x *OpenInferenceEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[210]
+	mi := &file_agent_proto_msgTypes[212]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15826,7 +15948,7 @@ func (x *OpenInferenceEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OpenInferenceEvent.ProtoReflect.Descriptor instead.
 func (*OpenInferenceEvent) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{210}
+	return file_agent_proto_rawDescGZIP(), []int{212}
 }
 
 func (x *OpenInferenceEvent) GetId() uint64 {
@@ -15934,7 +16056,7 @@ type LLMStreamEvent struct {
 
 func (x *LLMStreamEvent) Reset() {
 	*x = LLMStreamEvent{}
-	mi := &file_agent_proto_msgTypes[211]
+	mi := &file_agent_proto_msgTypes[213]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -15946,7 +16068,7 @@ func (x *LLMStreamEvent) String() string {
 func (*LLMStreamEvent) ProtoMessage() {}
 
 func (x *LLMStreamEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[211]
+	mi := &file_agent_proto_msgTypes[213]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -15959,7 +16081,7 @@ func (x *LLMStreamEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LLMStreamEvent.ProtoReflect.Descriptor instead.
 func (*LLMStreamEvent) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{211}
+	return file_agent_proto_rawDescGZIP(), []int{213}
 }
 
 func (x *LLMStreamEvent) GetType() string {
@@ -16063,7 +16185,7 @@ type ServingRouteInfo struct {
 
 func (x *ServingRouteInfo) Reset() {
 	*x = ServingRouteInfo{}
-	mi := &file_agent_proto_msgTypes[212]
+	mi := &file_agent_proto_msgTypes[214]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16075,7 +16197,7 @@ func (x *ServingRouteInfo) String() string {
 func (*ServingRouteInfo) ProtoMessage() {}
 
 func (x *ServingRouteInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[212]
+	mi := &file_agent_proto_msgTypes[214]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16088,7 +16210,7 @@ func (x *ServingRouteInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServingRouteInfo.ProtoReflect.Descriptor instead.
 func (*ServingRouteInfo) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{212}
+	return file_agent_proto_rawDescGZIP(), []int{214}
 }
 
 func (x *ServingRouteInfo) GetProvider() string {
@@ -16163,7 +16285,7 @@ type CloudProfileStructure struct {
 
 func (x *CloudProfileStructure) Reset() {
 	*x = CloudProfileStructure{}
-	mi := &file_agent_proto_msgTypes[213]
+	mi := &file_agent_proto_msgTypes[215]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16175,7 +16297,7 @@ func (x *CloudProfileStructure) String() string {
 func (*CloudProfileStructure) ProtoMessage() {}
 
 func (x *CloudProfileStructure) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[213]
+	mi := &file_agent_proto_msgTypes[215]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16188,7 +16310,7 @@ func (x *CloudProfileStructure) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloudProfileStructure.ProtoReflect.Descriptor instead.
 func (*CloudProfileStructure) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{213}
+	return file_agent_proto_rawDescGZIP(), []int{215}
 }
 
 func (x *CloudProfileStructure) GetFlavor() string {
@@ -16259,7 +16381,7 @@ type RuntimeRequestAccounting struct {
 
 func (x *RuntimeRequestAccounting) Reset() {
 	*x = RuntimeRequestAccounting{}
-	mi := &file_agent_proto_msgTypes[214]
+	mi := &file_agent_proto_msgTypes[216]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16271,7 +16393,7 @@ func (x *RuntimeRequestAccounting) String() string {
 func (*RuntimeRequestAccounting) ProtoMessage() {}
 
 func (x *RuntimeRequestAccounting) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[214]
+	mi := &file_agent_proto_msgTypes[216]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16284,7 +16406,7 @@ func (x *RuntimeRequestAccounting) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RuntimeRequestAccounting.ProtoReflect.Descriptor instead.
 func (*RuntimeRequestAccounting) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{214}
+	return file_agent_proto_rawDescGZIP(), []int{216}
 }
 
 func (x *RuntimeRequestAccounting) GetModel() string {
@@ -16368,7 +16490,7 @@ type CloudReauthenticationRequest struct {
 
 func (x *CloudReauthenticationRequest) Reset() {
 	*x = CloudReauthenticationRequest{}
-	mi := &file_agent_proto_msgTypes[215]
+	mi := &file_agent_proto_msgTypes[217]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16380,7 +16502,7 @@ func (x *CloudReauthenticationRequest) String() string {
 func (*CloudReauthenticationRequest) ProtoMessage() {}
 
 func (x *CloudReauthenticationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[215]
+	mi := &file_agent_proto_msgTypes[217]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16393,7 +16515,7 @@ func (x *CloudReauthenticationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloudReauthenticationRequest.ProtoReflect.Descriptor instead.
 func (*CloudReauthenticationRequest) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{215}
+	return file_agent_proto_rawDescGZIP(), []int{217}
 }
 
 func (x *CloudReauthenticationRequest) GetProfileName() string {
@@ -16421,13 +16543,16 @@ type CloudLoginEvent struct {
 	Done            bool                   `protobuf:"varint,7,opt,name=done,proto3" json:"done,omitempty"`
 	Ok              bool                   `protobuf:"varint,8,opt,name=ok,proto3" json:"ok,omitempty"`
 	Error           string                 `protobuf:"bytes,9,opt,name=error,proto3" json:"error,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Claude only: see StartClaudeLoginEvent.
+	ManualAuthorizeUrl string `protobuf:"bytes,10,opt,name=manual_authorize_url,json=manualAuthorizeUrl,proto3" json:"manual_authorize_url,omitempty"`
+	LoginId            string `protobuf:"bytes,11,opt,name=login_id,json=loginId,proto3" json:"login_id,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *CloudLoginEvent) Reset() {
 	*x = CloudLoginEvent{}
-	mi := &file_agent_proto_msgTypes[216]
+	mi := &file_agent_proto_msgTypes[218]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16439,7 +16564,7 @@ func (x *CloudLoginEvent) String() string {
 func (*CloudLoginEvent) ProtoMessage() {}
 
 func (x *CloudLoginEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[216]
+	mi := &file_agent_proto_msgTypes[218]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16452,7 +16577,7 @@ func (x *CloudLoginEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloudLoginEvent.ProtoReflect.Descriptor instead.
 func (*CloudLoginEvent) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{216}
+	return file_agent_proto_rawDescGZIP(), []int{218}
 }
 
 func (x *CloudLoginEvent) GetProfileName() string {
@@ -16518,6 +16643,20 @@ func (x *CloudLoginEvent) GetError() string {
 	return ""
 }
 
+func (x *CloudLoginEvent) GetManualAuthorizeUrl() string {
+	if x != nil {
+		return x.ManualAuthorizeUrl
+	}
+	return ""
+}
+
+func (x *CloudLoginEvent) GetLoginId() string {
+	if x != nil {
+		return x.LoginId
+	}
+	return ""
+}
+
 // Safe classification only: no raw error body, cause, token or endpoint URL.
 type CredentialFailure struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -16532,7 +16671,7 @@ type CredentialFailure struct {
 
 func (x *CredentialFailure) Reset() {
 	*x = CredentialFailure{}
-	mi := &file_agent_proto_msgTypes[217]
+	mi := &file_agent_proto_msgTypes[219]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16544,7 +16683,7 @@ func (x *CredentialFailure) String() string {
 func (*CredentialFailure) ProtoMessage() {}
 
 func (x *CredentialFailure) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[217]
+	mi := &file_agent_proto_msgTypes[219]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16557,7 +16696,7 @@ func (x *CredentialFailure) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CredentialFailure.ProtoReflect.Descriptor instead.
 func (*CredentialFailure) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{217}
+	return file_agent_proto_rawDescGZIP(), []int{219}
 }
 
 func (x *CredentialFailure) GetClass() string {
@@ -16611,7 +16750,7 @@ type AuthenticationRequired struct {
 
 func (x *AuthenticationRequired) Reset() {
 	*x = AuthenticationRequired{}
-	mi := &file_agent_proto_msgTypes[218]
+	mi := &file_agent_proto_msgTypes[220]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16623,7 +16762,7 @@ func (x *AuthenticationRequired) String() string {
 func (*AuthenticationRequired) ProtoMessage() {}
 
 func (x *AuthenticationRequired) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[218]
+	mi := &file_agent_proto_msgTypes[220]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16636,7 +16775,7 @@ func (x *AuthenticationRequired) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuthenticationRequired.ProtoReflect.Descriptor instead.
 func (*AuthenticationRequired) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{218}
+	return file_agent_proto_rawDescGZIP(), []int{220}
 }
 
 func (x *AuthenticationRequired) GetConversationId() string {
@@ -16706,7 +16845,7 @@ type AuthenticationDecisionRequest struct {
 
 func (x *AuthenticationDecisionRequest) Reset() {
 	*x = AuthenticationDecisionRequest{}
-	mi := &file_agent_proto_msgTypes[219]
+	mi := &file_agent_proto_msgTypes[221]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16718,7 +16857,7 @@ func (x *AuthenticationDecisionRequest) String() string {
 func (*AuthenticationDecisionRequest) ProtoMessage() {}
 
 func (x *AuthenticationDecisionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[219]
+	mi := &file_agent_proto_msgTypes[221]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16731,7 +16870,7 @@ func (x *AuthenticationDecisionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuthenticationDecisionRequest.ProtoReflect.Descriptor instead.
 func (*AuthenticationDecisionRequest) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{219}
+	return file_agent_proto_rawDescGZIP(), []int{221}
 }
 
 func (x *AuthenticationDecisionRequest) GetConversationId() string {
@@ -16765,7 +16904,7 @@ type WorkerAuthenticationRequest struct {
 
 func (x *WorkerAuthenticationRequest) Reset() {
 	*x = WorkerAuthenticationRequest{}
-	mi := &file_agent_proto_msgTypes[220]
+	mi := &file_agent_proto_msgTypes[222]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16777,7 +16916,7 @@ func (x *WorkerAuthenticationRequest) String() string {
 func (*WorkerAuthenticationRequest) ProtoMessage() {}
 
 func (x *WorkerAuthenticationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[220]
+	mi := &file_agent_proto_msgTypes[222]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16790,7 +16929,7 @@ func (x *WorkerAuthenticationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkerAuthenticationRequest.ProtoReflect.Descriptor instead.
 func (*WorkerAuthenticationRequest) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{220}
+	return file_agent_proto_rawDescGZIP(), []int{222}
 }
 
 func (x *WorkerAuthenticationRequest) GetId() uint64 {
@@ -16818,7 +16957,7 @@ type WorkerAuthenticationResponse struct {
 
 func (x *WorkerAuthenticationResponse) Reset() {
 	*x = WorkerAuthenticationResponse{}
-	mi := &file_agent_proto_msgTypes[221]
+	mi := &file_agent_proto_msgTypes[223]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16830,7 +16969,7 @@ func (x *WorkerAuthenticationResponse) String() string {
 func (*WorkerAuthenticationResponse) ProtoMessage() {}
 
 func (x *WorkerAuthenticationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[221]
+	mi := &file_agent_proto_msgTypes[223]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16843,7 +16982,7 @@ func (x *WorkerAuthenticationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkerAuthenticationResponse.ProtoReflect.Descriptor instead.
 func (*WorkerAuthenticationResponse) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{221}
+	return file_agent_proto_rawDescGZIP(), []int{223}
 }
 
 func (x *WorkerAuthenticationResponse) GetId() uint64 {
@@ -16875,7 +17014,7 @@ type AuthenticationDecisionResponse struct {
 
 func (x *AuthenticationDecisionResponse) Reset() {
 	*x = AuthenticationDecisionResponse{}
-	mi := &file_agent_proto_msgTypes[222]
+	mi := &file_agent_proto_msgTypes[224]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16887,7 +17026,7 @@ func (x *AuthenticationDecisionResponse) String() string {
 func (*AuthenticationDecisionResponse) ProtoMessage() {}
 
 func (x *AuthenticationDecisionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[222]
+	mi := &file_agent_proto_msgTypes[224]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16900,7 +17039,7 @@ func (x *AuthenticationDecisionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuthenticationDecisionResponse.ProtoReflect.Descriptor instead.
 func (*AuthenticationDecisionResponse) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{222}
+	return file_agent_proto_rawDescGZIP(), []int{224}
 }
 
 type RuntimeRestartToolRequest struct {
@@ -16913,7 +17052,7 @@ type RuntimeRestartToolRequest struct {
 
 func (x *RuntimeRestartToolRequest) Reset() {
 	*x = RuntimeRestartToolRequest{}
-	mi := &file_agent_proto_msgTypes[223]
+	mi := &file_agent_proto_msgTypes[225]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16925,7 +17064,7 @@ func (x *RuntimeRestartToolRequest) String() string {
 func (*RuntimeRestartToolRequest) ProtoMessage() {}
 
 func (x *RuntimeRestartToolRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[223]
+	mi := &file_agent_proto_msgTypes[225]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16938,7 +17077,7 @@ func (x *RuntimeRestartToolRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RuntimeRestartToolRequest.ProtoReflect.Descriptor instead.
 func (*RuntimeRestartToolRequest) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{223}
+	return file_agent_proto_rawDescGZIP(), []int{225}
 }
 
 func (x *RuntimeRestartToolRequest) GetId() string {
@@ -16966,7 +17105,7 @@ type RuntimeRestartToolResponse struct {
 
 func (x *RuntimeRestartToolResponse) Reset() {
 	*x = RuntimeRestartToolResponse{}
-	mi := &file_agent_proto_msgTypes[224]
+	mi := &file_agent_proto_msgTypes[226]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -16978,7 +17117,7 @@ func (x *RuntimeRestartToolResponse) String() string {
 func (*RuntimeRestartToolResponse) ProtoMessage() {}
 
 func (x *RuntimeRestartToolResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[224]
+	mi := &file_agent_proto_msgTypes[226]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -16991,7 +17130,7 @@ func (x *RuntimeRestartToolResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RuntimeRestartToolResponse.ProtoReflect.Descriptor instead.
 func (*RuntimeRestartToolResponse) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{224}
+	return file_agent_proto_rawDescGZIP(), []int{226}
 }
 
 func (x *RuntimeRestartToolResponse) GetId() string {
@@ -17035,7 +17174,7 @@ type McpToolDescriptor struct {
 
 func (x *McpToolDescriptor) Reset() {
 	*x = McpToolDescriptor{}
-	mi := &file_agent_proto_msgTypes[225]
+	mi := &file_agent_proto_msgTypes[227]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -17047,7 +17186,7 @@ func (x *McpToolDescriptor) String() string {
 func (*McpToolDescriptor) ProtoMessage() {}
 
 func (x *McpToolDescriptor) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[225]
+	mi := &file_agent_proto_msgTypes[227]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -17060,7 +17199,7 @@ func (x *McpToolDescriptor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use McpToolDescriptor.ProtoReflect.Descriptor instead.
 func (*McpToolDescriptor) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{225}
+	return file_agent_proto_rawDescGZIP(), []int{227}
 }
 
 func (x *McpToolDescriptor) GetName() string {
@@ -17106,7 +17245,7 @@ type McpCallRequest struct {
 
 func (x *McpCallRequest) Reset() {
 	*x = McpCallRequest{}
-	mi := &file_agent_proto_msgTypes[226]
+	mi := &file_agent_proto_msgTypes[228]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -17118,7 +17257,7 @@ func (x *McpCallRequest) String() string {
 func (*McpCallRequest) ProtoMessage() {}
 
 func (x *McpCallRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[226]
+	mi := &file_agent_proto_msgTypes[228]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -17131,7 +17270,7 @@ func (x *McpCallRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use McpCallRequest.ProtoReflect.Descriptor instead.
 func (*McpCallRequest) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{226}
+	return file_agent_proto_rawDescGZIP(), []int{228}
 }
 
 func (x *McpCallRequest) GetId() string {
@@ -17170,7 +17309,7 @@ type McpCallResponse struct {
 
 func (x *McpCallResponse) Reset() {
 	*x = McpCallResponse{}
-	mi := &file_agent_proto_msgTypes[227]
+	mi := &file_agent_proto_msgTypes[229]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -17182,7 +17321,7 @@ func (x *McpCallResponse) String() string {
 func (*McpCallResponse) ProtoMessage() {}
 
 func (x *McpCallResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[227]
+	mi := &file_agent_proto_msgTypes[229]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -17195,7 +17334,7 @@ func (x *McpCallResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use McpCallResponse.ProtoReflect.Descriptor instead.
 func (*McpCallResponse) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{227}
+	return file_agent_proto_rawDescGZIP(), []int{229}
 }
 
 func (x *McpCallResponse) GetId() string {
@@ -17241,7 +17380,7 @@ type AutonomyLedgerRequest struct {
 
 func (x *AutonomyLedgerRequest) Reset() {
 	*x = AutonomyLedgerRequest{}
-	mi := &file_agent_proto_msgTypes[228]
+	mi := &file_agent_proto_msgTypes[230]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -17253,7 +17392,7 @@ func (x *AutonomyLedgerRequest) String() string {
 func (*AutonomyLedgerRequest) ProtoMessage() {}
 
 func (x *AutonomyLedgerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[228]
+	mi := &file_agent_proto_msgTypes[230]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -17266,7 +17405,7 @@ func (x *AutonomyLedgerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AutonomyLedgerRequest.ProtoReflect.Descriptor instead.
 func (*AutonomyLedgerRequest) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{228}
+	return file_agent_proto_rawDescGZIP(), []int{230}
 }
 
 func (x *AutonomyLedgerRequest) GetId() uint64 {
@@ -17314,7 +17453,7 @@ type AutonomyLedgerResponse struct {
 
 func (x *AutonomyLedgerResponse) Reset() {
 	*x = AutonomyLedgerResponse{}
-	mi := &file_agent_proto_msgTypes[229]
+	mi := &file_agent_proto_msgTypes[231]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -17326,7 +17465,7 @@ func (x *AutonomyLedgerResponse) String() string {
 func (*AutonomyLedgerResponse) ProtoMessage() {}
 
 func (x *AutonomyLedgerResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[229]
+	mi := &file_agent_proto_msgTypes[231]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -17339,7 +17478,7 @@ func (x *AutonomyLedgerResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AutonomyLedgerResponse.ProtoReflect.Descriptor instead.
 func (*AutonomyLedgerResponse) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{229}
+	return file_agent_proto_rawDescGZIP(), []int{231}
 }
 
 func (x *AutonomyLedgerResponse) GetId() uint64 {
@@ -17393,7 +17532,7 @@ type DispatchEventRequest struct {
 
 func (x *DispatchEventRequest) Reset() {
 	*x = DispatchEventRequest{}
-	mi := &file_agent_proto_msgTypes[230]
+	mi := &file_agent_proto_msgTypes[232]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -17405,7 +17544,7 @@ func (x *DispatchEventRequest) String() string {
 func (*DispatchEventRequest) ProtoMessage() {}
 
 func (x *DispatchEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[230]
+	mi := &file_agent_proto_msgTypes[232]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -17418,7 +17557,7 @@ func (x *DispatchEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DispatchEventRequest.ProtoReflect.Descriptor instead.
 func (*DispatchEventRequest) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{230}
+	return file_agent_proto_rawDescGZIP(), []int{232}
 }
 
 func (x *DispatchEventRequest) GetId() uint64 {
@@ -17484,7 +17623,7 @@ type DispatchEventResponse struct {
 
 func (x *DispatchEventResponse) Reset() {
 	*x = DispatchEventResponse{}
-	mi := &file_agent_proto_msgTypes[231]
+	mi := &file_agent_proto_msgTypes[233]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -17496,7 +17635,7 @@ func (x *DispatchEventResponse) String() string {
 func (*DispatchEventResponse) ProtoMessage() {}
 
 func (x *DispatchEventResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[231]
+	mi := &file_agent_proto_msgTypes[233]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -17509,7 +17648,7 @@ func (x *DispatchEventResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DispatchEventResponse.ProtoReflect.Descriptor instead.
 func (*DispatchEventResponse) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{231}
+	return file_agent_proto_rawDescGZIP(), []int{233}
 }
 
 func (x *DispatchEventResponse) GetId() uint64 {
@@ -17536,7 +17675,7 @@ type ResetSetupRequest struct {
 
 func (x *ResetSetupRequest) Reset() {
 	*x = ResetSetupRequest{}
-	mi := &file_agent_proto_msgTypes[232]
+	mi := &file_agent_proto_msgTypes[234]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -17548,7 +17687,7 @@ func (x *ResetSetupRequest) String() string {
 func (*ResetSetupRequest) ProtoMessage() {}
 
 func (x *ResetSetupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[232]
+	mi := &file_agent_proto_msgTypes[234]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -17561,7 +17700,7 @@ func (x *ResetSetupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResetSetupRequest.ProtoReflect.Descriptor instead.
 func (*ResetSetupRequest) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{232}
+	return file_agent_proto_rawDescGZIP(), []int{234}
 }
 
 func (x *ResetSetupRequest) GetConfirmed() bool {
@@ -17585,7 +17724,7 @@ type ResetSetupResponse struct {
 
 func (x *ResetSetupResponse) Reset() {
 	*x = ResetSetupResponse{}
-	mi := &file_agent_proto_msgTypes[233]
+	mi := &file_agent_proto_msgTypes[235]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -17597,7 +17736,7 @@ func (x *ResetSetupResponse) String() string {
 func (*ResetSetupResponse) ProtoMessage() {}
 
 func (x *ResetSetupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[233]
+	mi := &file_agent_proto_msgTypes[235]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -17610,7 +17749,7 @@ func (x *ResetSetupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResetSetupResponse.ProtoReflect.Descriptor instead.
 func (*ResetSetupResponse) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{233}
+	return file_agent_proto_rawDescGZIP(), []int{235}
 }
 
 func (x *ResetSetupResponse) GetOk() bool {
@@ -17688,7 +17827,7 @@ type AccountingAttemptObservation struct {
 
 func (x *AccountingAttemptObservation) Reset() {
 	*x = AccountingAttemptObservation{}
-	mi := &file_agent_proto_msgTypes[234]
+	mi := &file_agent_proto_msgTypes[236]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -17700,7 +17839,7 @@ func (x *AccountingAttemptObservation) String() string {
 func (*AccountingAttemptObservation) ProtoMessage() {}
 
 func (x *AccountingAttemptObservation) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[234]
+	mi := &file_agent_proto_msgTypes[236]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -17713,7 +17852,7 @@ func (x *AccountingAttemptObservation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AccountingAttemptObservation.ProtoReflect.Descriptor instead.
 func (*AccountingAttemptObservation) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{234}
+	return file_agent_proto_rawDescGZIP(), []int{236}
 }
 
 func (x *AccountingAttemptObservation) GetId() string {
@@ -17885,7 +18024,7 @@ type WorkerAccountingBatch struct {
 
 func (x *WorkerAccountingBatch) Reset() {
 	*x = WorkerAccountingBatch{}
-	mi := &file_agent_proto_msgTypes[235]
+	mi := &file_agent_proto_msgTypes[237]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -17897,7 +18036,7 @@ func (x *WorkerAccountingBatch) String() string {
 func (*WorkerAccountingBatch) ProtoMessage() {}
 
 func (x *WorkerAccountingBatch) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[235]
+	mi := &file_agent_proto_msgTypes[237]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -17910,7 +18049,7 @@ func (x *WorkerAccountingBatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkerAccountingBatch.ProtoReflect.Descriptor instead.
 func (*WorkerAccountingBatch) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{235}
+	return file_agent_proto_rawDescGZIP(), []int{237}
 }
 
 func (x *WorkerAccountingBatch) GetBatchId() string {
@@ -17963,7 +18102,7 @@ type WorkerAccountingReceipt struct {
 
 func (x *WorkerAccountingReceipt) Reset() {
 	*x = WorkerAccountingReceipt{}
-	mi := &file_agent_proto_msgTypes[236]
+	mi := &file_agent_proto_msgTypes[238]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -17975,7 +18114,7 @@ func (x *WorkerAccountingReceipt) String() string {
 func (*WorkerAccountingReceipt) ProtoMessage() {}
 
 func (x *WorkerAccountingReceipt) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[236]
+	mi := &file_agent_proto_msgTypes[238]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -17988,7 +18127,7 @@ func (x *WorkerAccountingReceipt) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkerAccountingReceipt.ProtoReflect.Descriptor instead.
 func (*WorkerAccountingReceipt) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{236}
+	return file_agent_proto_rawDescGZIP(), []int{238}
 }
 
 func (x *WorkerAccountingReceipt) GetBatchId() string {
@@ -18050,7 +18189,7 @@ type WorkerAccountingHealth struct {
 
 func (x *WorkerAccountingHealth) Reset() {
 	*x = WorkerAccountingHealth{}
-	mi := &file_agent_proto_msgTypes[237]
+	mi := &file_agent_proto_msgTypes[239]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -18062,7 +18201,7 @@ func (x *WorkerAccountingHealth) String() string {
 func (*WorkerAccountingHealth) ProtoMessage() {}
 
 func (x *WorkerAccountingHealth) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[237]
+	mi := &file_agent_proto_msgTypes[239]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -18075,7 +18214,7 @@ func (x *WorkerAccountingHealth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkerAccountingHealth.ProtoReflect.Descriptor instead.
 func (*WorkerAccountingHealth) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{237}
+	return file_agent_proto_rawDescGZIP(), []int{239}
 }
 
 func (x *WorkerAccountingHealth) GetWriterId() string {
@@ -18190,7 +18329,7 @@ type AccountingWork struct {
 
 func (x *AccountingWork) Reset() {
 	*x = AccountingWork{}
-	mi := &file_agent_proto_msgTypes[238]
+	mi := &file_agent_proto_msgTypes[240]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -18202,7 +18341,7 @@ func (x *AccountingWork) String() string {
 func (*AccountingWork) ProtoMessage() {}
 
 func (x *AccountingWork) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[238]
+	mi := &file_agent_proto_msgTypes[240]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -18215,7 +18354,7 @@ func (x *AccountingWork) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AccountingWork.ProtoReflect.Descriptor instead.
 func (*AccountingWork) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{238}
+	return file_agent_proto_rawDescGZIP(), []int{240}
 }
 
 func (x *AccountingWork) GetOperationId() string {
@@ -18266,7 +18405,7 @@ type GetTokenMetricsRequest struct {
 
 func (x *GetTokenMetricsRequest) Reset() {
 	*x = GetTokenMetricsRequest{}
-	mi := &file_agent_proto_msgTypes[239]
+	mi := &file_agent_proto_msgTypes[241]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -18278,7 +18417,7 @@ func (x *GetTokenMetricsRequest) String() string {
 func (*GetTokenMetricsRequest) ProtoMessage() {}
 
 func (x *GetTokenMetricsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[239]
+	mi := &file_agent_proto_msgTypes[241]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -18291,7 +18430,7 @@ func (x *GetTokenMetricsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTokenMetricsRequest.ProtoReflect.Descriptor instead.
 func (*GetTokenMetricsRequest) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{239}
+	return file_agent_proto_rawDescGZIP(), []int{241}
 }
 
 func (x *GetTokenMetricsRequest) GetPreset() string {
@@ -18374,7 +18513,7 @@ type TokenMetricCount struct {
 
 func (x *TokenMetricCount) Reset() {
 	*x = TokenMetricCount{}
-	mi := &file_agent_proto_msgTypes[240]
+	mi := &file_agent_proto_msgTypes[242]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -18386,7 +18525,7 @@ func (x *TokenMetricCount) String() string {
 func (*TokenMetricCount) ProtoMessage() {}
 
 func (x *TokenMetricCount) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[240]
+	mi := &file_agent_proto_msgTypes[242]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -18399,7 +18538,7 @@ func (x *TokenMetricCount) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TokenMetricCount.ProtoReflect.Descriptor instead.
 func (*TokenMetricCount) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{240}
+	return file_agent_proto_rawDescGZIP(), []int{242}
 }
 
 func (x *TokenMetricCount) GetTokens() int64 {
@@ -18433,7 +18572,7 @@ type TokenMetricTotals struct {
 
 func (x *TokenMetricTotals) Reset() {
 	*x = TokenMetricTotals{}
-	mi := &file_agent_proto_msgTypes[241]
+	mi := &file_agent_proto_msgTypes[243]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -18445,7 +18584,7 @@ func (x *TokenMetricTotals) String() string {
 func (*TokenMetricTotals) ProtoMessage() {}
 
 func (x *TokenMetricTotals) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[241]
+	mi := &file_agent_proto_msgTypes[243]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -18458,7 +18597,7 @@ func (x *TokenMetricTotals) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TokenMetricTotals.ProtoReflect.Descriptor instead.
 func (*TokenMetricTotals) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{241}
+	return file_agent_proto_rawDescGZIP(), []int{243}
 }
 
 func (x *TokenMetricTotals) GetRecords() int64 {
@@ -18537,7 +18676,7 @@ type TokenMetricBucket struct {
 
 func (x *TokenMetricBucket) Reset() {
 	*x = TokenMetricBucket{}
-	mi := &file_agent_proto_msgTypes[242]
+	mi := &file_agent_proto_msgTypes[244]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -18549,7 +18688,7 @@ func (x *TokenMetricBucket) String() string {
 func (*TokenMetricBucket) ProtoMessage() {}
 
 func (x *TokenMetricBucket) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[242]
+	mi := &file_agent_proto_msgTypes[244]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -18562,7 +18701,7 @@ func (x *TokenMetricBucket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TokenMetricBucket.ProtoReflect.Descriptor instead.
 func (*TokenMetricBucket) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{242}
+	return file_agent_proto_rawDescGZIP(), []int{244}
 }
 
 func (x *TokenMetricBucket) GetStartUnixMicros() int64 {
@@ -18611,7 +18750,7 @@ type TokenMetricBreakdown struct {
 
 func (x *TokenMetricBreakdown) Reset() {
 	*x = TokenMetricBreakdown{}
-	mi := &file_agent_proto_msgTypes[243]
+	mi := &file_agent_proto_msgTypes[245]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -18623,7 +18762,7 @@ func (x *TokenMetricBreakdown) String() string {
 func (*TokenMetricBreakdown) ProtoMessage() {}
 
 func (x *TokenMetricBreakdown) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[243]
+	mi := &file_agent_proto_msgTypes[245]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -18636,7 +18775,7 @@ func (x *TokenMetricBreakdown) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TokenMetricBreakdown.ProtoReflect.Descriptor instead.
 func (*TokenMetricBreakdown) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{243}
+	return file_agent_proto_rawDescGZIP(), []int{245}
 }
 
 func (x *TokenMetricBreakdown) GetDimension() string {
@@ -18677,7 +18816,7 @@ type TokenMetricsHealth struct {
 
 func (x *TokenMetricsHealth) Reset() {
 	*x = TokenMetricsHealth{}
-	mi := &file_agent_proto_msgTypes[244]
+	mi := &file_agent_proto_msgTypes[246]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -18689,7 +18828,7 @@ func (x *TokenMetricsHealth) String() string {
 func (*TokenMetricsHealth) ProtoMessage() {}
 
 func (x *TokenMetricsHealth) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[244]
+	mi := &file_agent_proto_msgTypes[246]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -18702,7 +18841,7 @@ func (x *TokenMetricsHealth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TokenMetricsHealth.ProtoReflect.Descriptor instead.
 func (*TokenMetricsHealth) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{244}
+	return file_agent_proto_rawDescGZIP(), []int{246}
 }
 
 func (x *TokenMetricsHealth) GetPending() int64 {
@@ -18788,7 +18927,7 @@ type GetTokenMetricsResponse struct {
 
 func (x *GetTokenMetricsResponse) Reset() {
 	*x = GetTokenMetricsResponse{}
-	mi := &file_agent_proto_msgTypes[245]
+	mi := &file_agent_proto_msgTypes[247]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -18800,7 +18939,7 @@ func (x *GetTokenMetricsResponse) String() string {
 func (*GetTokenMetricsResponse) ProtoMessage() {}
 
 func (x *GetTokenMetricsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[245]
+	mi := &file_agent_proto_msgTypes[247]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -18813,7 +18952,7 @@ func (x *GetTokenMetricsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTokenMetricsResponse.ProtoReflect.Descriptor instead.
 func (*GetTokenMetricsResponse) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{245}
+	return file_agent_proto_rawDescGZIP(), []int{247}
 }
 
 func (x *GetTokenMetricsResponse) GetPopulation() string {
@@ -18910,7 +19049,7 @@ type SessionChatRoute struct {
 
 func (x *SessionChatRoute) Reset() {
 	*x = SessionChatRoute{}
-	mi := &file_agent_proto_msgTypes[246]
+	mi := &file_agent_proto_msgTypes[248]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -18922,7 +19061,7 @@ func (x *SessionChatRoute) String() string {
 func (*SessionChatRoute) ProtoMessage() {}
 
 func (x *SessionChatRoute) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[246]
+	mi := &file_agent_proto_msgTypes[248]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -18935,7 +19074,7 @@ func (x *SessionChatRoute) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionChatRoute.ProtoReflect.Descriptor instead.
 func (*SessionChatRoute) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{246}
+	return file_agent_proto_rawDescGZIP(), []int{248}
 }
 
 func (x *SessionChatRoute) GetProfile() string {
@@ -18966,7 +19105,7 @@ type SessionModelRequest struct {
 
 func (x *SessionModelRequest) Reset() {
 	*x = SessionModelRequest{}
-	mi := &file_agent_proto_msgTypes[247]
+	mi := &file_agent_proto_msgTypes[249]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -18978,7 +19117,7 @@ func (x *SessionModelRequest) String() string {
 func (*SessionModelRequest) ProtoMessage() {}
 
 func (x *SessionModelRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[247]
+	mi := &file_agent_proto_msgTypes[249]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -18991,7 +19130,7 @@ func (x *SessionModelRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionModelRequest.ProtoReflect.Descriptor instead.
 func (*SessionModelRequest) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{247}
+	return file_agent_proto_rawDescGZIP(), []int{249}
 }
 
 func (x *SessionModelRequest) GetId() string {
@@ -19047,7 +19186,7 @@ type SessionModelResponse struct {
 
 func (x *SessionModelResponse) Reset() {
 	*x = SessionModelResponse{}
-	mi := &file_agent_proto_msgTypes[248]
+	mi := &file_agent_proto_msgTypes[250]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -19059,7 +19198,7 @@ func (x *SessionModelResponse) String() string {
 func (*SessionModelResponse) ProtoMessage() {}
 
 func (x *SessionModelResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[248]
+	mi := &file_agent_proto_msgTypes[250]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -19072,7 +19211,7 @@ func (x *SessionModelResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionModelResponse.ProtoReflect.Descriptor instead.
 func (*SessionModelResponse) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{248}
+	return file_agent_proto_rawDescGZIP(), []int{250}
 }
 
 func (x *SessionModelResponse) GetId() string {
@@ -19106,7 +19245,7 @@ type EnterpriseLoginRequest struct {
 
 func (x *EnterpriseLoginRequest) Reset() {
 	*x = EnterpriseLoginRequest{}
-	mi := &file_agent_proto_msgTypes[249]
+	mi := &file_agent_proto_msgTypes[251]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -19118,7 +19257,7 @@ func (x *EnterpriseLoginRequest) String() string {
 func (*EnterpriseLoginRequest) ProtoMessage() {}
 
 func (x *EnterpriseLoginRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[249]
+	mi := &file_agent_proto_msgTypes[251]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -19131,7 +19270,7 @@ func (x *EnterpriseLoginRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnterpriseLoginRequest.ProtoReflect.Descriptor instead.
 func (*EnterpriseLoginRequest) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{249}
+	return file_agent_proto_rawDescGZIP(), []int{251}
 }
 
 func (x *EnterpriseLoginRequest) GetServer() string {
@@ -19156,7 +19295,7 @@ type EnterpriseControlRequest struct {
 
 func (x *EnterpriseControlRequest) Reset() {
 	*x = EnterpriseControlRequest{}
-	mi := &file_agent_proto_msgTypes[250]
+	mi := &file_agent_proto_msgTypes[252]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -19168,7 +19307,7 @@ func (x *EnterpriseControlRequest) String() string {
 func (*EnterpriseControlRequest) ProtoMessage() {}
 
 func (x *EnterpriseControlRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[250]
+	mi := &file_agent_proto_msgTypes[252]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -19181,7 +19320,7 @@ func (x *EnterpriseControlRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnterpriseControlRequest.ProtoReflect.Descriptor instead.
 func (*EnterpriseControlRequest) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{250}
+	return file_agent_proto_rawDescGZIP(), []int{252}
 }
 
 type EnterpriseStatus struct {
@@ -19207,7 +19346,7 @@ type EnterpriseStatus struct {
 
 func (x *EnterpriseStatus) Reset() {
 	*x = EnterpriseStatus{}
-	mi := &file_agent_proto_msgTypes[251]
+	mi := &file_agent_proto_msgTypes[253]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -19219,7 +19358,7 @@ func (x *EnterpriseStatus) String() string {
 func (*EnterpriseStatus) ProtoMessage() {}
 
 func (x *EnterpriseStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[251]
+	mi := &file_agent_proto_msgTypes[253]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -19232,7 +19371,7 @@ func (x *EnterpriseStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnterpriseStatus.ProtoReflect.Descriptor instead.
 func (*EnterpriseStatus) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{251}
+	return file_agent_proto_rawDescGZIP(), []int{253}
 }
 
 func (x *EnterpriseStatus) GetManaged() bool {
@@ -19344,7 +19483,7 @@ type EnterprisePolicy struct {
 
 func (x *EnterprisePolicy) Reset() {
 	*x = EnterprisePolicy{}
-	mi := &file_agent_proto_msgTypes[252]
+	mi := &file_agent_proto_msgTypes[254]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -19356,7 +19495,7 @@ func (x *EnterprisePolicy) String() string {
 func (*EnterprisePolicy) ProtoMessage() {}
 
 func (x *EnterprisePolicy) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[252]
+	mi := &file_agent_proto_msgTypes[254]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -19369,7 +19508,7 @@ func (x *EnterprisePolicy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnterprisePolicy.ProtoReflect.Descriptor instead.
 func (*EnterprisePolicy) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{252}
+	return file_agent_proto_rawDescGZIP(), []int{254}
 }
 
 func (x *EnterprisePolicy) GetPolicyJson() []byte {
@@ -20382,13 +20521,21 @@ const file_agent_proto_rawDesc = "" +
 	"\n" +
 	"set_active\x18\x03 \x01(\bR\tsetActive\x12\x1f\n" +
 	"\vcreate_only\x18\x04 \x01(\bR\n" +
-	"createOnly\"\x99\x01\n" +
+	"createOnly\"\xe6\x01\n" +
 	"\x15StartClaudeLoginEvent\x12#\n" +
 	"\rauthorize_url\x18\x01 \x01(\tR\fauthorizeUrl\x12\x12\n" +
 	"\x04done\x18\x02 \x01(\bR\x04done\x12\x0e\n" +
 	"\x02ok\x18\x03 \x01(\bR\x02ok\x12\x14\n" +
 	"\x05error\x18\x04 \x01(\tR\x05error\x12!\n" +
-	"\fprofile_name\x18\x05 \x01(\tR\vprofileName\"D\n" +
+	"\fprofile_name\x18\x05 \x01(\tR\vprofileName\x120\n" +
+	"\x14manual_authorize_url\x18\x06 \x01(\tR\x12manualAuthorizeUrl\x12\x19\n" +
+	"\blogin_id\x18\a \x01(\tR\aloginId\"M\n" +
+	"\x1cSubmitClaudeLoginCodeRequest\x12\x19\n" +
+	"\blogin_id\x18\x01 \x01(\tR\aloginId\x12\x12\n" +
+	"\x04code\x18\x02 \x01(\tR\x04code\"Q\n" +
+	"\x1dSubmitClaudeLoginCodeResponse\x12\x1a\n" +
+	"\baccepted\x18\x01 \x01(\bR\baccepted\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\"D\n" +
 	"\x19AttachConversationRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\"\xf1\a\n" +
 	"\fHostToWorker\x12(\n" +
@@ -20706,7 +20853,7 @@ const file_agent_proto_rawDesc = "" +
 	"\x1cCloudReauthenticationRequest\x12!\n" +
 	"\fprofile_name\x18\x01 \x01(\tR\vprofileName\x12\x1d\n" +
 	"\n" +
-	"attempt_id\x18\x02 \x01(\tR\tattemptId\"\x96\x02\n" +
+	"attempt_id\x18\x02 \x01(\tR\tattemptId\"\xe3\x02\n" +
 	"\x0fCloudLoginEvent\x12!\n" +
 	"\fprofile_name\x18\x01 \x01(\tR\vprofileName\x12\x1a\n" +
 	"\bprovider\x18\x02 \x01(\tR\bprovider\x12\x1d\n" +
@@ -20717,7 +20864,10 @@ const file_agent_proto_rawDesc = "" +
 	"\tuser_code\x18\x06 \x01(\tR\buserCode\x12\x12\n" +
 	"\x04done\x18\a \x01(\bR\x04done\x12\x0e\n" +
 	"\x02ok\x18\b \x01(\bR\x02ok\x12\x14\n" +
-	"\x05error\x18\t \x01(\tR\x05error\"\x98\x01\n" +
+	"\x05error\x18\t \x01(\tR\x05error\x120\n" +
+	"\x14manual_authorize_url\x18\n" +
+	" \x01(\tR\x12manualAuthorizeUrl\x12\x19\n" +
+	"\blogin_id\x18\v \x01(\tR\aloginId\"\x98\x01\n" +
 	"\x11CredentialFailure\x12\x14\n" +
 	"\x05class\x18\x01 \x01(\tR\x05class\x12\x1a\n" +
 	"\bprovider\x18\x02 \x01(\tR\bprovider\x12!\n" +
@@ -21013,7 +21163,7 @@ const file_agent_proto_rawDesc = "" +
 	"\x1aWORKER_EVENT_KIND_WATCHDOG\x10\b\x12\x1a\n" +
 	"\x16WORKER_EVENT_KIND_DONE\x10\t\x12\x1e\n" +
 	"\x1aWORKER_EVENT_KIND_SUBAGENT\x10\n" +
-	"2\xd74\n" +
+	"2\xbb5\n" +
 	"\x05Agent\x12I\n" +
 	"\fSessionModel\x12\x1a.agent.SessionModelRequest\x1a\x1b.agent.SessionModelResponse\"\x00\x12O\n" +
 	"\x0eProcessRequest\x12\x1c.agent.ProcessRequestRequest\x1a\x1d.agent.ProcessRequestResponse\"\x00\x12V\n" +
@@ -21092,7 +21242,8 @@ const file_agent_proto_rawDesc = "" +
 	"\x12RemoveCloudProfile\x12 .agent.RemoveCloudProfileRequest\x1a!.agent.RemoveCloudProfileResponse\"\x00\x12g\n" +
 	"\x16ListCloudProfileModels\x12$.agent.ListCloudProfileModelsRequest\x1a%.agent.ListCloudProfileModelsResponse\"\x00\x12U\n" +
 	"\x11StartChatGPTLogin\x12\x1f.agent.StartChatGPTLoginRequest\x1a\x1d.agent.StartChatGPTLoginEvent0\x01\x12R\n" +
-	"\x10StartClaudeLogin\x12\x1e.agent.StartClaudeLoginRequest\x1a\x1c.agent.StartClaudeLoginEvent0\x01\x12T\n" +
+	"\x10StartClaudeLogin\x12\x1e.agent.StartClaudeLoginRequest\x1a\x1c.agent.StartClaudeLoginEvent0\x01\x12b\n" +
+	"\x15SubmitClaudeLoginCode\x12#.agent.SubmitClaudeLoginCodeRequest\x1a$.agent.SubmitClaudeLoginCodeResponse\x12T\n" +
 	"\x13ReauthenticateCloud\x12#.agent.CloudReauthenticationRequest\x1a\x16.agent.CloudLoginEvent0\x01\x12d\n" +
 	"\x15ResolveAuthentication\x12$.agent.AuthenticationDecisionRequest\x1a%.agent.AuthenticationDecisionResponse\x12F\n" +
 	"\vExportImage\x12\x19.agent.ExportImageRequest\x1a\x1a.agent.ExportImageResponse\"\x002\xbf\x03\n" +
@@ -21126,7 +21277,7 @@ func file_agent_proto_rawDescGZIP() []byte {
 }
 
 var file_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 261)
+var file_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 263)
 var file_agent_proto_goTypes = []any{
 	(FileAction)(0),                                // 0: agent.FileAction
 	(CatalogCapability)(0),                         // 1: agent.CatalogCapability
@@ -21318,82 +21469,84 @@ var file_agent_proto_goTypes = []any{
 	(*StartChatGPTLoginEvent)(nil),                 // 187: agent.StartChatGPTLoginEvent
 	(*StartClaudeLoginRequest)(nil),                // 188: agent.StartClaudeLoginRequest
 	(*StartClaudeLoginEvent)(nil),                  // 189: agent.StartClaudeLoginEvent
-	(*AttachConversationRequest)(nil),              // 190: agent.AttachConversationRequest
-	(*HostToWorker)(nil),                           // 191: agent.HostToWorker
-	(*PermissionUpdate)(nil),                       // 192: agent.PermissionUpdate
-	(*WorkerToHost)(nil),                           // 193: agent.WorkerToHost
-	(*StartTurn)(nil),                              // 194: agent.StartTurn
-	(*WorkerModelAuthorizationRequest)(nil),        // 195: agent.WorkerModelAuthorizationRequest
-	(*WorkerModelAuthorizationResponse)(nil),       // 196: agent.WorkerModelAuthorizationResponse
-	(*LLMMessage)(nil),                             // 197: agent.LLMMessage
-	(*WorkerEvent)(nil),                            // 198: agent.WorkerEvent
-	(*PermissionRequest)(nil),                      // 199: agent.PermissionRequest
-	(*PermissionResponse)(nil),                     // 200: agent.PermissionResponse
-	(*SessionProfileRequest)(nil),                  // 201: agent.SessionProfileRequest
-	(*SessionProfileResponse)(nil),                 // 202: agent.SessionProfileResponse
-	(*PersistTurn)(nil),                            // 203: agent.PersistTurn
-	(*EnsureSubagentConversation)(nil),             // 204: agent.EnsureSubagentConversation
-	(*TurnDone)(nil),                               // 205: agent.TurnDone
-	(*TurnError)(nil),                              // 206: agent.TurnError
-	(*Cancel)(nil),                                 // 207: agent.Cancel
-	(*ConfigSnapshot)(nil),                         // 208: agent.ConfigSnapshot
-	(*ModelMetadataEntry)(nil),                     // 209: agent.ModelMetadataEntry
-	(*CredentialRequest)(nil),                      // 210: agent.CredentialRequest
-	(*CredentialResponse)(nil),                     // 211: agent.CredentialResponse
-	(*OpenInferenceRequest)(nil),                   // 212: agent.OpenInferenceRequest
-	(*LLMChatRequest)(nil),                         // 213: agent.LLMChatRequest
-	(*LLMTool)(nil),                                // 214: agent.LLMTool
-	(*OpenInferenceEvent)(nil),                     // 215: agent.OpenInferenceEvent
-	(*LLMStreamEvent)(nil),                         // 216: agent.LLMStreamEvent
-	(*ServingRouteInfo)(nil),                       // 217: agent.ServingRouteInfo
-	(*CloudProfileStructure)(nil),                  // 218: agent.CloudProfileStructure
-	(*RuntimeRequestAccounting)(nil),               // 219: agent.RuntimeRequestAccounting
-	(*CloudReauthenticationRequest)(nil),           // 220: agent.CloudReauthenticationRequest
-	(*CloudLoginEvent)(nil),                        // 221: agent.CloudLoginEvent
-	(*CredentialFailure)(nil),                      // 222: agent.CredentialFailure
-	(*AuthenticationRequired)(nil),                 // 223: agent.AuthenticationRequired
-	(*AuthenticationDecisionRequest)(nil),          // 224: agent.AuthenticationDecisionRequest
-	(*WorkerAuthenticationRequest)(nil),            // 225: agent.WorkerAuthenticationRequest
-	(*WorkerAuthenticationResponse)(nil),           // 226: agent.WorkerAuthenticationResponse
-	(*AuthenticationDecisionResponse)(nil),         // 227: agent.AuthenticationDecisionResponse
-	(*RuntimeRestartToolRequest)(nil),              // 228: agent.RuntimeRestartToolRequest
-	(*RuntimeRestartToolResponse)(nil),             // 229: agent.RuntimeRestartToolResponse
-	(*McpToolDescriptor)(nil),                      // 230: agent.McpToolDescriptor
-	(*McpCallRequest)(nil),                         // 231: agent.McpCallRequest
-	(*McpCallResponse)(nil),                        // 232: agent.McpCallResponse
-	(*AutonomyLedgerRequest)(nil),                  // 233: agent.AutonomyLedgerRequest
-	(*AutonomyLedgerResponse)(nil),                 // 234: agent.AutonomyLedgerResponse
-	(*DispatchEventRequest)(nil),                   // 235: agent.DispatchEventRequest
-	(*DispatchEventResponse)(nil),                  // 236: agent.DispatchEventResponse
-	(*ResetSetupRequest)(nil),                      // 237: agent.ResetSetupRequest
-	(*ResetSetupResponse)(nil),                     // 238: agent.ResetSetupResponse
-	(*AccountingAttemptObservation)(nil),           // 239: agent.AccountingAttemptObservation
-	(*WorkerAccountingBatch)(nil),                  // 240: agent.WorkerAccountingBatch
-	(*WorkerAccountingReceipt)(nil),                // 241: agent.WorkerAccountingReceipt
-	(*WorkerAccountingHealth)(nil),                 // 242: agent.WorkerAccountingHealth
-	(*AccountingWork)(nil),                         // 243: agent.AccountingWork
-	(*GetTokenMetricsRequest)(nil),                 // 244: agent.GetTokenMetricsRequest
-	(*TokenMetricCount)(nil),                       // 245: agent.TokenMetricCount
-	(*TokenMetricTotals)(nil),                      // 246: agent.TokenMetricTotals
-	(*TokenMetricBucket)(nil),                      // 247: agent.TokenMetricBucket
-	(*TokenMetricBreakdown)(nil),                   // 248: agent.TokenMetricBreakdown
-	(*TokenMetricsHealth)(nil),                     // 249: agent.TokenMetricsHealth
-	(*GetTokenMetricsResponse)(nil),                // 250: agent.GetTokenMetricsResponse
-	(*SessionChatRoute)(nil),                       // 251: agent.SessionChatRoute
-	(*SessionModelRequest)(nil),                    // 252: agent.SessionModelRequest
-	(*SessionModelResponse)(nil),                   // 253: agent.SessionModelResponse
-	(*EnterpriseLoginRequest)(nil),                 // 254: agent.EnterpriseLoginRequest
-	(*EnterpriseControlRequest)(nil),               // 255: agent.EnterpriseControlRequest
-	(*EnterpriseStatus)(nil),                       // 256: agent.EnterpriseStatus
-	(*EnterprisePolicy)(nil),                       // 257: agent.EnterprisePolicy
-	nil,                                            // 258: agent.ListRuntimeModelsResponse.RecommendedOpenModelsEntry
-	nil,                                            // 259: agent.GetConfigResponse.ModelTiersEntry
-	nil,                                            // 260: agent.McpServerInfo.EnvEntry
-	nil,                                            // 261: agent.AddMcpServerRequest.EnvEntry
-	nil,                                            // 262: agent.ProfileModelChoices.TierOverridesEntry
-	nil,                                            // 263: agent.RoutingAssignments.TasksEntry
-	nil,                                            // 264: agent.CloudProfileInfo.EffectiveQualityModelsEntry
-	nil,                                            // 265: agent.CloudProfileInfo.RecommendedQualityModelsEntry
+	(*SubmitClaudeLoginCodeRequest)(nil),           // 190: agent.SubmitClaudeLoginCodeRequest
+	(*SubmitClaudeLoginCodeResponse)(nil),          // 191: agent.SubmitClaudeLoginCodeResponse
+	(*AttachConversationRequest)(nil),              // 192: agent.AttachConversationRequest
+	(*HostToWorker)(nil),                           // 193: agent.HostToWorker
+	(*PermissionUpdate)(nil),                       // 194: agent.PermissionUpdate
+	(*WorkerToHost)(nil),                           // 195: agent.WorkerToHost
+	(*StartTurn)(nil),                              // 196: agent.StartTurn
+	(*WorkerModelAuthorizationRequest)(nil),        // 197: agent.WorkerModelAuthorizationRequest
+	(*WorkerModelAuthorizationResponse)(nil),       // 198: agent.WorkerModelAuthorizationResponse
+	(*LLMMessage)(nil),                             // 199: agent.LLMMessage
+	(*WorkerEvent)(nil),                            // 200: agent.WorkerEvent
+	(*PermissionRequest)(nil),                      // 201: agent.PermissionRequest
+	(*PermissionResponse)(nil),                     // 202: agent.PermissionResponse
+	(*SessionProfileRequest)(nil),                  // 203: agent.SessionProfileRequest
+	(*SessionProfileResponse)(nil),                 // 204: agent.SessionProfileResponse
+	(*PersistTurn)(nil),                            // 205: agent.PersistTurn
+	(*EnsureSubagentConversation)(nil),             // 206: agent.EnsureSubagentConversation
+	(*TurnDone)(nil),                               // 207: agent.TurnDone
+	(*TurnError)(nil),                              // 208: agent.TurnError
+	(*Cancel)(nil),                                 // 209: agent.Cancel
+	(*ConfigSnapshot)(nil),                         // 210: agent.ConfigSnapshot
+	(*ModelMetadataEntry)(nil),                     // 211: agent.ModelMetadataEntry
+	(*CredentialRequest)(nil),                      // 212: agent.CredentialRequest
+	(*CredentialResponse)(nil),                     // 213: agent.CredentialResponse
+	(*OpenInferenceRequest)(nil),                   // 214: agent.OpenInferenceRequest
+	(*LLMChatRequest)(nil),                         // 215: agent.LLMChatRequest
+	(*LLMTool)(nil),                                // 216: agent.LLMTool
+	(*OpenInferenceEvent)(nil),                     // 217: agent.OpenInferenceEvent
+	(*LLMStreamEvent)(nil),                         // 218: agent.LLMStreamEvent
+	(*ServingRouteInfo)(nil),                       // 219: agent.ServingRouteInfo
+	(*CloudProfileStructure)(nil),                  // 220: agent.CloudProfileStructure
+	(*RuntimeRequestAccounting)(nil),               // 221: agent.RuntimeRequestAccounting
+	(*CloudReauthenticationRequest)(nil),           // 222: agent.CloudReauthenticationRequest
+	(*CloudLoginEvent)(nil),                        // 223: agent.CloudLoginEvent
+	(*CredentialFailure)(nil),                      // 224: agent.CredentialFailure
+	(*AuthenticationRequired)(nil),                 // 225: agent.AuthenticationRequired
+	(*AuthenticationDecisionRequest)(nil),          // 226: agent.AuthenticationDecisionRequest
+	(*WorkerAuthenticationRequest)(nil),            // 227: agent.WorkerAuthenticationRequest
+	(*WorkerAuthenticationResponse)(nil),           // 228: agent.WorkerAuthenticationResponse
+	(*AuthenticationDecisionResponse)(nil),         // 229: agent.AuthenticationDecisionResponse
+	(*RuntimeRestartToolRequest)(nil),              // 230: agent.RuntimeRestartToolRequest
+	(*RuntimeRestartToolResponse)(nil),             // 231: agent.RuntimeRestartToolResponse
+	(*McpToolDescriptor)(nil),                      // 232: agent.McpToolDescriptor
+	(*McpCallRequest)(nil),                         // 233: agent.McpCallRequest
+	(*McpCallResponse)(nil),                        // 234: agent.McpCallResponse
+	(*AutonomyLedgerRequest)(nil),                  // 235: agent.AutonomyLedgerRequest
+	(*AutonomyLedgerResponse)(nil),                 // 236: agent.AutonomyLedgerResponse
+	(*DispatchEventRequest)(nil),                   // 237: agent.DispatchEventRequest
+	(*DispatchEventResponse)(nil),                  // 238: agent.DispatchEventResponse
+	(*ResetSetupRequest)(nil),                      // 239: agent.ResetSetupRequest
+	(*ResetSetupResponse)(nil),                     // 240: agent.ResetSetupResponse
+	(*AccountingAttemptObservation)(nil),           // 241: agent.AccountingAttemptObservation
+	(*WorkerAccountingBatch)(nil),                  // 242: agent.WorkerAccountingBatch
+	(*WorkerAccountingReceipt)(nil),                // 243: agent.WorkerAccountingReceipt
+	(*WorkerAccountingHealth)(nil),                 // 244: agent.WorkerAccountingHealth
+	(*AccountingWork)(nil),                         // 245: agent.AccountingWork
+	(*GetTokenMetricsRequest)(nil),                 // 246: agent.GetTokenMetricsRequest
+	(*TokenMetricCount)(nil),                       // 247: agent.TokenMetricCount
+	(*TokenMetricTotals)(nil),                      // 248: agent.TokenMetricTotals
+	(*TokenMetricBucket)(nil),                      // 249: agent.TokenMetricBucket
+	(*TokenMetricBreakdown)(nil),                   // 250: agent.TokenMetricBreakdown
+	(*TokenMetricsHealth)(nil),                     // 251: agent.TokenMetricsHealth
+	(*GetTokenMetricsResponse)(nil),                // 252: agent.GetTokenMetricsResponse
+	(*SessionChatRoute)(nil),                       // 253: agent.SessionChatRoute
+	(*SessionModelRequest)(nil),                    // 254: agent.SessionModelRequest
+	(*SessionModelResponse)(nil),                   // 255: agent.SessionModelResponse
+	(*EnterpriseLoginRequest)(nil),                 // 256: agent.EnterpriseLoginRequest
+	(*EnterpriseControlRequest)(nil),               // 257: agent.EnterpriseControlRequest
+	(*EnterpriseStatus)(nil),                       // 258: agent.EnterpriseStatus
+	(*EnterprisePolicy)(nil),                       // 259: agent.EnterprisePolicy
+	nil,                                            // 260: agent.ListRuntimeModelsResponse.RecommendedOpenModelsEntry
+	nil,                                            // 261: agent.GetConfigResponse.ModelTiersEntry
+	nil,                                            // 262: agent.McpServerInfo.EnvEntry
+	nil,                                            // 263: agent.AddMcpServerRequest.EnvEntry
+	nil,                                            // 264: agent.ProfileModelChoices.TierOverridesEntry
+	nil,                                            // 265: agent.RoutingAssignments.TasksEntry
+	nil,                                            // 266: agent.CloudProfileInfo.EffectiveQualityModelsEntry
+	nil,                                            // 267: agent.CloudProfileInfo.RecommendedQualityModelsEntry
 }
 var file_agent_proto_depIdxs = []int32{
 	14,  // 0: agent.StreamProcessResponse.progress:type_name -> agent.ProgressUpdate
@@ -21409,7 +21562,7 @@ var file_agent_proto_depIdxs = []int32{
 	15,  // 10: agent.StreamProcessResponse.sub_agent_event:type_name -> agent.SubAgentEvent
 	11,  // 11: agent.StreamProcessResponse.rollover_offered:type_name -> agent.RolloverOffered
 	10,  // 12: agent.StreamProcessResponse.task_change:type_name -> agent.TaskChange
-	223, // 13: agent.StreamProcessResponse.authentication_required:type_name -> agent.AuthenticationRequired
+	225, // 13: agent.StreamProcessResponse.authentication_required:type_name -> agent.AuthenticationRequired
 	9,   // 14: agent.TaskNode.children:type_name -> agent.TaskNode
 	9,   // 15: agent.TaskChange.task:type_name -> agent.TaskNode
 	17,  // 16: agent.ProcessRequestRequest.images:type_name -> agent.InlineImage
@@ -21425,7 +21578,7 @@ var file_agent_proto_depIdxs = []int32{
 	31,  // 26: agent.GetRuntimeStatusResponse.logs:type_name -> agent.RuntimeLogEntry
 	185, // 27: agent.ListRuntimeModelsResponse.catalog_account_status:type_name -> agent.CatalogAccountStatus
 	28,  // 28: agent.ListRuntimeModelsResponse.models:type_name -> agent.RuntimeModel
-	258, // 29: agent.ListRuntimeModelsResponse.recommended_open_models:type_name -> agent.ListRuntimeModelsResponse.RecommendedOpenModelsEntry
+	260, // 29: agent.ListRuntimeModelsResponse.recommended_open_models:type_name -> agent.ListRuntimeModelsResponse.RecommendedOpenModelsEntry
 	30,  // 30: agent.ListRuntimeEndpointsResponse.endpoints:type_name -> agent.RuntimeEndpoint
 	29,  // 31: agent.StartRuntimeModelResponse.instance:type_name -> agent.RuntimeInstance
 	29,  // 32: agent.RestartRuntimeResponse.instance:type_name -> agent.RuntimeInstance
@@ -21443,7 +21596,7 @@ var file_agent_proto_depIdxs = []int32{
 	88,  // 44: agent.ExportTrajectoryEvent.failed:type_name -> agent.ExportTrajectoryFailed
 	94,  // 45: agent.GetConversationTurnsResponse.turns:type_name -> agent.ContextTurn
 	99,  // 46: agent.ListToolsResponse.tools:type_name -> agent.BuiltinTool
-	259, // 47: agent.GetConfigResponse.model_tiers:type_name -> agent.GetConfigResponse.ModelTiersEntry
+	261, // 47: agent.GetConfigResponse.model_tiers:type_name -> agent.GetConfigResponse.ModelTiersEntry
 	109, // 48: agent.ListSkillsResponse.skills:type_name -> agent.SkillInfo
 	123, // 49: agent.ClientEvent.permission_mode_changed:type_name -> agent.PermissionModeChanged
 	125, // 50: agent.ClientEvent.config_changed:type_name -> agent.ConfigChanged
@@ -21451,16 +21604,16 @@ var file_agent_proto_depIdxs = []int32{
 	124, // 52: agent.ClientEvent.session_profile_changed:type_name -> agent.SessionProfileChanged
 	126, // 53: agent.OpenRuntimeStatusChanged.status:type_name -> agent.OpenRuntimeStatus
 	126, // 54: agent.GetOpenRuntimeStatusResponse.status:type_name -> agent.OpenRuntimeStatus
-	260, // 55: agent.McpServerInfo.env:type_name -> agent.McpServerInfo.EnvEntry
+	262, // 55: agent.McpServerInfo.env:type_name -> agent.McpServerInfo.EnvEntry
 	149, // 56: agent.ListMcpServersResponse.servers:type_name -> agent.McpServerInfo
-	261, // 57: agent.AddMcpServerRequest.env:type_name -> agent.AddMcpServerRequest.EnvEntry
-	262, // 58: agent.ProfileModelChoices.tier_overrides:type_name -> agent.ProfileModelChoices.TierOverridesEntry
-	263, // 59: agent.RoutingAssignments.tasks:type_name -> agent.RoutingAssignments.TasksEntry
+	263, // 57: agent.AddMcpServerRequest.env:type_name -> agent.AddMcpServerRequest.EnvEntry
+	264, // 58: agent.ProfileModelChoices.tier_overrides:type_name -> agent.ProfileModelChoices.TierOverridesEntry
+	265, // 59: agent.RoutingAssignments.tasks:type_name -> agent.RoutingAssignments.TasksEntry
 	160, // 60: agent.RoutingSnapshot.assignments:type_name -> agent.RoutingAssignments
 	162, // 61: agent.RoutingSnapshot.profiles:type_name -> agent.CloudProfileInfo
 	158, // 62: agent.CloudProfileInfo.model_choices:type_name -> agent.ProfileModelChoices
-	264, // 63: agent.CloudProfileInfo.effective_quality_models:type_name -> agent.CloudProfileInfo.EffectiveQualityModelsEntry
-	265, // 64: agent.CloudProfileInfo.recommended_quality_models:type_name -> agent.CloudProfileInfo.RecommendedQualityModelsEntry
+	266, // 63: agent.CloudProfileInfo.effective_quality_models:type_name -> agent.CloudProfileInfo.EffectiveQualityModelsEntry
+	267, // 64: agent.CloudProfileInfo.recommended_quality_models:type_name -> agent.CloudProfileInfo.RecommendedQualityModelsEntry
 	162, // 65: agent.GetCloudProfilesResponse.profiles:type_name -> agent.CloudProfileInfo
 	162, // 66: agent.CloudProvider.profiles:type_name -> agent.CloudProfileInfo
 	165, // 67: agent.GetCloudProvidersResponse.providers:type_name -> agent.CloudProvider
@@ -21468,7 +21621,7 @@ var file_agent_proto_depIdxs = []int32{
 	160, // 69: agent.GetCloudProvidersResponse.assignments:type_name -> agent.RoutingAssignments
 	160, // 70: agent.UpdateRoutingAssignmentsRequest.assignments:type_name -> agent.RoutingAssignments
 	158, // 71: agent.UpsertCloudProfileRequest.model_choices:type_name -> agent.ProfileModelChoices
-	218, // 72: agent.UpsertCloudProfileRequest.structure:type_name -> agent.CloudProfileStructure
+	220, // 72: agent.UpsertCloudProfileRequest.structure:type_name -> agent.CloudProfileStructure
 	183, // 73: agent.CloudModelInfo.metadata:type_name -> agent.CatalogMetadata
 	184, // 74: agent.CloudModelInfo.account_observations:type_name -> agent.CatalogAccountObservation
 	180, // 75: agent.ListCloudProfileModelsResponse.models:type_name -> agent.CloudModelInfo
@@ -21477,77 +21630,77 @@ var file_agent_proto_depIdxs = []int32{
 	1,   // 78: agent.CatalogMetadata.vision:type_name -> agent.CatalogCapability
 	1,   // 79: agent.CatalogMetadata.reasoning:type_name -> agent.CatalogCapability
 	183, // 80: agent.CatalogAccountObservation.metadata:type_name -> agent.CatalogMetadata
-	194, // 81: agent.HostToWorker.start:type_name -> agent.StartTurn
-	200, // 82: agent.HostToWorker.perm_response:type_name -> agent.PermissionResponse
-	207, // 83: agent.HostToWorker.cancel:type_name -> agent.Cancel
-	211, // 84: agent.HostToWorker.cred_response:type_name -> agent.CredentialResponse
-	215, // 85: agent.HostToWorker.open_event:type_name -> agent.OpenInferenceEvent
-	202, // 86: agent.HostToWorker.profile_response:type_name -> agent.SessionProfileResponse
-	226, // 87: agent.HostToWorker.auth_response:type_name -> agent.WorkerAuthenticationResponse
-	229, // 88: agent.HostToWorker.runtime_response:type_name -> agent.RuntimeRestartToolResponse
-	232, // 89: agent.HostToWorker.mcp_response:type_name -> agent.McpCallResponse
-	192, // 90: agent.HostToWorker.perm_update:type_name -> agent.PermissionUpdate
-	234, // 91: agent.HostToWorker.autonomy_response:type_name -> agent.AutonomyLedgerResponse
-	236, // 92: agent.HostToWorker.dispatch_event_response:type_name -> agent.DispatchEventResponse
-	253, // 93: agent.HostToWorker.session_model_response:type_name -> agent.SessionModelResponse
-	196, // 94: agent.HostToWorker.model_authorization_response:type_name -> agent.WorkerModelAuthorizationResponse
-	198, // 95: agent.WorkerToHost.event:type_name -> agent.WorkerEvent
-	199, // 96: agent.WorkerToHost.perm_request:type_name -> agent.PermissionRequest
-	203, // 97: agent.WorkerToHost.persist:type_name -> agent.PersistTurn
-	205, // 98: agent.WorkerToHost.done:type_name -> agent.TurnDone
-	206, // 99: agent.WorkerToHost.error:type_name -> agent.TurnError
-	210, // 100: agent.WorkerToHost.cred_request:type_name -> agent.CredentialRequest
-	204, // 101: agent.WorkerToHost.ensure_subagent:type_name -> agent.EnsureSubagentConversation
-	212, // 102: agent.WorkerToHost.open_request:type_name -> agent.OpenInferenceRequest
-	201, // 103: agent.WorkerToHost.profile_request:type_name -> agent.SessionProfileRequest
-	219, // 104: agent.WorkerToHost.request_accounting:type_name -> agent.RuntimeRequestAccounting
-	225, // 105: agent.WorkerToHost.auth_request:type_name -> agent.WorkerAuthenticationRequest
-	228, // 106: agent.WorkerToHost.runtime_request:type_name -> agent.RuntimeRestartToolRequest
-	231, // 107: agent.WorkerToHost.mcp_request:type_name -> agent.McpCallRequest
-	233, // 108: agent.WorkerToHost.autonomy_request:type_name -> agent.AutonomyLedgerRequest
-	235, // 109: agent.WorkerToHost.dispatch_event:type_name -> agent.DispatchEventRequest
-	252, // 110: agent.WorkerToHost.session_model_request:type_name -> agent.SessionModelRequest
-	195, // 111: agent.WorkerToHost.model_authorization_request:type_name -> agent.WorkerModelAuthorizationRequest
-	243, // 112: agent.StartTurn.accounting:type_name -> agent.AccountingWork
+	196, // 81: agent.HostToWorker.start:type_name -> agent.StartTurn
+	202, // 82: agent.HostToWorker.perm_response:type_name -> agent.PermissionResponse
+	209, // 83: agent.HostToWorker.cancel:type_name -> agent.Cancel
+	213, // 84: agent.HostToWorker.cred_response:type_name -> agent.CredentialResponse
+	217, // 85: agent.HostToWorker.open_event:type_name -> agent.OpenInferenceEvent
+	204, // 86: agent.HostToWorker.profile_response:type_name -> agent.SessionProfileResponse
+	228, // 87: agent.HostToWorker.auth_response:type_name -> agent.WorkerAuthenticationResponse
+	231, // 88: agent.HostToWorker.runtime_response:type_name -> agent.RuntimeRestartToolResponse
+	234, // 89: agent.HostToWorker.mcp_response:type_name -> agent.McpCallResponse
+	194, // 90: agent.HostToWorker.perm_update:type_name -> agent.PermissionUpdate
+	236, // 91: agent.HostToWorker.autonomy_response:type_name -> agent.AutonomyLedgerResponse
+	238, // 92: agent.HostToWorker.dispatch_event_response:type_name -> agent.DispatchEventResponse
+	255, // 93: agent.HostToWorker.session_model_response:type_name -> agent.SessionModelResponse
+	198, // 94: agent.HostToWorker.model_authorization_response:type_name -> agent.WorkerModelAuthorizationResponse
+	200, // 95: agent.WorkerToHost.event:type_name -> agent.WorkerEvent
+	201, // 96: agent.WorkerToHost.perm_request:type_name -> agent.PermissionRequest
+	205, // 97: agent.WorkerToHost.persist:type_name -> agent.PersistTurn
+	207, // 98: agent.WorkerToHost.done:type_name -> agent.TurnDone
+	208, // 99: agent.WorkerToHost.error:type_name -> agent.TurnError
+	212, // 100: agent.WorkerToHost.cred_request:type_name -> agent.CredentialRequest
+	206, // 101: agent.WorkerToHost.ensure_subagent:type_name -> agent.EnsureSubagentConversation
+	214, // 102: agent.WorkerToHost.open_request:type_name -> agent.OpenInferenceRequest
+	203, // 103: agent.WorkerToHost.profile_request:type_name -> agent.SessionProfileRequest
+	221, // 104: agent.WorkerToHost.request_accounting:type_name -> agent.RuntimeRequestAccounting
+	227, // 105: agent.WorkerToHost.auth_request:type_name -> agent.WorkerAuthenticationRequest
+	230, // 106: agent.WorkerToHost.runtime_request:type_name -> agent.RuntimeRestartToolRequest
+	233, // 107: agent.WorkerToHost.mcp_request:type_name -> agent.McpCallRequest
+	235, // 108: agent.WorkerToHost.autonomy_request:type_name -> agent.AutonomyLedgerRequest
+	237, // 109: agent.WorkerToHost.dispatch_event:type_name -> agent.DispatchEventRequest
+	254, // 110: agent.WorkerToHost.session_model_request:type_name -> agent.SessionModelRequest
+	197, // 111: agent.WorkerToHost.model_authorization_request:type_name -> agent.WorkerModelAuthorizationRequest
+	245, // 112: agent.StartTurn.accounting:type_name -> agent.AccountingWork
 	17,  // 113: agent.StartTurn.images:type_name -> agent.InlineImage
-	208, // 114: agent.StartTurn.config:type_name -> agent.ConfigSnapshot
-	197, // 115: agent.StartTurn.history:type_name -> agent.LLMMessage
-	230, // 116: agent.StartTurn.mcp_tools:type_name -> agent.McpToolDescriptor
-	251, // 117: agent.StartTurn.chat_route:type_name -> agent.SessionChatRoute
+	210, // 114: agent.StartTurn.config:type_name -> agent.ConfigSnapshot
+	199, // 115: agent.StartTurn.history:type_name -> agent.LLMMessage
+	232, // 116: agent.StartTurn.mcp_tools:type_name -> agent.McpToolDescriptor
+	253, // 117: agent.StartTurn.chat_route:type_name -> agent.SessionChatRoute
 	2,   // 118: agent.WorkerEvent.kind:type_name -> agent.WorkerEventKind
-	217, // 119: agent.WorkerEvent.route:type_name -> agent.ServingRouteInfo
-	197, // 120: agent.PersistTurn.message:type_name -> agent.LLMMessage
-	217, // 121: agent.TurnDone.route:type_name -> agent.ServingRouteInfo
-	209, // 122: agent.ConfigSnapshot.model_metadata:type_name -> agent.ModelMetadataEntry
+	219, // 119: agent.WorkerEvent.route:type_name -> agent.ServingRouteInfo
+	199, // 120: agent.PersistTurn.message:type_name -> agent.LLMMessage
+	219, // 121: agent.TurnDone.route:type_name -> agent.ServingRouteInfo
+	211, // 122: agent.ConfigSnapshot.model_metadata:type_name -> agent.ModelMetadataEntry
 	161, // 123: agent.ConfigSnapshot.routing:type_name -> agent.RoutingSnapshot
 	4,   // 124: agent.ModelMetadataEntry.vision:type_name -> agent.ModelMetadataEntry.Vision
-	222, // 125: agent.CredentialResponse.failure:type_name -> agent.CredentialFailure
-	213, // 126: agent.OpenInferenceRequest.request:type_name -> agent.LLMChatRequest
-	197, // 127: agent.LLMChatRequest.messages:type_name -> agent.LLMMessage
-	214, // 128: agent.LLMChatRequest.tools:type_name -> agent.LLMTool
-	216, // 129: agent.OpenInferenceEvent.event:type_name -> agent.LLMStreamEvent
-	217, // 130: agent.LLMStreamEvent.route:type_name -> agent.ServingRouteInfo
-	223, // 131: agent.WorkerAuthenticationRequest.challenge:type_name -> agent.AuthenticationRequired
-	239, // 132: agent.WorkerAccountingBatch.observations:type_name -> agent.AccountingAttemptObservation
-	242, // 133: agent.WorkerAccountingBatch.health:type_name -> agent.WorkerAccountingHealth
-	245, // 134: agent.TokenMetricTotals.input:type_name -> agent.TokenMetricCount
-	245, // 135: agent.TokenMetricTotals.output:type_name -> agent.TokenMetricCount
-	245, // 136: agent.TokenMetricTotals.cache_read:type_name -> agent.TokenMetricCount
-	245, // 137: agent.TokenMetricTotals.cache_write:type_name -> agent.TokenMetricCount
-	245, // 138: agent.TokenMetricTotals.reasoning:type_name -> agent.TokenMetricCount
-	246, // 139: agent.TokenMetricBucket.totals:type_name -> agent.TokenMetricTotals
-	246, // 140: agent.TokenMetricBreakdown.totals:type_name -> agent.TokenMetricTotals
-	246, // 141: agent.GetTokenMetricsResponse.totals:type_name -> agent.TokenMetricTotals
-	247, // 142: agent.GetTokenMetricsResponse.buckets:type_name -> agent.TokenMetricBucket
-	248, // 143: agent.GetTokenMetricsResponse.breakdowns:type_name -> agent.TokenMetricBreakdown
-	249, // 144: agent.GetTokenMetricsResponse.health:type_name -> agent.TokenMetricsHealth
+	224, // 125: agent.CredentialResponse.failure:type_name -> agent.CredentialFailure
+	215, // 126: agent.OpenInferenceRequest.request:type_name -> agent.LLMChatRequest
+	199, // 127: agent.LLMChatRequest.messages:type_name -> agent.LLMMessage
+	216, // 128: agent.LLMChatRequest.tools:type_name -> agent.LLMTool
+	218, // 129: agent.OpenInferenceEvent.event:type_name -> agent.LLMStreamEvent
+	219, // 130: agent.LLMStreamEvent.route:type_name -> agent.ServingRouteInfo
+	225, // 131: agent.WorkerAuthenticationRequest.challenge:type_name -> agent.AuthenticationRequired
+	241, // 132: agent.WorkerAccountingBatch.observations:type_name -> agent.AccountingAttemptObservation
+	244, // 133: agent.WorkerAccountingBatch.health:type_name -> agent.WorkerAccountingHealth
+	247, // 134: agent.TokenMetricTotals.input:type_name -> agent.TokenMetricCount
+	247, // 135: agent.TokenMetricTotals.output:type_name -> agent.TokenMetricCount
+	247, // 136: agent.TokenMetricTotals.cache_read:type_name -> agent.TokenMetricCount
+	247, // 137: agent.TokenMetricTotals.cache_write:type_name -> agent.TokenMetricCount
+	247, // 138: agent.TokenMetricTotals.reasoning:type_name -> agent.TokenMetricCount
+	248, // 139: agent.TokenMetricBucket.totals:type_name -> agent.TokenMetricTotals
+	248, // 140: agent.TokenMetricBreakdown.totals:type_name -> agent.TokenMetricTotals
+	248, // 141: agent.GetTokenMetricsResponse.totals:type_name -> agent.TokenMetricTotals
+	249, // 142: agent.GetTokenMetricsResponse.buckets:type_name -> agent.TokenMetricBucket
+	250, // 143: agent.GetTokenMetricsResponse.breakdowns:type_name -> agent.TokenMetricBreakdown
+	251, // 144: agent.GetTokenMetricsResponse.health:type_name -> agent.TokenMetricsHealth
 	159, // 145: agent.RoutingAssignments.TasksEntry.value:type_name -> agent.TaskModelAssignment
-	252, // 146: agent.Agent.SessionModel:input_type -> agent.SessionModelRequest
+	254, // 146: agent.Agent.SessionModel:input_type -> agent.SessionModelRequest
 	16,  // 147: agent.Agent.ProcessRequest:input_type -> agent.ProcessRequestRequest
 	16,  // 148: agent.Agent.StreamProcessRequest:input_type -> agent.ProcessRequestRequest
-	190, // 149: agent.Agent.AttachConversation:input_type -> agent.AttachConversationRequest
+	192, // 149: agent.Agent.AttachConversation:input_type -> agent.AttachConversationRequest
 	18,  // 150: agent.Agent.UpdateConfig:input_type -> agent.UpdateConfigRequest
-	237, // 151: agent.Agent.ResetSetup:input_type -> agent.ResetSetupRequest
+	239, // 151: agent.Agent.ResetSetup:input_type -> agent.ResetSetupRequest
 	20,  // 152: agent.Agent.ShutdownAgent:input_type -> agent.ShutdownAgentRequest
 	106, // 153: agent.Agent.GetConfig:input_type -> agent.GetConfigRequest
 	57,  // 154: agent.Agent.ListConversations:input_type -> agent.ListConversationsRequest
@@ -21560,7 +21713,7 @@ var file_agent_proto_depIdxs = []int32{
 	69,  // 161: agent.Agent.ListSubAgents:input_type -> agent.ListSubAgentsRequest
 	71,  // 162: agent.Agent.DismissSubAgent:input_type -> agent.DismissSubAgentRequest
 	74,  // 163: agent.Agent.GetContextUsage:input_type -> agent.GetContextUsageRequest
-	244, // 164: agent.Agent.GetTokenMetrics:input_type -> agent.GetTokenMetricsRequest
+	246, // 164: agent.Agent.GetTokenMetrics:input_type -> agent.GetTokenMetricsRequest
 	78,  // 165: agent.Agent.GetCompactionState:input_type -> agent.GetCompactionStateRequest
 	80,  // 166: agent.Agent.ElideContext:input_type -> agent.ElideContextRequest
 	76,  // 167: agent.Agent.SuggestNextPrompt:input_type -> agent.SuggestNextPromptRequest
@@ -21616,112 +21769,114 @@ var file_agent_proto_depIdxs = []int32{
 	181, // 217: agent.Agent.ListCloudProfileModels:input_type -> agent.ListCloudProfileModelsRequest
 	186, // 218: agent.Agent.StartChatGPTLogin:input_type -> agent.StartChatGPTLoginRequest
 	188, // 219: agent.Agent.StartClaudeLogin:input_type -> agent.StartClaudeLoginRequest
-	220, // 220: agent.Agent.ReauthenticateCloud:input_type -> agent.CloudReauthenticationRequest
-	224, // 221: agent.Agent.ResolveAuthentication:input_type -> agent.AuthenticationDecisionRequest
-	5,   // 222: agent.Agent.ExportImage:input_type -> agent.ExportImageRequest
-	241, // 223: agent.Worker.Accounting:input_type -> agent.WorkerAccountingReceipt
-	191, // 224: agent.Worker.RunTurn:input_type -> agent.HostToWorker
-	191, // 225: agent.Worker.RunTurnWithAuthentication:input_type -> agent.HostToWorker
-	191, // 226: agent.Worker.RunManagedTurn:input_type -> agent.HostToWorker
-	191, // 227: agent.Worker.RunManagedTurnWithSettings:input_type -> agent.HostToWorker
-	191, // 228: agent.Worker.RunManagedTurnWithSelection:input_type -> agent.HostToWorker
-	254, // 229: agent.Enterprise.Login:input_type -> agent.EnterpriseLoginRequest
-	255, // 230: agent.Enterprise.GetStatus:input_type -> agent.EnterpriseControlRequest
-	255, // 231: agent.Enterprise.Synchronize:input_type -> agent.EnterpriseControlRequest
-	255, // 232: agent.Enterprise.GetPolicy:input_type -> agent.EnterpriseControlRequest
-	255, // 233: agent.Enterprise.Logout:input_type -> agent.EnterpriseControlRequest
-	255, // 234: agent.Enterprise.UseStandalone:input_type -> agent.EnterpriseControlRequest
-	253, // 235: agent.Agent.SessionModel:output_type -> agent.SessionModelResponse
-	22,  // 236: agent.Agent.ProcessRequest:output_type -> agent.ProcessRequestResponse
-	8,   // 237: agent.Agent.StreamProcessRequest:output_type -> agent.StreamProcessResponse
-	8,   // 238: agent.Agent.AttachConversation:output_type -> agent.StreamProcessResponse
-	19,  // 239: agent.Agent.UpdateConfig:output_type -> agent.UpdateConfigResponse
-	238, // 240: agent.Agent.ResetSetup:output_type -> agent.ResetSetupResponse
-	21,  // 241: agent.Agent.ShutdownAgent:output_type -> agent.ShutdownAgentResponse
-	107, // 242: agent.Agent.GetConfig:output_type -> agent.GetConfigResponse
-	58,  // 243: agent.Agent.ListConversations:output_type -> agent.ListConversationsResponse
-	60,  // 244: agent.Agent.ResumeConversation:output_type -> agent.ResumeConversationResponse
-	61,  // 245: agent.Agent.StreamResumeConversation:output_type -> agent.ResumeConversationChunk
-	63,  // 246: agent.Agent.StreamResumeConversationViewportFirst:output_type -> agent.ResumeConversationViewportFirstEvent
-	65,  // 247: agent.Agent.DeleteConversation:output_type -> agent.DeleteConversationResponse
-	67,  // 248: agent.Agent.RenameConversation:output_type -> agent.RenameConversationResponse
-	55,  // 249: agent.Agent.GetConversation:output_type -> agent.Conversation
-	70,  // 250: agent.Agent.ListSubAgents:output_type -> agent.ListSubAgentsResponse
-	72,  // 251: agent.Agent.DismissSubAgent:output_type -> agent.DismissSubAgentResponse
-	75,  // 252: agent.Agent.GetContextUsage:output_type -> agent.GetContextUsageResponse
-	250, // 253: agent.Agent.GetTokenMetrics:output_type -> agent.GetTokenMetricsResponse
-	79,  // 254: agent.Agent.GetCompactionState:output_type -> agent.GetCompactionStateResponse
-	81,  // 255: agent.Agent.ElideContext:output_type -> agent.ElideContextResponse
-	77,  // 256: agent.Agent.SuggestNextPrompt:output_type -> agent.SuggestNextPromptResponse
-	129, // 257: agent.Agent.GetOpenRuntimeStatus:output_type -> agent.GetOpenRuntimeStatusResponse
-	131, // 258: agent.Agent.InstallOpenRuntime:output_type -> agent.InstallProgress
-	133, // 259: agent.Agent.RegenerateContext:output_type -> agent.RegenerateContextProgress
-	83,  // 260: agent.Agent.ExportContext:output_type -> agent.ExportContextResponse
-	89,  // 261: agent.Agent.ExportTrajectory:output_type -> agent.ExportTrajectoryEvent
-	91,  // 262: agent.Agent.GetConversationTurns:output_type -> agent.GetConversationTurnsResponse
-	93,  // 263: agent.Agent.GetToolCall:output_type -> agent.GetToolCallResponse
-	101, // 264: agent.Agent.ListTools:output_type -> agent.ListToolsResponse
-	103, // 265: agent.Agent.InvokeTool:output_type -> agent.InvokeToolResponse
-	105, // 266: agent.Agent.InvokeCapability:output_type -> agent.InvokeCapabilityResponse
-	27,  // 267: agent.Agent.ListModels:output_type -> agent.ListModelsResponse
-	33,  // 268: agent.Agent.GetRuntimeStatus:output_type -> agent.GetRuntimeStatusResponse
-	35,  // 269: agent.Agent.ListRuntimeModels:output_type -> agent.ListRuntimeModelsResponse
-	41,  // 270: agent.Agent.ListRuntimeEndpoints:output_type -> agent.ListRuntimeEndpointsResponse
-	43,  // 271: agent.Agent.StartRuntimeModel:output_type -> agent.StartRuntimeModelResponse
-	45,  // 272: agent.Agent.StopRuntimeModel:output_type -> agent.StopRuntimeModelResponse
-	47,  // 273: agent.Agent.RestartRuntime:output_type -> agent.RestartRuntimeResponse
-	49,  // 274: agent.Agent.DownloadRuntimeModel:output_type -> agent.DownloadRuntimeModelResponse
-	51,  // 275: agent.Agent.CancelRuntimeModelDownload:output_type -> agent.CancelRuntimeModelDownloadResponse
-	53,  // 276: agent.Agent.DeleteRuntimeModel:output_type -> agent.DeleteRuntimeModelResponse
-	39,  // 277: agent.Agent.RefreshOnlineCatalog:output_type -> agent.RefreshOnlineCatalogResponse
-	37,  // 278: agent.Agent.GetModelRAMEstimate:output_type -> agent.GetModelRAMEstimateResponse
-	31,  // 279: agent.Agent.StreamRuntimeLogs:output_type -> agent.RuntimeLogEntry
-	110, // 280: agent.Agent.ListSkills:output_type -> agent.ListSkillsResponse
-	112, // 281: agent.Agent.GetSkill:output_type -> agent.GetSkillResponse
-	114, // 282: agent.Agent.SetPermissionMode:output_type -> agent.SetPermissionModeResponse
-	116, // 283: agent.Agent.GetPermissionMode:output_type -> agent.GetPermissionModeResponse
-	118, // 284: agent.Agent.SetSessionProfile:output_type -> agent.SetSessionProfileResponse
-	120, // 285: agent.Agent.GetSessionProfile:output_type -> agent.GetSessionProfileResponse
-	122, // 286: agent.Agent.SubscribeEvents:output_type -> agent.ClientEvent
-	135, // 287: agent.Agent.AllowToolCall:output_type -> agent.AllowToolCallResponse
-	137, // 288: agent.Agent.DenyToolCall:output_type -> agent.DenyToolCallResponse
-	139, // 289: agent.Agent.AcceptRollover:output_type -> agent.AcceptRolloverResponse
-	141, // 290: agent.Agent.DeclineRollover:output_type -> agent.DeclineRolloverResponse
-	143, // 291: agent.Agent.GetProviderCapabilities:output_type -> agent.GetProviderCapabilitiesResponse
-	96,  // 292: agent.Agent.ProposeContextEdit:output_type -> agent.ProposeContextEditResponse
-	98,  // 293: agent.Agent.DeleteConversationTurns:output_type -> agent.DeleteConversationTurnsResponse
-	151, // 294: agent.Agent.ListMcpServers:output_type -> agent.ListMcpServersResponse
-	153, // 295: agent.Agent.AddMcpServer:output_type -> agent.AddMcpServerResponse
-	155, // 296: agent.Agent.RemoveMcpServer:output_type -> agent.RemoveMcpServerResponse
-	157, // 297: agent.Agent.RestartMcpServer:output_type -> agent.RestartMcpServerResponse
-	164, // 298: agent.Agent.GetCloudProfiles:output_type -> agent.GetCloudProfilesResponse
-	167, // 299: agent.Agent.GetCloudProviders:output_type -> agent.GetCloudProvidersResponse
-	169, // 300: agent.Agent.UpdateRoutingAssignments:output_type -> agent.UpdateRoutingAssignmentsResponse
-	171, // 301: agent.Agent.SetActiveCloudProfile:output_type -> agent.SetActiveCloudProfileResponse
-	173, // 302: agent.Agent.SetBackupCloudProfile:output_type -> agent.SetBackupCloudProfileResponse
-	175, // 303: agent.Agent.SetCloudProfileKey:output_type -> agent.SetCloudProfileKeyResponse
-	177, // 304: agent.Agent.UpsertCloudProfile:output_type -> agent.UpsertCloudProfileResponse
-	179, // 305: agent.Agent.RemoveCloudProfile:output_type -> agent.RemoveCloudProfileResponse
-	182, // 306: agent.Agent.ListCloudProfileModels:output_type -> agent.ListCloudProfileModelsResponse
-	187, // 307: agent.Agent.StartChatGPTLogin:output_type -> agent.StartChatGPTLoginEvent
-	189, // 308: agent.Agent.StartClaudeLogin:output_type -> agent.StartClaudeLoginEvent
-	221, // 309: agent.Agent.ReauthenticateCloud:output_type -> agent.CloudLoginEvent
-	227, // 310: agent.Agent.ResolveAuthentication:output_type -> agent.AuthenticationDecisionResponse
-	6,   // 311: agent.Agent.ExportImage:output_type -> agent.ExportImageResponse
-	240, // 312: agent.Worker.Accounting:output_type -> agent.WorkerAccountingBatch
-	193, // 313: agent.Worker.RunTurn:output_type -> agent.WorkerToHost
-	193, // 314: agent.Worker.RunTurnWithAuthentication:output_type -> agent.WorkerToHost
-	193, // 315: agent.Worker.RunManagedTurn:output_type -> agent.WorkerToHost
-	193, // 316: agent.Worker.RunManagedTurnWithSettings:output_type -> agent.WorkerToHost
-	193, // 317: agent.Worker.RunManagedTurnWithSelection:output_type -> agent.WorkerToHost
-	256, // 318: agent.Enterprise.Login:output_type -> agent.EnterpriseStatus
-	256, // 319: agent.Enterprise.GetStatus:output_type -> agent.EnterpriseStatus
-	256, // 320: agent.Enterprise.Synchronize:output_type -> agent.EnterpriseStatus
-	257, // 321: agent.Enterprise.GetPolicy:output_type -> agent.EnterprisePolicy
-	256, // 322: agent.Enterprise.Logout:output_type -> agent.EnterpriseStatus
-	256, // 323: agent.Enterprise.UseStandalone:output_type -> agent.EnterpriseStatus
-	235, // [235:324] is the sub-list for method output_type
-	146, // [146:235] is the sub-list for method input_type
+	190, // 220: agent.Agent.SubmitClaudeLoginCode:input_type -> agent.SubmitClaudeLoginCodeRequest
+	222, // 221: agent.Agent.ReauthenticateCloud:input_type -> agent.CloudReauthenticationRequest
+	226, // 222: agent.Agent.ResolveAuthentication:input_type -> agent.AuthenticationDecisionRequest
+	5,   // 223: agent.Agent.ExportImage:input_type -> agent.ExportImageRequest
+	243, // 224: agent.Worker.Accounting:input_type -> agent.WorkerAccountingReceipt
+	193, // 225: agent.Worker.RunTurn:input_type -> agent.HostToWorker
+	193, // 226: agent.Worker.RunTurnWithAuthentication:input_type -> agent.HostToWorker
+	193, // 227: agent.Worker.RunManagedTurn:input_type -> agent.HostToWorker
+	193, // 228: agent.Worker.RunManagedTurnWithSettings:input_type -> agent.HostToWorker
+	193, // 229: agent.Worker.RunManagedTurnWithSelection:input_type -> agent.HostToWorker
+	256, // 230: agent.Enterprise.Login:input_type -> agent.EnterpriseLoginRequest
+	257, // 231: agent.Enterprise.GetStatus:input_type -> agent.EnterpriseControlRequest
+	257, // 232: agent.Enterprise.Synchronize:input_type -> agent.EnterpriseControlRequest
+	257, // 233: agent.Enterprise.GetPolicy:input_type -> agent.EnterpriseControlRequest
+	257, // 234: agent.Enterprise.Logout:input_type -> agent.EnterpriseControlRequest
+	257, // 235: agent.Enterprise.UseStandalone:input_type -> agent.EnterpriseControlRequest
+	255, // 236: agent.Agent.SessionModel:output_type -> agent.SessionModelResponse
+	22,  // 237: agent.Agent.ProcessRequest:output_type -> agent.ProcessRequestResponse
+	8,   // 238: agent.Agent.StreamProcessRequest:output_type -> agent.StreamProcessResponse
+	8,   // 239: agent.Agent.AttachConversation:output_type -> agent.StreamProcessResponse
+	19,  // 240: agent.Agent.UpdateConfig:output_type -> agent.UpdateConfigResponse
+	240, // 241: agent.Agent.ResetSetup:output_type -> agent.ResetSetupResponse
+	21,  // 242: agent.Agent.ShutdownAgent:output_type -> agent.ShutdownAgentResponse
+	107, // 243: agent.Agent.GetConfig:output_type -> agent.GetConfigResponse
+	58,  // 244: agent.Agent.ListConversations:output_type -> agent.ListConversationsResponse
+	60,  // 245: agent.Agent.ResumeConversation:output_type -> agent.ResumeConversationResponse
+	61,  // 246: agent.Agent.StreamResumeConversation:output_type -> agent.ResumeConversationChunk
+	63,  // 247: agent.Agent.StreamResumeConversationViewportFirst:output_type -> agent.ResumeConversationViewportFirstEvent
+	65,  // 248: agent.Agent.DeleteConversation:output_type -> agent.DeleteConversationResponse
+	67,  // 249: agent.Agent.RenameConversation:output_type -> agent.RenameConversationResponse
+	55,  // 250: agent.Agent.GetConversation:output_type -> agent.Conversation
+	70,  // 251: agent.Agent.ListSubAgents:output_type -> agent.ListSubAgentsResponse
+	72,  // 252: agent.Agent.DismissSubAgent:output_type -> agent.DismissSubAgentResponse
+	75,  // 253: agent.Agent.GetContextUsage:output_type -> agent.GetContextUsageResponse
+	252, // 254: agent.Agent.GetTokenMetrics:output_type -> agent.GetTokenMetricsResponse
+	79,  // 255: agent.Agent.GetCompactionState:output_type -> agent.GetCompactionStateResponse
+	81,  // 256: agent.Agent.ElideContext:output_type -> agent.ElideContextResponse
+	77,  // 257: agent.Agent.SuggestNextPrompt:output_type -> agent.SuggestNextPromptResponse
+	129, // 258: agent.Agent.GetOpenRuntimeStatus:output_type -> agent.GetOpenRuntimeStatusResponse
+	131, // 259: agent.Agent.InstallOpenRuntime:output_type -> agent.InstallProgress
+	133, // 260: agent.Agent.RegenerateContext:output_type -> agent.RegenerateContextProgress
+	83,  // 261: agent.Agent.ExportContext:output_type -> agent.ExportContextResponse
+	89,  // 262: agent.Agent.ExportTrajectory:output_type -> agent.ExportTrajectoryEvent
+	91,  // 263: agent.Agent.GetConversationTurns:output_type -> agent.GetConversationTurnsResponse
+	93,  // 264: agent.Agent.GetToolCall:output_type -> agent.GetToolCallResponse
+	101, // 265: agent.Agent.ListTools:output_type -> agent.ListToolsResponse
+	103, // 266: agent.Agent.InvokeTool:output_type -> agent.InvokeToolResponse
+	105, // 267: agent.Agent.InvokeCapability:output_type -> agent.InvokeCapabilityResponse
+	27,  // 268: agent.Agent.ListModels:output_type -> agent.ListModelsResponse
+	33,  // 269: agent.Agent.GetRuntimeStatus:output_type -> agent.GetRuntimeStatusResponse
+	35,  // 270: agent.Agent.ListRuntimeModels:output_type -> agent.ListRuntimeModelsResponse
+	41,  // 271: agent.Agent.ListRuntimeEndpoints:output_type -> agent.ListRuntimeEndpointsResponse
+	43,  // 272: agent.Agent.StartRuntimeModel:output_type -> agent.StartRuntimeModelResponse
+	45,  // 273: agent.Agent.StopRuntimeModel:output_type -> agent.StopRuntimeModelResponse
+	47,  // 274: agent.Agent.RestartRuntime:output_type -> agent.RestartRuntimeResponse
+	49,  // 275: agent.Agent.DownloadRuntimeModel:output_type -> agent.DownloadRuntimeModelResponse
+	51,  // 276: agent.Agent.CancelRuntimeModelDownload:output_type -> agent.CancelRuntimeModelDownloadResponse
+	53,  // 277: agent.Agent.DeleteRuntimeModel:output_type -> agent.DeleteRuntimeModelResponse
+	39,  // 278: agent.Agent.RefreshOnlineCatalog:output_type -> agent.RefreshOnlineCatalogResponse
+	37,  // 279: agent.Agent.GetModelRAMEstimate:output_type -> agent.GetModelRAMEstimateResponse
+	31,  // 280: agent.Agent.StreamRuntimeLogs:output_type -> agent.RuntimeLogEntry
+	110, // 281: agent.Agent.ListSkills:output_type -> agent.ListSkillsResponse
+	112, // 282: agent.Agent.GetSkill:output_type -> agent.GetSkillResponse
+	114, // 283: agent.Agent.SetPermissionMode:output_type -> agent.SetPermissionModeResponse
+	116, // 284: agent.Agent.GetPermissionMode:output_type -> agent.GetPermissionModeResponse
+	118, // 285: agent.Agent.SetSessionProfile:output_type -> agent.SetSessionProfileResponse
+	120, // 286: agent.Agent.GetSessionProfile:output_type -> agent.GetSessionProfileResponse
+	122, // 287: agent.Agent.SubscribeEvents:output_type -> agent.ClientEvent
+	135, // 288: agent.Agent.AllowToolCall:output_type -> agent.AllowToolCallResponse
+	137, // 289: agent.Agent.DenyToolCall:output_type -> agent.DenyToolCallResponse
+	139, // 290: agent.Agent.AcceptRollover:output_type -> agent.AcceptRolloverResponse
+	141, // 291: agent.Agent.DeclineRollover:output_type -> agent.DeclineRolloverResponse
+	143, // 292: agent.Agent.GetProviderCapabilities:output_type -> agent.GetProviderCapabilitiesResponse
+	96,  // 293: agent.Agent.ProposeContextEdit:output_type -> agent.ProposeContextEditResponse
+	98,  // 294: agent.Agent.DeleteConversationTurns:output_type -> agent.DeleteConversationTurnsResponse
+	151, // 295: agent.Agent.ListMcpServers:output_type -> agent.ListMcpServersResponse
+	153, // 296: agent.Agent.AddMcpServer:output_type -> agent.AddMcpServerResponse
+	155, // 297: agent.Agent.RemoveMcpServer:output_type -> agent.RemoveMcpServerResponse
+	157, // 298: agent.Agent.RestartMcpServer:output_type -> agent.RestartMcpServerResponse
+	164, // 299: agent.Agent.GetCloudProfiles:output_type -> agent.GetCloudProfilesResponse
+	167, // 300: agent.Agent.GetCloudProviders:output_type -> agent.GetCloudProvidersResponse
+	169, // 301: agent.Agent.UpdateRoutingAssignments:output_type -> agent.UpdateRoutingAssignmentsResponse
+	171, // 302: agent.Agent.SetActiveCloudProfile:output_type -> agent.SetActiveCloudProfileResponse
+	173, // 303: agent.Agent.SetBackupCloudProfile:output_type -> agent.SetBackupCloudProfileResponse
+	175, // 304: agent.Agent.SetCloudProfileKey:output_type -> agent.SetCloudProfileKeyResponse
+	177, // 305: agent.Agent.UpsertCloudProfile:output_type -> agent.UpsertCloudProfileResponse
+	179, // 306: agent.Agent.RemoveCloudProfile:output_type -> agent.RemoveCloudProfileResponse
+	182, // 307: agent.Agent.ListCloudProfileModels:output_type -> agent.ListCloudProfileModelsResponse
+	187, // 308: agent.Agent.StartChatGPTLogin:output_type -> agent.StartChatGPTLoginEvent
+	189, // 309: agent.Agent.StartClaudeLogin:output_type -> agent.StartClaudeLoginEvent
+	191, // 310: agent.Agent.SubmitClaudeLoginCode:output_type -> agent.SubmitClaudeLoginCodeResponse
+	223, // 311: agent.Agent.ReauthenticateCloud:output_type -> agent.CloudLoginEvent
+	229, // 312: agent.Agent.ResolveAuthentication:output_type -> agent.AuthenticationDecisionResponse
+	6,   // 313: agent.Agent.ExportImage:output_type -> agent.ExportImageResponse
+	242, // 314: agent.Worker.Accounting:output_type -> agent.WorkerAccountingBatch
+	195, // 315: agent.Worker.RunTurn:output_type -> agent.WorkerToHost
+	195, // 316: agent.Worker.RunTurnWithAuthentication:output_type -> agent.WorkerToHost
+	195, // 317: agent.Worker.RunManagedTurn:output_type -> agent.WorkerToHost
+	195, // 318: agent.Worker.RunManagedTurnWithSettings:output_type -> agent.WorkerToHost
+	195, // 319: agent.Worker.RunManagedTurnWithSelection:output_type -> agent.WorkerToHost
+	258, // 320: agent.Enterprise.Login:output_type -> agent.EnterpriseStatus
+	258, // 321: agent.Enterprise.GetStatus:output_type -> agent.EnterpriseStatus
+	258, // 322: agent.Enterprise.Synchronize:output_type -> agent.EnterpriseStatus
+	259, // 323: agent.Enterprise.GetPolicy:output_type -> agent.EnterprisePolicy
+	258, // 324: agent.Enterprise.Logout:output_type -> agent.EnterpriseStatus
+	258, // 325: agent.Enterprise.UseStandalone:output_type -> agent.EnterpriseStatus
+	236, // [236:326] is the sub-list for method output_type
+	146, // [146:236] is the sub-list for method input_type
 	146, // [146:146] is the sub-list for extension type_name
 	146, // [146:146] is the sub-list for extension extendee
 	0,   // [0:146] is the sub-list for field type_name
@@ -21762,7 +21917,7 @@ func file_agent_proto_init() {
 	}
 	file_agent_proto_msgTypes[171].OneofWrappers = []any{}
 	file_agent_proto_msgTypes[178].OneofWrappers = []any{}
-	file_agent_proto_msgTypes[186].OneofWrappers = []any{
+	file_agent_proto_msgTypes[188].OneofWrappers = []any{
 		(*HostToWorker_Start)(nil),
 		(*HostToWorker_PermResponse)(nil),
 		(*HostToWorker_Cancel)(nil),
@@ -21778,7 +21933,7 @@ func file_agent_proto_init() {
 		(*HostToWorker_SessionModelResponse)(nil),
 		(*HostToWorker_ModelAuthorizationResponse)(nil),
 	}
-	file_agent_proto_msgTypes[188].OneofWrappers = []any{
+	file_agent_proto_msgTypes[190].OneofWrappers = []any{
 		(*WorkerToHost_Event)(nil),
 		(*WorkerToHost_PermRequest)(nil),
 		(*WorkerToHost_Persist)(nil),
@@ -21797,22 +21952,22 @@ func file_agent_proto_init() {
 		(*WorkerToHost_SessionModelRequest)(nil),
 		(*WorkerToHost_ModelAuthorizationRequest)(nil),
 	}
-	file_agent_proto_msgTypes[208].OneofWrappers = []any{}
-	file_agent_proto_msgTypes[210].OneofWrappers = []any{
+	file_agent_proto_msgTypes[210].OneofWrappers = []any{}
+	file_agent_proto_msgTypes[212].OneofWrappers = []any{
 		(*OpenInferenceEvent_Event)(nil),
 		(*OpenInferenceEvent_Error)(nil),
 		(*OpenInferenceEvent_Done)(nil),
 	}
-	file_agent_proto_msgTypes[234].OneofWrappers = []any{}
-	file_agent_proto_msgTypes[237].OneofWrappers = []any{}
+	file_agent_proto_msgTypes[236].OneofWrappers = []any{}
 	file_agent_proto_msgTypes[239].OneofWrappers = []any{}
+	file_agent_proto_msgTypes[241].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agent_proto_rawDesc), len(file_agent_proto_rawDesc)),
 			NumEnums:      5,
-			NumMessages:   261,
+			NumMessages:   263,
 			NumExtensions: 0,
 			NumServices:   3,
 		},

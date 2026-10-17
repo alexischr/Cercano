@@ -2,33 +2,42 @@ package anthropicauth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"html"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
 
-// Pending is a started authorization awaiting user approval. The caller shows
-// AuthorizeURL (or opens it in a browser), then calls Wait to block for the
-// loopback redirect — or Redeem with a manually pasted code for the
-// headless/SSH fallback. Exactly one of Wait/Redeem should be called; both
-// close the loopback listener.
+// Pending is a started authorization awaiting user approval. It carries two
+// URLs for the same grant (one PKCE pair, one state): AuthorizeURL redirects
+// back to the loopback listener, ManualAuthorizeURL lands on a hosted page
+// that shows the code for the user to copy. The caller opens AuthorizeURL in a
+// browser and shows ManualAuthorizeURL for the headless/SSH case, then calls
+// Wait, which completes from whichever arrives first: the loopback redirect or
+// a pasted code. Redeem completes from a pasted code alone. Both close the
+// loopback listener.
 type Pending struct {
-	// AuthorizeURL is the URL to open/display for the user to approve.
+	// AuthorizeURL is the URL to open in a browser on this machine.
 	AuthorizeURL string
+	// ManualAuthorizeURL is the URL to show for copying to a browser anywhere;
+	// approving it displays a code to paste back.
+	ManualAuthorizeURL string
 
-	state       string
-	verifier    string
-	redirectURI string
-	listener    net.Listener
-	flow        Flow
+	state             string
+	verifier          string
+	redirectURI       string
+	manualRedirectURI string
+	listener          net.Listener
+	flow              Flow
 }
 
 // Start binds a loopback listener on an ephemeral port, generates the PKCE
-// pair and CSRF state, and builds the authorize URL pointing back at that
-// port. The listener is held open until Wait/Redeem/Close.
+// pair and CSRF state, and builds both authorize URLs. The listener is held
+// open until Wait/Redeem/Close.
 func (f Flow) Start(ctx context.Context) (*Pending, error) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -48,15 +57,32 @@ func (f Flow) Start(ctx context.Context) (*Pending, error) {
 		_ = ln.Close()
 		return nil, err
 	}
+	manual := f.manualRedirectURL()
 	return &Pending{
-		AuthorizeURL: f.authorizeURL(redirectURI, pk.challenge, state),
-		state:        state,
-		verifier:     pk.verifier,
-		redirectURI:  redirectURI,
-		listener:     ln,
-		flow:         f,
+		AuthorizeURL:       f.authorizeURL(redirectURI, pk.challenge, state),
+		ManualAuthorizeURL: f.authorizeURL(manual, pk.challenge, state),
+		state:              state,
+		verifier:           pk.verifier,
+		redirectURI:        redirectURI,
+		manualRedirectURI:  manual,
+		listener:           ln,
+		flow:               f,
 	}, nil
 }
+
+// PastedCode is a code the user pasted while Wait is running. Wait reports the
+// outcome of redeeming it on Result (buffered by the sender): nil means the
+// sign-in completed and Wait returns the token set; an error means the paste
+// was rejected and Wait keeps waiting, so the user can paste again.
+type PastedCode struct {
+	Code   string
+	Result chan<- error
+}
+
+// ErrInvalidPastedCode reports a paste that is not a code for this sign-in
+// (empty, malformed, or carrying another attempt's state). Nothing was sent to
+// the token endpoint.
+var ErrInvalidPastedCode = errors.New("anthropic oauth: pasted value is not a code for this sign-in")
 
 type callbackResult struct {
 	code string
@@ -65,75 +91,113 @@ type callbackResult struct {
 
 // Wait serves the loopback listener until the browser hits /callback, renders
 // a success (or failure) page to that browser, then exchanges the returned
-// code for a token set. It returns ctx.Err() if the context is canceled
-// first. The listener is always closed on return.
+// code for a token set. Codes arriving on pasted (nil disables pasting) are
+// redeemed as they come; a rejected paste is reported on its Result and the
+// wait continues. It returns ctx.Err() if the context is canceled first. The
+// listener is always closed on return.
 //
 // Teardown is graceful: the handler flushes its response with Connection:
 // close, and Wait shuts the server down with Shutdown (not Close) so the
 // browser fully receives the page instead of a reset connection — the reset
 // is what renders as "localhost refused to connect".
-func (p *Pending) Wait(ctx context.Context) (*TokenSet, error) {
+func (p *Pending) Wait(ctx context.Context, pasted <-chan PastedCode) (*TokenSet, error) {
 	done := make(chan callbackResult, 1)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
+		var cb callbackResult
 		switch {
 		case q.Get("error") != "":
 			e := q.Get("error")
 			writeBrowserPage(w, false, "Sign-in failed", "Anthropic returned an error: "+e+". You can close this window and try again in Cercano.")
-			done <- callbackResult{err: fmt.Errorf("anthropic oauth: authorize error: %s", e)}
+			cb = callbackResult{err: fmt.Errorf("anthropic oauth: authorize error: %s", e)}
 		case q.Get("code") == "":
 			writeBrowserPage(w, false, "Sign-in failed", "No authorization code was returned. You can close this window and try again in Cercano.")
-			done <- callbackResult{err: fmt.Errorf("anthropic oauth: callback missing code")}
+			cb = callbackResult{err: fmt.Errorf("anthropic oauth: callback missing code")}
 		case q.Get("state") != p.state:
 			writeBrowserPage(w, false, "Sign-in failed", "The sign-in could not be verified (state mismatch). You can close this window and try again in Cercano.")
-			done <- callbackResult{err: fmt.Errorf("anthropic oauth: state mismatch")}
+			cb = callbackResult{err: fmt.Errorf("anthropic oauth: state mismatch")}
 		default:
 			writeBrowserPage(w, true, "Successfully authenticated", "You're signed in to Claude. You may close this window or tab and return to Cercano.")
-			done <- callbackResult{code: q.Get("code")}
+			cb = callbackResult{code: q.Get("code")}
+		}
+		// Only the first callback counts; a repeat must not block the handler.
+		select {
+		case done <- cb:
+		default:
 		}
 	})
 
 	srv := &http.Server{Handler: mux}
 	go func() { _ = srv.Serve(p.listener) }()
-
-	var cb callbackResult
-	select {
-	case <-ctx.Done():
-		_ = srv.Close()
-		return nil, ctx.Err()
-	case cb = <-done:
-	}
-
 	// Drain the response gracefully before returning; the handler already set
 	// Connection: close, so the browser drops its socket and Shutdown returns
 	// promptly rather than blocking on a keep-alive connection.
-	shutCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	_ = srv.Shutdown(shutCtx)
+	defer func() {
+		shutCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutCtx)
+	}()
 
-	if cb.err != nil {
-		return nil, cb.err
+	for {
+		select {
+		case <-ctx.Done():
+			_ = srv.Close()
+			return nil, ctx.Err()
+		case cb := <-done:
+			if cb.err != nil {
+				return nil, cb.err
+			}
+			return p.flow.exchange(ctx, cb.code, p.state, p.verifier, p.redirectURI)
+		case pc := <-pasted:
+			ts, err := p.redeem(ctx, pc.Code)
+			if pc.Result != nil {
+				pc.Result <- err
+			}
+			if err == nil {
+				return ts, nil
+			}
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+		}
 	}
-	return p.flow.exchange(ctx, cb.code, p.state, p.verifier, p.redirectURI)
 }
 
-// Redeem completes the flow from a manually pasted code — the code=true
-// fallback for headless/SSH sessions where the browser can't reach the
-// loopback port. The pasted value may arrive as "<code>#<state>"; when it
-// does the embedded state is used, otherwise the state we generated. The
-// listener is closed on return.
+// Redeem completes the flow from a manually pasted code alone, without
+// serving the loopback. The listener is closed on return.
 func (p *Pending) Redeem(ctx context.Context, pasted string) (*TokenSet, error) {
 	defer p.listener.Close()
-	code, state := strings.TrimSpace(pasted), p.state
-	if i := strings.IndexByte(code, '#'); i >= 0 {
-		code, state = code[:i], code[i+1:]
+	return p.redeem(ctx, pasted)
+}
+
+// redeem exchanges a pasted value. Two shapes are accepted:
+//
+//   - "<code>#<state>", as displayed by the manual redirect page (a bare code
+//     is taken to belong to this attempt). Exchanged with the manual
+//     redirect_uri, which is what that code was issued against.
+//   - The full loopback callback URL, for a user who opened AuthorizeURL in a
+//     browser that cannot reach this machine and copied the address of the
+//     page that failed to load. Exchanged with the loopback redirect_uri.
+//
+// Either way the state must match this attempt's.
+func (p *Pending) redeem(ctx context.Context, pasted string) (*TokenSet, error) {
+	v := strings.TrimSpace(pasted)
+	code, state, redirectURI := v, p.state, p.manualRedirectURI
+	if strings.HasPrefix(v, p.redirectURI+"?") {
+		u, err := url.Parse(v)
+		if err != nil {
+			return nil, ErrInvalidPastedCode
+		}
+		code, state, redirectURI = u.Query().Get("code"), u.Query().Get("state"), p.redirectURI
+	} else if i := strings.IndexByte(v, '#'); i >= 0 {
+		code, state = v[:i], v[i+1:]
 	}
-	if code == "" {
-		return nil, fmt.Errorf("anthropic oauth: empty pasted code")
+	if code == "" || strings.ContainsAny(code, " \t\r\n") || state != p.state {
+		return nil, ErrInvalidPastedCode
 	}
-	return p.flow.exchange(ctx, code, state, p.verifier, p.redirectURI)
+	return p.flow.exchange(ctx, code, state, p.verifier, redirectURI)
 }
 
 // Close releases the loopback listener without completing the flow (e.g. the

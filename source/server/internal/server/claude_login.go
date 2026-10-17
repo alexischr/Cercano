@@ -2,8 +2,10 @@
 //
 // Server side of the Claude subscription sign-in. The client opens a stream;
 // the agent starts the PKCE loopback flow and immediately sends a frame
-// carrying the authorize URL for the client to open in a browser, then blocks
-// on the loopback redirect. On success it stores the token set in the keychain
+// carrying the authorize URL for the client to open in a browser, the manual
+// URL for a browser on another machine, and a login id. It then blocks on the
+// loopback redirect or a code pasted through SubmitClaudeLoginCode under that
+// id, whichever comes first. On success it stores the token set in the keychain
 // under the profile name, creates/updates a messages+subscription cloud
 // profile, optionally activates it, and sends a terminal frame (done=true,
 // ok=true). Failures send a terminal frame with ok=false and the reason.
@@ -11,12 +13,18 @@
 package server
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
 	"strings"
 
 	"cercano/source/server/internal/anthropicauth"
 	"cercano/source/server/internal/cloudfactory"
 	"cercano/source/server/pkg/config"
 	"cercano/source/server/pkg/proto"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // StartClaudeLogin implements proto.AgentServer.
@@ -53,16 +61,23 @@ func (s *Server) runClaudeLogin(req *proto.StartClaudeLoginRequest, stream proto
 	}
 	// Own the listener immediately, including failure before Wait is reached.
 	defer pending.Close()
+	loginID, pasted, release, err := s.registerClaudeLogin(ctx)
+	if err != nil {
+		return sendClaudeLoginResult(stream, false, "", loginFailure(err))
+	}
+	defer release()
 	if err := stream.Send(&proto.StartClaudeLoginEvent{
-		AuthorizeUrl: pending.AuthorizeURL,
+		AuthorizeUrl:       pending.AuthorizeURL,
+		ManualAuthorizeUrl: pending.ManualAuthorizeURL,
+		LoginId:            loginID,
 	}); err != nil {
 		return err
 	}
 
-	// Block until the user approves in their browser (or ctx cancels). Wait
-	// catches the loopback redirect, renders the success page, and exchanges
-	// the code for a token set.
-	ts, err := pending.Wait(ctx)
+	// Block until the user approves (or ctx cancels). Wait catches the
+	// loopback redirect, renders the success page, and exchanges the code for
+	// a token set — or redeems a code pasted through SubmitClaudeLoginCode.
+	ts, err := pending.Wait(ctx, pasted)
 	if err != nil {
 		return sendClaudeLoginResult(stream, false, "", loginFailure(err))
 	}
@@ -111,4 +126,66 @@ func sendClaudeLoginResult(stream proto.Agent_StartClaudeLoginServer, ok bool, p
 		ProfileName: profile,
 		Error:       errMsg,
 	})
+}
+
+// claudeLogin is the paste inbox of one in-flight sign-in, keyed by login id
+// in Server.claudeLogins. done closes when the sign-in stops waiting, so a
+// submit never blocks on an inbox nobody reads.
+type claudeLogin struct {
+	pasted chan anthropicauth.PastedCode
+	done   <-chan struct{}
+}
+
+// registerClaudeLogin opens a paste inbox under a fresh unguessable login id.
+// release must be called once the sign-in stops waiting.
+func (s *Server) registerClaudeLogin(ctx context.Context) (string, <-chan anthropicauth.PastedCode, func(), error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", nil, nil, err
+	}
+	id := hex.EncodeToString(b[:])
+	ctx, cancel := context.WithCancel(ctx)
+	l := &claudeLogin{pasted: make(chan anthropicauth.PastedCode), done: ctx.Done()}
+	s.claudeLogins.Store(id, l)
+	return id, l.pasted, func() {
+		s.claudeLogins.Delete(id)
+		cancel()
+	}, nil
+}
+
+// SubmitClaudeLoginCode implements proto.AgentServer. It hands a pasted code
+// to the waiting sign-in and reports whether it was accepted; the sign-in's
+// own stream carries the terminal frame either way.
+func (s *Server) SubmitClaudeLoginCode(ctx context.Context, req *proto.SubmitClaudeLoginCodeRequest) (*proto.SubmitClaudeLoginCodeResponse, error) {
+	v, ok := s.claudeLogins.Load(req.GetLoginId())
+	if !ok {
+		return nil, status.Error(codes.NotFound, "no Claude sign-in is waiting under that id")
+	}
+	l := v.(*claudeLogin)
+	result := make(chan error, 1)
+	select {
+	case l.pasted <- anthropicauth.PastedCode{Code: req.GetCode(), Result: result}:
+	case <-l.done:
+		return nil, status.Error(codes.FailedPrecondition, "the Claude sign-in is no longer waiting")
+	case <-ctx.Done():
+		return nil, status.FromContextError(ctx.Err()).Err()
+	}
+	select {
+	case err := <-result:
+		if err != nil {
+			return &proto.SubmitClaudeLoginCodeResponse{Error: pastedCodeFailure(err)}, nil
+		}
+		return &proto.SubmitClaudeLoginCodeResponse{Accepted: true}, nil
+	case <-ctx.Done():
+		return nil, status.FromContextError(ctx.Err()).Err()
+	}
+}
+
+// pastedCodeFailure explains a rejected paste in terms the user can act on,
+// keeping loginFailure's no-raw-detail rule for everything else.
+func pastedCodeFailure(err error) string {
+	if errors.Is(err, anthropicauth.ErrInvalidPastedCode) {
+		return "That isn't a code for this sign-in. Copy the whole code shown after approving, and paste it again."
+	}
+	return loginFailure(err)
 }

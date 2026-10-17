@@ -47,7 +47,7 @@ type claudeReauthenticationStream struct {
 }
 
 func (s *claudeReauthenticationStream) Send(e *proto.StartClaudeLoginEvent) error {
-	return s.Agent_ReauthenticateCloudServer.Send(&proto.CloudLoginEvent{ProfileName: s.profile, Provider: "anthropic", AttemptId: s.id, AuthorizeUrl: e.GetAuthorizeUrl(), Done: e.GetDone(), Ok: e.GetOk(), Error: e.GetError()})
+	return s.Agent_ReauthenticateCloudServer.Send(&proto.CloudLoginEvent{ProfileName: s.profile, Provider: "anthropic", AttemptId: s.id, AuthorizeUrl: e.GetAuthorizeUrl(), ManualAuthorizeUrl: e.GetManualAuthorizeUrl(), LoginId: e.GetLoginId(), Done: e.GetDone(), Ok: e.GetOk(), Error: e.GetError()})
 }
 
 type chatgptReauthenticationStream struct {
