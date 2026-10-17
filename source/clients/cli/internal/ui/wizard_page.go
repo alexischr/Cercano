@@ -824,12 +824,37 @@ func (wp *wizardPage) summary() string {
 	if wizard.ModeUsesCloud(wp.state.LocusMode) && wp.state.AuthMethod == "existing" {
 		if p := wp.existingActiveProfile(); p != nil {
 			fmt.Fprintf(&b, "  account:  %s (unchanged)\n", p.Name)
-			for _, tier := range []struct{ label, quality string }{{"Deep reasoning", "premium"}, {"Everyday development", "standard"}, {"Lightweight tasks", "economy"}} {
+			pending, err := wizardCloudChoices(wp.state, p.Choices)
+			if err != nil {
+				fmt.Fprintf(&b, "  Cannot apply cloud choices: %s\n", err)
+			}
+			for _, tier := range []struct {
+				label, quality string
+				slots          []string
+			}{
+				{"Deep reasoning", "premium", []string{"most_capable"}},
+				{"Everyday development", "standard", []string{"everyday"}},
+				{"Lightweight tasks", "economy", []string{"fast_light", "fast_light_text"}},
+			} {
 				model := p.EffectiveQualityModels[tier.quality]
 				if model == "" {
 					model = "current account default (not resolved)"
 				}
-				fmt.Fprintf(&b, "  %s: %s\n", tier.label, model)
+				edited := false
+				for _, slot := range tier.slots {
+					key := slot + "." + wizard.SideCloud
+					_, present := wp.state.TierPicks[key]
+					edited = edited || (present && wp.state.CloudPicksEdited[key])
+				}
+				if pending != nil && edited {
+					next := pending.TierOverrides[tier.quality]
+					if next == "" {
+						next = "automatic account default (not resolved)"
+					}
+					fmt.Fprintf(&b, "  %s: %s (was: %s)\n", tier.label, next, model)
+				} else {
+					fmt.Fprintf(&b, "  %s: %s\n", tier.label, model)
+				}
 			}
 		}
 	}

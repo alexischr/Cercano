@@ -509,3 +509,42 @@ func TestWizardPreviewIncludesEveryAppliedLocalAssignment(t *testing.T) {
 		}
 	}
 }
+
+func TestWizardExistingAccountPreviewShowsEditedCloudChoice(t *testing.T) {
+	wp := &wizardPage{
+		state:            wizard.State{LocusMode: "cloud_only", AuthMethod: "existing", CloudProvider: "anthropic", TierPicks: map[string]string{"most_capable.cloud": "new-premium"}, CloudPicksEdited: map[string]bool{"most_capable.cloud": true}},
+		curActiveProfile: "existing",
+		curProfiles:      []agentclient.CloudProfileInfo{{Name: "existing", EffectiveQualityModels: map[string]string{"premium": "old-premium"}}},
+	}
+	text := wp.summary()
+	if !strings.Contains(text, "Deep reasoning: new-premium (was: old-premium)") {
+		t.Fatalf("preview conceals pending cloud change: %s", text)
+	}
+}
+
+func TestWizardExistingAccountPreviewCloudChoiceVariants(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		picks map[string]string
+		want  string
+	}{
+		{"clear", map[string]string{"most_capable.cloud": ""}, "Deep reasoning: automatic account default (not resolved) (was: old-premium)"},
+		{"shared economy", map[string]string{"fast_light_text.cloud": "new-economy"}, "Lightweight tasks: new-economy (was: old-economy)"},
+		{"conflict", map[string]string{"fast_light.cloud": "one", "fast_light_text.cloud": "two"}, "Cannot apply cloud choices: cloud fast/light slots share Economy"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			edited := map[string]bool{}
+			for key := range tc.picks {
+				edited[key] = true
+			}
+			wp := &wizardPage{
+				state:            wizard.State{LocusMode: "cloud_only", AuthMethod: "existing", CloudProvider: "anthropic", TierPicks: tc.picks, CloudPicksEdited: edited},
+				curActiveProfile: "existing",
+				curProfiles:      []agentclient.CloudProfileInfo{{Name: "existing", EffectiveQualityModels: map[string]string{"premium": "old-premium", "economy": "old-economy"}}},
+			}
+			if text := wp.summary(); !strings.Contains(text, tc.want) {
+				t.Fatalf("missing %q: %s", tc.want, text)
+			}
+		})
+	}
+}
