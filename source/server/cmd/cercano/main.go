@@ -62,6 +62,7 @@ import (
 	"cercano/source/server/internal/tools"
 	"cercano/source/server/internal/toolstack"
 	"cercano/source/server/pkg/config"
+	"cercano/source/server/pkg/installcontext"
 	"cercano/source/server/pkg/proto"
 	"cercano/source/server/pkg/update"
 
@@ -201,7 +202,7 @@ const drainGrace = 10 * time.Minute
 // durable runtime-event recording a no-op rather than a crash.
 // stopRequest may be nil (MCP embedded mode); if provided, it must be
 // caller-owned and will be configured as the process stop requester.
-func startGRPCServer(cfg config.Config, bindAddr string, events *crashlog.Writer, stopRequest *processStopRequest) (string, func(), *processStopRequest, error) {
+func startGRPCServer(cfg config.Config, bindAddr string, events *crashlog.Writer, stopRequest *processStopRequest, verified installcontext.Verified) (string, func(), *processStopRequest, error) {
 	if warn := ollamaStartupWarning(checkOllama, cfg.OllamaURL); warn != "" {
 		fmt.Fprintln(os.Stderr, warn)
 	}
@@ -645,7 +646,7 @@ func startGRPCServer(cfg config.Config, bindAddr string, events *crashlog.Writer
 	proto.RegisterAgentServer(s, srv)
 	// Ownership transfers to the returned cleanup; this function returns while
 	// the agent is still running, so cancellation must not be deferred here.
-	stopTUINotices := startInstalledTUINotices(srv)
+	stopTUINotices := startInstalledTUINotices(verified, srv)
 
 	go func() {
 		if err := s.Serve(lis); err != nil {
@@ -888,9 +889,12 @@ func main() {
 	// config load, DB open, provider, or agent start. A child launched with
 	// the locators must prove its actual executable and agent role against
 	// the protected completed selection or startup is refused here; without
-	// locators startup is unchanged.
-	if code, ok := claimInstallContext(os.Args); !ok {
+	// locators startup is unchanged and the verified context is absent.
+	var verified installcontext.Verified
+	if v, code, ok := claimInstallContext(os.Args); !ok {
 		os.Exit(code)
+	} else {
+		verified = v
 	}
 	// Handle subcommands before flag parsing.
 	if len(os.Args) > 1 {
@@ -954,7 +958,7 @@ func main() {
 				fmt.Fprintf(os.Stderr, "[WARN] Failed to load config: %v (using defaults)\n", err)
 				cfg = config.Defaults()
 			}
-			runServerMode(cfg)
+			runServerMode(cfg, verified)
 			return
 		case "worker":
 			// Isolated turn-execution worker: serves the Worker gRPC service on a
@@ -1044,9 +1048,9 @@ func main() {
 	case *mcpMode:
 		runMCPMode(cfg, *grpcAddr)
 	case *forceServer:
-		runServerMode(cfg)
+		runServerMode(cfg, verified)
 	default:
-		runServerMode(cfg)
+		runServerMode(cfg, verified)
 	}
 }
 
@@ -1848,7 +1852,12 @@ func (r *processStopRequest) isForce() bool              { return r != nil && r.
 // wait is the channel the serve loop selects on alongside OS signals.
 func (r *processStopRequest) wait() <-chan struct{} { return r.ch }
 
-func runServerMode(cfg config.Config) {
+// runServerMode starts the gRPC server in standalone mode (for IDE clients).
+// verified carries the early-main verified installation context (absent when
+// started without locators, e.g. via `cercano agent`), so trusted-observer
+// wiring inside the agent uses the verified identity instead of re-deriving
+// or re-verifying paths.
+func runServerMode(cfg config.Config, verified installcontext.Verified) {
 	// Tee log.Printf diagnostics to ~/.cercano-dispatch.log so they survive
 	// when the CLI auto-launches this agent and swallows its stderr. Without
 	// this, subsystem logs (e.g. [mcphost] connection failures) are lost.
@@ -1888,7 +1897,7 @@ func runServerMode(cfg config.Config) {
 
 	// Create and own the stop request for standalone server mode
 	stopRequest := newProcessStopRequest()
-	addr, cleanup, stopRequest, err := startGRPCServer(cfg, ":"+cfg.Port, crashWriter, stopRequest)
+	addr, cleanup, stopRequest, err := startGRPCServer(cfg, ":"+cfg.Port, crashWriter, stopRequest, verified)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "\n[ERROR] %v\n", err)
 		if crashWriter != nil {
@@ -1976,7 +1985,7 @@ func runMCPMode(cfg config.Config, externalGRPC string) {
 		// MCP embedded mode opens no crash log; runtime events are a
 		// no-op here rather than a second writer on the same file.
 		// Embedded MCP owns no standalone stop loop; safe-stop stays unavailable.
-		addr, _, _, err := startGRPCServer(cfg, "localhost:0", nil, nil)
+		addr, _, _, err := startGRPCServer(cfg, "localhost:0", nil, nil, installcontext.Verified{})
 		if err != nil {
 			// Start in degraded mode so the MCP pipe stays alive and
 			// the client gets a clear error instead of "Failed to reconnect".

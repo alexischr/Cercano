@@ -52,22 +52,36 @@ func VerifyChild(ctx context.Context, locators Locators, stateRoot, executable s
 		stateRoot, versionsDirectory, executable, client)
 }
 
-// VerifyStartup is the early main() gate for a child launched with the
-// approved locators: it validates the ACTUAL running executable
+// VerifyStartupVerified is the early main() gate for a child launched with
+// the approved locators: it validates the ACTUAL running executable
 // (os.Executable(), never a caller- or locator-supplied path) and the fixed
 // launcher role against the installation's protected completed selection,
 // using the per-user state root derived from the environment. It must run
 // before any normal flag parsing, config load, DB open, provider or agent
-// start. An error means the process must refuse startup; without locators
-// startup is unchanged and this is never called.
-func VerifyStartup(ctx context.Context, locators Locators, client bool) (enrollment.Record, error) {
+// start. It performs exactly ONE verification pass and returns the opaque
+// verified installation context for consumers that need it (stable launcher,
+// enrollment identity, role); on failure the returned context is absent and
+// paired with the error, so a caller cannot keep a half-verified identity.
+// An error means the process must refuse startup; without locators startup
+// is unchanged and this is never called.
+func VerifyStartupVerified(ctx context.Context, locators Locators, client bool) (Verified, error) {
 	executable, err := os.Executable()
 	if err != nil {
-		return enrollment.Record{}, fmt.Errorf("installcontext: running executable: %w", err)
+		return Verified{}, fmt.Errorf("installcontext: running executable: %w", err)
 	}
 	stateRoot, err := DefaultStateRoot()
 	if err != nil {
+		return Verified{}, err
+	}
+	return VerifyChildVerified(ctx, locators, stateRoot, executable, client)
+}
+
+// VerifyStartup keeps the bare verified record for existing callers; it is
+// the same single-pass startup gate as VerifyStartupVerified.
+func VerifyStartup(ctx context.Context, locators Locators, client bool) (enrollment.Record, error) {
+	verified, err := VerifyStartupVerified(ctx, locators, client)
+	if err != nil {
 		return enrollment.Record{}, err
 	}
-	return VerifyChild(ctx, locators, stateRoot, executable, client)
+	return verified.Record(), nil
 }

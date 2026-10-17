@@ -19,6 +19,7 @@ import (
 	cliui "cercano/source/clients/cli/internal/ui"
 	"cercano/source/server/pkg/agentclient"
 	"cercano/source/server/pkg/config"
+	"cercano/source/server/pkg/installcontext"
 )
 
 // version is set at build time via -ldflags "-X main.version=...".
@@ -37,9 +38,12 @@ func main() {
 	// before any config load or agent launch. A child launched with the
 	// locators must prove its actual executable and client role against the
 	// protected completed selection or startup is refused here; without
-	// locators startup is unchanged.
-	if code, ok := claimInstallContext(os.Args); !ok {
+	// locators startup is unchanged and the verified context is absent.
+	var verified installcontext.Verified
+	if v, code, ok := claimInstallContext(os.Args); !ok {
 		os.Exit(code)
+	} else {
+		verified = v
 	}
 
 	handoffFD := flag.Int("internal-tui-handoff-fd", -1, "Private TUI restart descriptor")
@@ -86,14 +90,17 @@ func main() {
 		// No model round-trip — the doc renders through the normal viewport path.
 		seedDoc = loadMdTestDoc(flag.Arg(0))
 	}
-	runCLI(cfg, openHistory, openWizard, seedDoc)
+	runCLI(cfg, openHistory, openWizard, seedDoc, verified)
 }
 
 // runCLI launches the cercano TUI. Connects to a running agent on
 // localhost:<cfg.Port>, or auto-launches one (as `cercano agent`) on miss.
 // openHistoryOnStart opens the /history picker immediately after first paint
-// (used by the -r / --resume flag).
-func runCLI(cfg config.Config, openHistoryOnStart, openWizardOnStart bool, seedDoc string) {
+// (used by the -r / --resume flag). verified carries the early-main verified
+// installation context (absent without locators) so trusted-observer
+// consumers use the verified stable launcher instead of re-deriving or
+// re-verifying paths.
+func runCLI(cfg config.Config, openHistoryOnStart, openWizardOnStart bool, seedDoc string, verified installcontext.Verified) {
 	addr := "localhost:" + cfg.Port
 	fmt.Fprintln(os.Stderr, "cercano: connecting to", addr+"…")
 	ag, err := agentclient.Dial(context.Background(), addr)
@@ -106,7 +113,7 @@ func runCLI(cfg config.Config, openHistoryOnStart, openWizardOnStart bool, seedD
 		fmt.Fprintln(os.Stderr, "cercano: auto-launched agent server (log:", ag.ServerLog+")")
 	}
 
-	m := cliui.New(ag, openHistoryOnStart).WithTUIVersion(version)
+	m := cliui.New(ag, openHistoryOnStart).WithTUIVersion(version).WithVerifiedContext(verified)
 	if inheritedTUI != nil {
 		m = m.RestoreTUI(*inheritedTUI)
 		openWizardOnStart = false

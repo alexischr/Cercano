@@ -32,9 +32,12 @@ func TestClaimInstallContextNoLocatorsLeavesStartupUnchanged(t *testing.T) {
 		{"cercano", "--", installcontext.FlagInstallRoot, "/opt/x", installcontext.FlagInstallID, "abc"},
 	} {
 		os.Args = args
-		code, ok := claimInstallContext(os.Args)
+		verified, code, ok := claimInstallContext(os.Args)
 		if !ok || code != 0 {
 			t.Fatalf("args %v: refused with code %d, want continue", args, code)
+		}
+		if verified.Present() {
+			t.Fatalf("args %v: verified context minted without locators", args)
 		}
 		if !reflect.DeepEqual(os.Args, args) {
 			t.Fatalf("args %v: os.Args rewritten to %v without locators", args, os.Args)
@@ -59,7 +62,7 @@ func TestClaimInstallContextRejectsMalformedReservedVariants(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			os.Args = args
-			code, ok := claimInstallContext(os.Args)
+			_, code, ok := claimInstallContext(os.Args)
 			if ok {
 				t.Fatalf("args %v: malformed locators accepted", args)
 			}
@@ -77,12 +80,15 @@ func TestClaimInstallContextValidLocatorsStripAndRefuseUnverifiedChild(t *testin
 	// running test binary is not the enrolled image.
 	root := t.TempDir()
 	os.Args = []string{"cercano", "--mcp", installcontext.FlagInstallRoot, root, installcontext.FlagInstallID, strings.Repeat("a", 32)}
-	code, ok := claimInstallContext(os.Args)
+	verified, code, ok := claimInstallContext(os.Args)
 	if ok {
 		t.Fatal("unverified child context accepted")
 	}
 	if code != childRefusalExit {
 		t.Fatalf("code = %d, want %d (verification refusal)", code, childRefusalExit)
+	}
+	if verified.Present() {
+		t.Fatal("verified context returned alongside verification refusal")
 	}
 	want := []string{"cercano", "--mcp"}
 	if !reflect.DeepEqual(os.Args, want) {

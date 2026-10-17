@@ -2,6 +2,7 @@ package ui
 
 import (
 	"cercano/source/server/pkg/forcesave"
+	"cercano/source/server/pkg/installcontext"
 	tea "charm.land/bubbletea/v2"
 	"context"
 	"time"
@@ -21,15 +22,33 @@ type forceSaveResultMsg struct {
 	err   error
 }
 
-func discoverForceSaveCmd() tea.Msg {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	local, e := forcesave.Discover(ctx)
-	if e != nil || local == nil {
-		return forceSavePollMsg{}
+// discoverForceSaveCmd is the startup force-save discovery command. With a
+// verified installation context it resolves the verified stable launcher and
+// discovers force-save strictly through forcesave.DiscoverVerified, which
+// requires the verified record to match the on-disk enrollment exactly — a
+// stale startup record (disk changed after verification) yields no client
+// instead of silently rebinding to whatever is on disk now. Without a
+// verified context (TUI not launched as a verified installed member) the
+// pre-verification Discover path is unchanged.
+func (m Model) discoverForceSaveCmd() tea.Cmd {
+	verified := m.verifiedContext
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		local, e := discoverForceSaveLocal(ctx, verified)
+		if e != nil || local == nil {
+			return forceSavePollMsg{}
+		}
+		r, ok, e := local.Pending(ctx)
+		return forceSavePollMsg{local, r, ok && e == nil}
 	}
-	r, ok, e := local.Pending(ctx)
-	return forceSavePollMsg{local, r, ok && e == nil}
+}
+
+func discoverForceSaveLocal(ctx context.Context, verified installcontext.Verified) (*forcesave.Local, error) {
+	if !verified.Present() {
+		return forcesave.Discover(ctx)
+	}
+	return forcesave.DiscoverVerified(ctx, verified)
 }
 func pollForceSaveCmd(client forceSaveClient) tea.Cmd {
 	return func() tea.Msg {

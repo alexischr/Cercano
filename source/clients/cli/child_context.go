@@ -27,20 +27,22 @@ const (
 // reserved installation-locator flags, rewrites os.Args to the remaining
 // argv, and when locators are present runs the early child verification.
 // It returns (code, false) when the caller must exit immediately; (0, true)
-// means startup may continue (with os.Args stripped of any locators).
-func claimInstallContext(argv []string) (int, bool) {
+// means startup may continue (with os.Args stripped of any locators) and
+// carries the verified installation context, absent without locators.
+func claimInstallContext(argv []string) (installcontext.Verified, int, bool) {
 	locators, found, remaining, err := installcontext.Parse(argv[1:])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "cercano-cli:", err)
-		return locatorUsageExit, false
+		return installcontext.Verified{}, locatorUsageExit, false
 	}
 	if !found {
-		return 0, true
+		return installcontext.Verified{}, 0, true
 	}
 	os.Args = append(os.Args[:1:1], remaining...)
-	if _, err := installcontext.VerifyStartup(context.Background(), locators, true); err != nil {
+	verified, err := installcontext.VerifyStartupVerified(context.Background(), locators, true)
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "cercano-cli: refusing startup: versioned child failed installation verification")
-		return childRefusalExit, false
+		return installcontext.Verified{}, childRefusalExit, false
 	}
-	return 0, true
+	return verified, 0, true
 }

@@ -33,8 +33,8 @@ func TestMainWiresInstallContextClaimBeforeFlagParsing(t *testing.T) {
 			got = append(got, strings.TrimSpace(line))
 		}
 	}
-	if len(got) != 1 || got[0] != "if code, ok := claimInstallContext(os.Args); !ok {" {
-		t.Fatalf("claimInstallContext wiring: got %q, want exactly [if code, ok := claimInstallContext(os.Args); !ok {]", got)
+	if len(got) != 1 || got[0] != "if v, code, ok := claimInstallContext(os.Args); !ok {" {
+		t.Fatalf("claimInstallContext wiring: got %q, want exactly [if v, code, ok := claimInstallContext(os.Args); !ok {]", got)
 	}
 	claimAt, flagAt, versionAt := -1, -1, -1
 	for i, line := range mainEncodedLines {
@@ -73,4 +73,38 @@ func TestMainWiresInstallContextClaimBeforeFlagParsing(t *testing.T) {
 	if !found {
 		t.Fatal("main must os.Exit(code) when claimInstallContext refuses startup")
 	}
+}
+
+func TestMainWiresVerifiedContextPropagation(t *testing.T) {
+	// The verified result of the early gate must be hoisted (not scoped to
+	// the if-statement) and threaded explicitly through runCLI to the UI
+	// model — never parked in a process-global. No context means the
+	// verified value is the absent zero value and downstream consumers
+	// keep their unchanged behavior.
+	assert := func(what, pattern string, want []string) {
+		t.Helper()
+		re := regexp.MustCompile(pattern)
+		var got []string
+		for _, line := range mainEncodedLines {
+			if re.MatchString(line) {
+				got = append(got, strings.TrimSpace(line))
+			}
+		}
+		if len(got) != len(want) {
+			t.Fatalf("%s: pattern %q matched %d lines, want %d (got %q)", what, pattern, len(got), len(want), got)
+		}
+		for i, wantLine := range want {
+			if got[i] != wantLine {
+				t.Fatalf("%s: line %d = %q, want %q", what, i, got[i], wantLine)
+			}
+		}
+	}
+	assert("verified declaration", `var verified installcontext\.Verified`,
+		[]string{"var verified installcontext.Verified"})
+	assert("verified hoist", `verified = v$`,
+		[]string{"verified = v"})
+	assert("runCLI verified", `runCLI\(cfg, openHistory, openWizard, seedDoc, verified\)`,
+		[]string{"runCLI(cfg, openHistory, openWizard, seedDoc, verified)"})
+	assert("model verified", `WithTUIVersion\(version\)\.WithVerifiedContext\(verified\)`,
+		[]string{"m := cliui.New(ag, openHistoryOnStart).WithTUIVersion(version).WithVerifiedContext(verified)"})
 }

@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"cercano/source/clients/cli/internal/tuirestart"
+	"cercano/source/server/pkg/installcontext"
 	tea "charm.land/bubbletea/v2"
 )
 
@@ -98,6 +99,16 @@ func (m Model) restartBusy() bool {
 }
 
 func (m Model) WithTUIVersion(version string) Model { m.tuiCurrentVersion = version; return m }
+
+// WithVerifiedContext stores the early-main verified installation context.
+// Trusted-observer consumers (force-save discovery) use it to resolve the
+// verified stable launcher; when it is absent (TUI not launched as a
+// verified installed member) those consumers keep their pre-verification
+// behavior. No consumer may mint a Verified from a bare record.
+func (m Model) WithVerifiedContext(verified installcontext.Verified) Model {
+	m.verifiedContext = verified
+	return m
+}
 func (m Model) applyTUIUpdateNotice(version string, operationID int64) (Model, tea.Cmd) {
 	if operationID <= 0 || operationID <= m.tuiUpdateOperation || len(version) == 0 || len(version) > 128 {
 		return m, nil

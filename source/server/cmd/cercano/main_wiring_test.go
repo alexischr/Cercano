@@ -57,7 +57,7 @@ func TestMainWiresPrivateDispatchAndInstallContextClaimInOrder(t *testing.T) {
 		})
 	assertMatches(t, "claimInstallContext call", `claimInstallContext\(os\.Args\); !ok`,
 		[]string{
-			"if code, ok := claimInstallContext(os.Args); !ok {",
+			"if v, code, ok := claimInstallContext(os.Args); !ok {",
 		})
 	// Ordering: dispatch before claim, claim before the subcommand switch.
 	dispatchAt, claimAt, switchAt := -1, -1, -1
@@ -93,6 +93,31 @@ func TestMainWiresRefusalExits(t *testing.T) {
 			"os.Exit(code)",
 			"os.Exit(code)",
 		})
+}
+
+func TestMainWiresVerifiedContextPropagation(t *testing.T) {
+	// The verified result of the early gate must be hoisted (not scoped to
+	// the if-statement) and threaded explicitly through the server startup
+	// paths — runServerMode and startGRPCServer carry it as a parameter and
+	// the installed-TUI observer receives it — never parked in a
+	// process-global. MCP mode is preserved unchanged (no verified
+	// threading), and runMCPMode keeps its original signature.
+	assertMatches(t, "verified declaration", `var verified installcontext\.Verified`,
+		[]string{"var verified installcontext.Verified"})
+	assertMatches(t, "verified hoist", `verified = v$`,
+		[]string{"verified = v"})
+	assertMatches(t, "runServerMode verified", `runServerMode\(cfg, verified\)`,
+		[]string{
+			"runServerMode(cfg, verified)",
+			"runServerMode(cfg, verified)",
+			"runServerMode(cfg, verified)",
+		})
+	assertMatches(t, "startGRPCServer verified", `startGRPCServer\(cfg, ":"\+cfg\.Port, crashWriter, stopRequest, verified\)`,
+		[]string{`addr, cleanup, stopRequest, err := startGRPCServer(cfg, ":"+cfg.Port, crashWriter, stopRequest, verified)`})
+	assertMatches(t, "MCP mode unchanged", `runMCPMode\(cfg, \*grpcAddr\)`,
+		[]string{"runMCPMode(cfg, *grpcAddr)"})
+	assertMatches(t, "TUI notices verified", `startInstalledTUINotices\(verified, srv\)`,
+		[]string{"stopTUINotices := startInstalledTUINotices(verified, srv)"})
 }
 
 func TestMainWiresVersionCapabilityQuery(t *testing.T) {
