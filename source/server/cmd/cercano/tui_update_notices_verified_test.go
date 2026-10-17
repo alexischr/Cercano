@@ -120,9 +120,11 @@ func TestStartInstalledTUINoticesStaleStartupRecordRefusesRebind(t *testing.T) {
 	// Replace the on-disk record with a valid record for a different install
 	// ID (same root binding): the installation changed after this agent
 	// verified. The startup record is stale and must NOT rebind the watch
-	// to the new on-disk identity. A nil server panics if the observer
-	// wrongly binds (a bound watch dereferences the server), so returning
-	// cleanly proves refusal.
+	// to the new on-disk identity. The refused observer starts no watch at
+	// all, so no diagnostic can ever appear (its foreign state chain does
+	// not exist here, so even a wrongly bound watch would stay silent —
+	// TestTUIUpdateIdentityContinuityStartupMismatchRefuses covers the
+	// mirrored-state case).
 	changed := verified.Record()
 	changed.InstallID = strings.Repeat("b", 32)
 	data, err := json.Marshal(changed)

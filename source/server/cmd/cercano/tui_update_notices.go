@@ -14,16 +14,18 @@ import (
 )
 
 // startInstalledTUINotices runs the installed-TUI update observer for the
-// agent lifetime. The observer is a pure reader: no updater-state mutation,
-// no protocol negotiation, no enrollment.
+// agent lifetime. The observer reads updater state and drives the existing
+// force-control poll, which may write existing protected control rows for
+// this installation (agent registration, force-stop/save intents and their
+// receipts); it performs no protocol negotiation and no enrollment.
 //
-// With a verified startup context the observer uses the verified stable
-// launcher and requires the enrollment beside it to match the startup
-// verified record EXACTLY before binding — a stale startup record (the
-// installation changed on disk after this agent verified) must not
-// silently rebind the watch to the new on-disk identity. Once bound, the
-// existing watch revalidation (WatchEnrolledTUIUpdates never rebinds
-// mid-loop) governs.
+// With a present verified context the observer resolves the stable launcher
+// from the verified record (never this process's own executable) and requires
+// the enrollment beside it to match the startup verified record EXACTLY before
+// binding — a stale startup record (the installation changed on disk after
+// this agent verified) must not silently rebind the watch to the new on-disk
+// identity. Once bound, the watch revalidates the expected record on every
+// probe and never rebinds to a changed enrollment.
 //
 // Without a verified context (the agent was not launched as a verified
 // installed member — no locators) behavior is unchanged: optional only,
@@ -31,27 +33,37 @@ import (
 // database work. This is not installation enrollment or package ownership
 // proof.
 func startInstalledTUINotices(verified installcontext.Verified, srv *server.Server) func() {
+	if !verified.Present() {
+		// Absent verified context: unchanged pre-verification discovery
+		// path (no expected record).
+		return startBoundInstalledTUINotices("", nil, srv)
+	}
+	launcher, e := verified.StableLauncher()
+	if e != nil {
+		return func() {}
+	}
+	record := verified.Record()
+	return startBoundInstalledTUINotices(launcher, &record, srv)
+}
+
+// startBoundInstalledTUINotices runs the installed-TUI update observer with
+// explicit identity binding. With a non-nil expected record, launcher must be
+// the verified stable launcher path; the observer verifies that the discovered
+// enrollment matches the expected record exactly BEFORE creating the force
+// owner, opening any state or emitting notices, and the bound watch loop
+// revalidates the same fixed record on every probe — it never re-discovers a
+// different installation and emits for it. With a nil expected record the
+// unchanged no-context discovery path applies. This prevents cross-install
+// identity confusion.
+//
+// The force-control poll may write existing protected control rows for the
+// verified installation; it does not mutate the enrollment record itself.
+func startBoundInstalledTUINotices(launcher string, expected *enrollment.Record, srv *server.Server) func() {
 	none := func() {}
 	ctx := context.Background()
-	var launcher string
-	if verified.Present() {
-		// Never observe this process's own executable: its path is
-		// attacker-controlled at exec time. The verified record is the
-		// only source of the stable launcher and identity.
-		stable, e := verified.StableLauncher()
-		if e != nil {
-			return none
-		}
-		// Exact initial enrollment match: the record beside the verified
-		// stable launcher must still equal the startup verified record.
-		// Any mismatch refuses the observer outright.
-		current, e := enrollment.DiscoverStableLauncher(ctx, stable)
-		if e != nil || current != verified.Record() {
-			return none
-		}
-		launcher = stable
-	} else {
-		// No verified context: unchanged pre-verification behavior. A
+
+	if expected == nil {
+		// No expected enrollment: unchanged pre-verification behavior. A
 		// missing adjacent identity is the normal case and needs no
 		// warning or loop.
 		exe, e := os.Executable()
@@ -63,8 +75,32 @@ func startInstalledTUINotices(verified installcontext.Verified, srv *server.Serv
 		} else if e != nil {
 			return none
 		}
-		launcher = exe
+		home, e := os.UserHomeDir()
+		if e != nil {
+			return none
+		}
+		root, e := state.StateRoot(runtime.GOOS, home, os.Getenv("LOCALAPPDATA"), os.Getenv("XDG_STATE_HOME"))
+		if e != nil {
+			return none
+		}
+		watchCtx, cancel := context.WithCancel(ctx)
+		go srv.WatchEnrolledTUIUpdates(watchCtx, exe, root, func(error) {
+			// Keep paths/database content out of diagnostics. A failure is not an agent
+			// readiness failure and must not block conversations or reconnection.
+			log.Print("[updates] installed TUI notification unavailable; agent operation is unaffected")
+		})
+		return cancel
 	}
+
+	// Expected enrollment: the record beside the verified stable launcher
+	// must equal the startup verified record exactly. Any mismatch (or
+	// discovery error) refuses the observer outright — before any force
+	// owner creation or state access.
+	current, e := enrollment.DiscoverStableLauncher(ctx, launcher)
+	if e != nil || current != *expected {
+		return none
+	}
+
 	home, e := os.UserHomeDir()
 	if e != nil {
 		return none
@@ -73,8 +109,11 @@ func startInstalledTUINotices(verified installcontext.Verified, srv *server.Serv
 	if e != nil {
 		return none
 	}
+
+	// Bound watch: the loop revalidates the same fixed expected record on
+	// every probe before touching state.
 	watchCtx, cancel := context.WithCancel(ctx)
-	go srv.WatchEnrolledTUIUpdates(watchCtx, launcher, root, func(error) {
+	go srv.WatchBoundEnrolledTUIUpdates(watchCtx, launcher, root, expected, func(error) {
 		// Keep paths/database content out of diagnostics. A failure is not an agent
 		// readiness failure and must not block conversations or reconnection.
 		log.Print("[updates] installed TUI notification unavailable; agent operation is unaffected")

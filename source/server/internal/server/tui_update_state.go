@@ -22,6 +22,10 @@ import (
 // filesystem transaction or execution authority. A concurrent change refuses;
 // a later change is handled by a subsequent sync and local restart verification.
 func (s *Server) SyncTUIUpdateFromState(ctx context.Context, store *state.Store) (bool, error) {
+	return s.syncTUIUpdateFromState(ctx, store, nil)
+}
+
+func (s *Server) syncTUIUpdateFromState(ctx context.Context, store *state.Store, validateBinding func() error) (bool, error) {
 	if ctx == nil || store == nil || s.events == nil {
 		return false, errors.New("installed TUI source is unavailable")
 	}
@@ -66,6 +70,11 @@ func (s *Server) SyncTUIUpdateFromState(ctx context.Context, store *state.Store)
 	named, err := os.Lstat(dir)
 	if err != nil || !named.IsDir() || !os.SameFile(identity, named) || observed != after {
 		return false, errors.New("installed TUI selection changed during observation")
+	}
+	if validateBinding != nil {
+		if err := validateBinding(); err != nil {
+			return false, err
+		}
 	}
 	// One running agent's event hub may not be rebound to another installation.
 	h := s.events
