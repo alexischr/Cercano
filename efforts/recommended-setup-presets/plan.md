@@ -56,7 +56,7 @@ Objective: apply confirmed changes using existing persistence paths and make rer
 - [ ] Connect confirmed recommendations to existing routing and configuration persistence
 - [ ] Show changes against current assignments before replacing them
 - [ ] Preserve accounts, credentials, unrelated settings, permission choices, and intentional overrides
-- [ ] Expose Run setup again through the existing guided-setup path and document existing command entry points
+- [x] Expose Run setup again through the existing guided-setup path and document existing command entry points
 - [x] Handle cancellation, interruption, resume, and older saved wizard states safely
 - [ ] Test rerun accept/cancel, apply failure, interrupted setup, old saved progress, and unchanged unrelated configuration
 - [ ] Confirm local-only persistence cannot introduce a cloud backup and that rerun never invokes destructive setup reset
@@ -78,7 +78,7 @@ Objective: verify actual runtime behavior and user-facing setup paths without ov
 
 Objective: leave an understandable setup experience and an auditable verification record. Files: docs/features/setup-wizard/README.md, applicable CLI/configuration help, effort evidence notes, and this plan's task statuses. Tests: documented commands and UI labels checked against implementation; focused regression tests rerun after final fixes.
 
-- [ ] Update documentation for tier meanings, template families, resource discovery, optional customization, and model/context limitations
-- [ ] Document Run setup again versus destructive reset and how to change assignments later
+- [x] Update documentation for tier meanings, template families, resource discovery, optional customization, and model/context limitations
+- [x] Document Run setup again versus destructive reset and how to change assignments later
 - [ ] Complete an acceptance-criteria review against spec.md and report remaining limitations honestly
 - [ ] Checkpoint solved implementation units with scoped commits and provide final verification results without pushing

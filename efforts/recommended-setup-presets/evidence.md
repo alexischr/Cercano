@@ -108,3 +108,12 @@ Actual wizard autofill now consumes the pure recommendation helper, fills empty 
 A failing cloud-only regression demonstrated that stale hidden local picks were applied. wizardApplyPatches now emits only the mode patch for cloud-only, leaving those local settings untouched. The catalog fixture now explicitly selects open-only mode, matching the resource-filtering contract.
 
 Verification: CLI go test ./internal/ui ./internal/wizard ./internal/slash -count=1 and go build ./... passed. No runtime candidate validation or live model downloads were performed. This is a bounded integration slice, not completion of the remaining plan or full preview/apply acceptance coverage.
+
+
+## Direct implementation follow-up: preview and documentation
+
+Preview download disclosures now resolve actual selected tier picks against the catalog, deduplicate by artifact ID, skip downloaded artifacts, and flag unresolved selections. Unknown RAM is disclosed independently of whether downloads are required. Removed claims that downloaded models are immediately ready or that an unconfigured cloud account can serve while downloads run. Preview snapshot tests serialize state before/after rendering to detect mutation rather than comparing maps or slice-containing structs illegally. Regression checks distinguish repeated tier assignments from duplicate download entries.
+
+Updated setup documentation with tier meanings, preset families, cloud-use implications, custom-choice preservation, explicit apply/download timing, context safety, gated Qwen validation, and nondestructive guided re-entry. Verified slash/setup.go uses the documented Run setup again help text. Pending plan items have not been blanket-marked complete.
+
+Verification in this follow-up: CLI UI/wizard/slash tests and production build pass. Server tests passed for pkg/setupstate, internal/managedrouting, internal/localruntime/llamaserver, and internal/llamacompat. These are package tests, not candidate runtime-load validation. No live runtime operations, downloads, or secrets access were performed.

@@ -8,6 +8,44 @@ open is in the mix. Open models are served by the **bundled `llama-server`
 runtime** and drawn from a **curated compatibility catalog** we author and
 test; there is no Ollama install step and no Ollama catalog dependency.
 
+## Recommended starting setup
+
+Cercano delegates work across three task-quality tiers: **Deep reasoning** for
+hard analysis, **Everyday development** for normal coding, and **Lightweight
+tasks** for small lookups and transformations. These describe work quality, not
+three required providers or downloads. Local model configuration also exposes
+capability slots, including vision and embeddings; these are not additional
+paid accounts.
+
+The wizard discovers existing accounts and machine/catalog information and
+highlights a starting setup. A working cloud account is enough to start without
+a local download. The available families are cloud-only, mixed (cloud primary
+or local primary), and local-only. Choosing local-only prohibits cloud routes
+and backups; local-primary permits configured cloud fallback. Cloud-primary
+uses cloud for main work and local models for background work. Mixed use may
+send work off the machine. These selections remain editable in `/config`.
+
+Before **Use recommended setup**, review the proposed assignments and changes
+from existing local overrides. Custom local selections are retained rather than
+replaced merely because the recommendation list changed. The preview lists each
+known missing selected artifact once, skips already downloaded artifacts, and
+flags unresolved selections and unknown memory. Viewing this preview does not
+start downloads. Downloads for known missing selections begin after confirmation;
+being downloaded is not proof that a model is loaded or ready to serve.
+
+Recommendations are starting points, not machine-fit certification. System RAM
+alone does not establish GPU capacity, full-context fit, or simultaneous model
+residency. Existing intentional context overrides remain unchanged, and runtime
+allocation and serving-capacity checks still apply. The proposed Qwen 27B default
+remains gated pending runtime validation; no unverified identifier or full-context
+promise is shipped by this effort.
+
+Use `/setup` (**Run setup again**) or the command-line entry points below for
+nondestructive guided re-entry. This is not setup reset. Escape pauses/backtracks;
+pressing `q` twice discards unconfirmed choices and clears saved wizard progress.
+Completed account connections remain and can be managed explicitly in `/config`;
+cancellation never deletes accounts or restores stale account snapshots.
+
 ## Triggers
 
 - First run: no `~/.config/cercano/config.yaml` (or config present but no
