@@ -65,7 +65,7 @@ func buildWorkerToolSvc(
 	autonomy conversation.AutonomyLedger,
 	restart ...runtimeRestartFunc,
 ) runner.ToolSvc {
-	return buildWorkerToolSvcWithDiagnostic(permBroker, engine, ctxLoader, cloud, open, cfg, subPersist, enterProfile, vision, nil, failures, nil, autonomy, nil, nil, restart...)
+	return buildWorkerToolSvcWithDiagnostic(permBroker, engine, ctxLoader, cloud, open, cfg, subPersist, enterProfile, vision, nil, failures, nil, autonomy, nil, nil, nil, restart...)
 }
 
 func buildWorkerToolSvcWithDiagnostic(
@@ -73,7 +73,7 @@ func buildWorkerToolSvcWithDiagnostic(
 	cloud, open inference.Provider, cfg pkgcfg.Config, subPersist *streamSubagentPersist,
 	enterProfile func(context.Context, string) error, vision capabilities.VisionService,
 	attachments capabilities.AttachmentLookup,
-	failures *failurelog.Writer, diagnostic reasoningexperiment.Service, autonomy conversation.AutonomyLedger, candidates func() inference.Tiers, sessionModel chatroute.Control, restart ...runtimeRestartFunc,
+	failures *failurelog.Writer, diagnostic reasoningexperiment.Service, autonomy conversation.AutonomyLedger, candidates func() inference.Tiers, sessionModel chatroute.Control, tasks capabilities.Tasks, restart ...runtimeRestartFunc,
 ) runner.ToolSvc {
 	var runDiagnostic func(context.Context, reasoningexperiment.Spec) (reasoningexperiment.Report, error)
 	if diagnostic != nil {
@@ -106,6 +106,7 @@ func buildWorkerToolSvcWithDiagnostic(
 		svc.SetEnsureSubagent(subPersist.ensure) // worker creates sub-agent conversation rows on the host
 	}
 	toolstack.InstallCapabilities(svc, toolstack.CapDeps{
+		Tasks:               tasks,
 		SessionModel:        sessionModel,
 		RestartRuntime:      restartRuntime,
 		ReasoningDiagnostic: runDiagnostic,

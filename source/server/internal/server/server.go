@@ -1403,6 +1403,9 @@ func (s *Server) SelectExecutionMode() {
 		}
 	}
 
+	if control, ok := s.workerRunner.(worker.TasksSetter); ok {
+		control.SetTasks(serverTasks{s})
+	}
 	if control, ok := s.workerRunner.(worker.SessionModelSetter); ok {
 		control.SetSessionModel(s.sessionModel)
 	}

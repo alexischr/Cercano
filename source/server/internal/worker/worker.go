@@ -164,6 +164,7 @@ func (w *WorkerServer) runTurn(stream proto.Worker_RunTurnServer, authRecovery, 
 	// must mutate the host's live profile broker, not a worker-local copy.
 	profileCtl := newStreamSessionProfileController(sndr, start.GetConversationId())
 	sessionModel := newStreamSessionModel(sndr, start.GetConversationId())
+	tasks := newStreamTasks(sndr, start.GetConversationId())
 	authRequest := newStreamAuthentication(sndr)
 	runtimeControl := newStreamRuntimeControl(sndr)
 	modelAuthority := newStreamModelAuthority(sndr)
@@ -243,6 +244,8 @@ func (w *WorkerServer) runTurn(stream proto.Worker_RunTurnServer, authRecovery, 
 				credSource.deliver(msg.GetCredResponse())
 			case msg.GetOpenEvent() != nil:
 				openProxy.deliver(msg.GetOpenEvent())
+			case msg.GetTaskControlResponse() != nil:
+				tasks.deliver(msg.GetTaskControlResponse())
 			case msg.GetSessionModelResponse() != nil:
 				sessionModel.deliver(msg.GetSessionModelResponse())
 			case msg.GetProfileResponse() != nil:
@@ -255,7 +258,7 @@ func (w *WorkerServer) runTurn(stream proto.Worker_RunTurnServer, authRecovery, 
 	}()
 
 	// Build Deps from StartTurn.
-	deps, buildErr := w.buildDeps(ctx, start, credSource, openProxy, subPersist, profileCtl, mcpControl, autonomyLedger, &permStoreRef, sessionModel.Control, runtimeControl.Restart)
+	deps, buildErr := w.buildDeps(ctx, start, credSource, openProxy, subPersist, profileCtl, mcpControl, autonomyLedger, &permStoreRef, sessionModel.Control, tasks, runtimeControl.Restart)
 	if buildErr != nil {
 		sndr.close()
 		cancel() // returning finalizes the stream; the recv goroutine unwinds on the Recv error
@@ -376,7 +379,7 @@ func (w *WorkerServer) runTurn(stream proto.Worker_RunTurnServer, authRecovery, 
 
 // ─── buildDeps ────────────────────────────────────────────────────────────────
 
-func (w *WorkerServer) buildDeps(ctx context.Context, start *proto.StartTurn, credSource *streamCredentialSource, openProxy *streamOpenProvider, subPersist *streamSubagentPersist, profileCtl *streamSessionProfileController, mcpControl *streamMCPControl, autonomyLedger *streamAutonomyLedger, permStoreRef *atomic.Pointer[agent.PermissionStore], sessionModel chatroute.Control, restart ...runtimeRestartFunc) (runner.Deps, error) {
+func (w *WorkerServer) buildDeps(ctx context.Context, start *proto.StartTurn, credSource *streamCredentialSource, openProxy *streamOpenProvider, subPersist *streamSubagentPersist, profileCtl *streamSessionProfileController, mcpControl *streamMCPControl, autonomyLedger *streamAutonomyLedger, permStoreRef *atomic.Pointer[agent.PermissionStore], sessionModel chatroute.Control, tasks capabilities.Tasks, restart ...runtimeRestartFunc) (runner.Deps, error) {
 	// Build config from snapshot.
 	cfg := ConfigFromSnapshot(start.GetConfig())
 	cfgService := cfgsvc.New("", cfg, secrets.NewMemory())
@@ -532,7 +535,7 @@ func (w *WorkerServer) buildDeps(ctx context.Context, start *proto.StartTurn, cr
 		if visionStore != nil {
 			workerAttachments = visionStore
 		}
-		toolSvc = buildWorkerToolSvcWithDiagnostic(permBroker, engine, ctxLoader, provSvc.Cloud(), provSvc.Open(), cfg, subPersist, profileCtl.SetProfile, visionSvc, workerAttachments, failureLog, diagnostic, autonomy, provSvc.Candidates, sessionModel, restart...)
+		toolSvc = buildWorkerToolSvcWithDiagnostic(permBroker, engine, ctxLoader, provSvc.Cloud(), provSvc.Open(), cfg, subPersist, profileCtl.SetProfile, visionSvc, workerAttachments, failureLog, diagnostic, autonomy, provSvc.Candidates, sessionModel, tasks, restart...)
 	}
 
 	// Register a proxy per host-advertised MCP tool. Done AFTER the built-in

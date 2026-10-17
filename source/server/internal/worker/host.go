@@ -21,6 +21,7 @@ package worker
 // Cancel) — protected by sendMu.
 
 import (
+	"cercano/source/server/internal/capabilities"
 	"cercano/source/server/internal/chatroute"
 	"cercano/source/server/internal/routingwire"
 	"context"
@@ -123,6 +124,7 @@ type workerRunner struct {
 	// SetAutonomyLedger from the server's store; nil on dial-injected (test)
 	// runners (ledger operations then error clearly, as pre-fix).
 	autonomyLedger AutonomyLedgerFunc
+	tasks          capabilities.Tasks
 
 	// dispatchEventSink appends one dispatch-evidence event to the host-owned
 	// append-only store when a worker-side dispatch loop sends one over the
@@ -952,6 +954,12 @@ func (w *workerRunner) RunTurn(
 				}
 			}()
 
+		case *proto.WorkerToHost_TaskControlRequest:
+			request := m.TaskControlRequest
+			go func() {
+				response := handleTaskControl(ctx, w.tasks, req.ConversationID, request)
+				_ = safeSend(&proto.HostToWorker{Msg: &proto.HostToWorker_TaskControlResponse{TaskControlResponse: response}})
+			}()
 		case *proto.WorkerToHost_SessionModelRequest:
 			request := m.SessionModelRequest
 			go func() {

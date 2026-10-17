@@ -71,3 +71,9 @@ The user approved failing closed for asynchronous task operations when a client 
 Added a separate capabilities.Tasks interface and host task-service adapter, plus task_list, task_inspect, task_wait, and task_stop. Controls require surface-injected ConversationID; a model-provided conversation_id is never used for ownership. Wait is bounded and does not stop execution. Public dispatch itself still uses the synchronous hook pending worker/launch integration. The worker task proxy and external trusted binding remain unwired.
 
 Verified with `go test -race ./internal/capabilities/... ./internal/toolstack ./internal/server ./internal/taskrun`. Tests cover unbound external RPC rejection with no result payload, active/completed foreign-task rejection, and wait cancellation without child cancellation.
+
+## Worker task-control bridge
+
+Added dedicated TaskControlRequest/Response protobuf envelopes and a worker Tasks proxy. The host takes parent ownership from the active worker request, never from tool-supplied ownership fields. Launch transfers only the public task/grant/routing inputs; reserved child IDs and progress callbacks do not cross the boundary. The task manager remains host-owned. Wait requests have a bounded timeout and stream cancellation does not cancel accepted child execution.
+
+`go test -race ./internal/worker ./internal/server ./internal/capabilities/... ./internal/taskrun` passed. The bridge test exercises protobuf round trips, launch/inspect/list, foreign-access rejection, and task completion after the initiating stream disappears. This is not yet full subprocess-death coverage. Public dispatch still awaits the asynchronous contract change; completion wake-up remains pending.

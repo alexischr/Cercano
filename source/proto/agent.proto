@@ -1747,6 +1747,7 @@ message HostToWorker {
     DispatchEventResponse  dispatch_event_response = 12;
     SessionModelResponse session_model_response = 13;
     WorkerModelAuthorizationResponse model_authorization_response = 14;
+    TaskControlResponse task_control_response = 15;
   }
 }
 
@@ -1781,6 +1782,7 @@ message WorkerToHost {
     DispatchEventRequest     dispatch_event  = 15;
     SessionModelRequest session_model_request = 16;
     WorkerModelAuthorizationRequest model_authorization_request = 17;
+    TaskControlRequest task_control_request = 18;
   }
 }
 
@@ -2566,4 +2568,24 @@ message EnterpriseStatus {
 // Does not include credentials and does not authorize future model requests.
 message EnterprisePolicy {
   bytes policy_json = 1;
+}
+
+// Task ownership is taken from the host's active worker stream, not the request.
+message TaskControlRequest {
+ string id = 1;
+ string operation = 2;
+ string task_id = 3;
+ int32 limit = 4;
+ int64 timeout_millis = 5;
+ string task = 6;
+ repeated string tools = 7;
+ string work_dir = 8;
+ string routing_task = 9;
+ string tier = 10;
+}
+message TaskControlResponse {
+ string id = 1;
+ bytes result_json = 2;
+ string error = 3;
+ bool not_found = 4;
 }
