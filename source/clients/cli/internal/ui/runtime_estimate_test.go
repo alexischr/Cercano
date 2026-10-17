@@ -12,7 +12,7 @@ import (
 
 func TestCompactFitAnnot(t *testing.T) {
 	const gb = int64(1) << 30
-	sysRAM := 32 * gb          // usable ≈ 24 GB (0.75)
+	sysRAM := 32 * gb // usable ≈ 24 GB (0.75)
 	cases := []struct {
 		name    string
 		weights int64
@@ -20,9 +20,9 @@ func TestCompactFitAnnot(t *testing.T) {
 	}{
 		{"unknown weights", 0, ""},
 		{"unknown ram via zero", -1, ""},
-		{"small model fits", 4 * gb, "✓ fits"},           // fixed ~4.7GB « 24GB
-		{"large model tight", 18 * gb, "△ tight"},        // fixed ~18.9GB > 80% of 24GB
-		{"too-large won't fit", 30 * gb, "✗ won't fit"},  // fixed ~31.5GB > 24GB
+		{"small model fits", 4 * gb, "✓ fits"},          // fixed ~4.7GB « 24GB
+		{"large model tight", 18 * gb, "△ tight"},       // fixed ~18.9GB > 80% of 24GB
+		{"too-large won't fit", 30 * gb, "✗ won't fit"}, // fixed ~31.5GB > 24GB
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

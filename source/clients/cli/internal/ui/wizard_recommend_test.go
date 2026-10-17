@@ -56,8 +56,14 @@ func testCatalog(rec map[string]string, downloaded map[string]bool) agentclient.
 		models = append(models, m)
 	}
 	return agentclient.RuntimeModelCatalog{
-		Models:                models,
+		Models: models,
+		// Default fixture: a fully-probed unified-memory machine (Apple
+		// Silicon style), so tests asserting a clean, confident
+		// recommendation keep their meaning. Topology-specific tests
+		// override Hardware/HardwareOK below.
 		SystemRAMBytes:        128 << 30,
+		Hardware:              agentclient.HardwareTopology{Kind: agentclient.HardwareTopologyUnified, UnifiedMemoryBytes: 128 << 30},
+		HardwareOK:            true,
 		RecommendedOpenModels: rec,
 	}
 }
@@ -377,5 +383,159 @@ func TestRecommendSetupPerformsNoWrites(t *testing.T) {
 	var any interface{} = got
 	if _, ok := any.(interface{ Write() error }); ok {
 		t.Error("recommendation must not expose a Write method")
+	}
+}
+
+// hardwareTestCatalog builds a catalog with explicit model sizes so fit
+// checks have real numbers to reason about, and a caller-chosen topology
+// over the same total system RAM — the equal-RAM/different-topology case.
+func hardwareTestCatalog(topology agentclient.HardwareTopology, hardwareOK bool) agentclient.RuntimeModelCatalog {
+	rec := map[string]string{
+		"most_capable":    "llama_server:catalog:big-model",
+		"everyday":        "llama_server:catalog:big-model",
+		"fast_light":      "llama_server:catalog:small-model",
+		"fast_light_text": "llama_server:catalog:small-model",
+		"embedding":       "llama_server:catalog:embed-model",
+	}
+	sizes := map[string]int64{
+		"llama_server:catalog:big-model":   32 << 30, // 32 GiB weights (fits 80% of a 48 GiB GPU, not 80% of 8 GiB)
+		"llama_server:catalog:small-model": 4 << 30,
+		"llama_server:catalog:embed-model": 1 << 30,
+	}
+	var models []agentclient.RuntimeModel
+	for id, size := range sizes {
+		models = append(models, agentclient.RuntimeModel{
+			ID: id, DisplayName: "display:" + id, Runtime: "llama_server", SizeBytes: size,
+		})
+	}
+	return agentclient.RuntimeModelCatalog{
+		Models:                models,
+		SystemRAMBytes:        64 << 30, // identical RAM in every scenario
+		Hardware:              topology,
+		HardwareOK:            hardwareOK,
+		RecommendedOpenModels: rec,
+	}
+}
+
+// hasNote reports whether the exact note text is present.
+func hasNote(notes []string, want string) bool {
+	for _, n := range notes {
+		if n == want {
+			return true
+		}
+	}
+	return false
+}
+
+func TestRecommendEqualRAMDifferentTopology(t *testing.T) {
+	recs := testRecs()
+	scenarios := []struct {
+		name       string
+		topology   agentclient.HardwareTopology
+		hardwareOK bool
+		wantNote   string // must be present
+		wantNoNote string // must be absent
+		wantUnfit  bool   // expect the larger-than-any-single-GPU note
+	}{
+		{
+			name:       "unified",
+			topology:   agentclient.HardwareTopology{Kind: agentclient.HardwareTopologyUnified, UnifiedMemoryBytes: 64 << 30},
+			hardwareOK: true,
+			// Probed unified memory: the RAM-band picks are genuinely
+			// supported; no topology caveat at all.
+			wantNoNote: "memory topology unknown",
+		},
+		{
+			name: "discrete-fits",
+			topology: agentclient.HardwareTopology{Kind: agentclient.HardwareTopologyDiscrete, GPUs: []agentclient.HardwareGPU{
+				{Name: "RTX A6000", MemoryBytes: 48 << 30},
+			}},
+			hardwareOK: true,
+			wantNote:   "discrete GPUs: fit checked against the largest GPU's",
+			wantNoNote: "larger than any single GPU",
+		},
+		{
+			name: "discrete-too-small",
+			topology: agentclient.HardwareTopology{Kind: agentclient.HardwareTopologyDiscrete, GPUs: []agentclient.HardwareGPU{
+				{Name: "GTX 1080", MemoryBytes: 8 << 30},
+				{Name: "GTX 1080", MemoryBytes: 8 << 30},
+			}},
+			hardwareOK: true,
+			wantNote:   "discrete GPUs: fit checked against the largest GPU's",
+			wantUnfit:  true,
+		},
+		{
+			name: "discrete-unknown-pool",
+			topology: agentclient.HardwareTopology{Kind: agentclient.HardwareTopologyDiscrete, GPUs: []agentclient.HardwareGPU{
+				{Name: "Unknown GPU", MemoryBytes: 0}, // detected, size unknown
+			}},
+			hardwareOK: true,
+			wantNote:   "discrete GPUs detected but per-GPU memory unknown: hardware fit not verified",
+		},
+		{
+			name:       "topology-unknown",
+			topology:   agentclient.HardwareTopology{Kind: agentclient.HardwareTopologyUnknown},
+			hardwareOK: true,
+			wantNote:   "memory topology unknown: hardware fit not verified for this machine",
+			wantNoNote: "machine memory unknown",
+		},
+	}
+	for _, sc := range scenarios {
+		t.Run(sc.name, func(t *testing.T) {
+			cat := hardwareTestCatalog(sc.topology, sc.hardwareOK)
+			got := recommendSetup(wizardRecommendInputs{
+				LocusMode: "open_only", Recs: recs, RecsOK: true, Catalog: cat, CatalogOK: true,
+			})
+			// Every scenario has the same RAM and the same server band
+			// picks; picks always defer to the server.
+			if got.OpenPicks[config.TierMostCapable] != "llama_server:catalog:big-model" {
+				t.Fatalf("%s: picks must defer to server, got %v", sc.name, got.OpenPicks)
+			}
+			if sc.wantNote != "" && !strings.Contains(strings.Join(got.Notes, "\n"), sc.wantNote) {
+				t.Errorf("%s: want note %q, got %v", sc.name, sc.wantNote, got.Notes)
+			}
+			if sc.wantNoNote != "" && strings.Contains(strings.Join(got.Notes, "\n"), sc.wantNoNote) {
+				t.Errorf("%s: want no note %q, got %v", sc.name, sc.wantNoNote, got.Notes)
+			}
+			if sc.wantUnfit {
+				found := false
+				for _, n := range got.Notes {
+					if strings.HasPrefix(n, "larger than any single GPU:") && strings.Contains(n, "most_capable") {
+						found = true
+					}
+				}
+				if !found {
+					t.Errorf("%s: want per-pick unfit disclosure naming the tier, got %v", sc.name, got.Notes)
+				}
+				// The two 8 GiB cards must never be summed into a 16 GiB
+				// budget that would fake-fit the 32 GiB model.
+				if !strings.Contains(strings.Join(got.Notes, "\n"), "largest GPU's 8.0 GB") {
+					t.Errorf("%s: budget must be the single largest pool, got %v", sc.name, got.Notes)
+				}
+			}
+		})
+	}
+}
+
+func TestRecommendOldServerDefaultsDisclosed(t *testing.T) {
+	// An older server sends SystemRAMBytes but no topology fields:
+	// HardwareOK arrives false and topology maps to unknown. The picks
+	// still defer to the server's RAM band (it is all the server knows),
+	// but the client must not present them as machine-fit-verified.
+	cat := hardwareTestCatalog(agentclient.HardwareTopology{}, false)
+	got := recommendSetup(wizardRecommendInputs{
+		LocusMode: "open_only", Recs: testRecs(), RecsOK: true, Catalog: cat, CatalogOK: true,
+	})
+	if got.OpenPicks[config.TierMostCapable] != "llama_server:catalog:big-model" {
+		t.Errorf("old server: picks should defer to server, got %v", got.OpenPicks)
+	}
+	if !hasNote(got.Notes, "memory topology unknown: hardware fit not verified for this machine") {
+		t.Errorf("old server: want honest unknown-topology note, got %v", got.Notes)
+	}
+	// And it must not claim the confident no-caveat case.
+	for _, n := range got.Notes {
+		if strings.HasPrefix(n, "discrete GPUs") {
+			t.Errorf("old server: must not claim a topology it did not probe: %v", got.Notes)
+		}
 	}
 }

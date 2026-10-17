@@ -1,6 +1,9 @@
 package ui
 
 import (
+	"fmt"
+	"strings"
+
 	"cercano/source/clients/cli/internal/wizard"
 	"cercano/source/server/pkg/agentclient"
 	"cercano/source/server/pkg/config"
@@ -146,11 +149,79 @@ func recommendSetup(in wizardRecommendInputs) wizardRecommendation {
 			rec.Notes = append(rec.Notes, "no open-model recommendation available for this machine: picks left empty for manual choice")
 		}
 		rec.Downloads = requiredDownloads(in.Catalog, in.CatalogOK, rec.OpenPicks)
-		if in.CatalogOK && in.Catalog.SystemRAMBytes == 0 {
-			rec.Notes = append(rec.Notes, "machine memory unknown: the server recommended its smallest curated profile")
+		if in.CatalogOK {
+			rec.Notes = append(rec.Notes, hardwareNotes(in.Catalog)...)
 		}
 	}
 	return rec
+}
+
+// hardwareNotes records the honest limits of the server's RAM-band open
+// recommendations given what was actually probed about this machine.
+// Unknown hardware (including an older server without topology fields —
+// HardwareOK false, topology unknown) is disclosed as unknown rather
+// than covered by a RAM-band claim, and discrete machines get a fit
+// check against their real GPU memory: system RAM is never treated as
+// GPU memory, and per-device pools are never summed into one budget.
+func hardwareNotes(cat agentclient.RuntimeModelCatalog) []string {
+	switch {
+	case cat.SystemRAMBytes <= 0:
+		return []string{"machine memory unknown: the server recommended its smallest curated profile"}
+	case !cat.HardwareOK || cat.Hardware.Insufficient():
+		return []string{"memory topology unknown: hardware fit not verified for this machine"}
+	case cat.Hardware.Kind == agentclient.HardwareTopologyDiscrete:
+		return discreteFitNotes(cat)
+	}
+	return nil
+}
+
+// discreteFitNotes checks the server's RAM-band picks against the
+// machine's discrete GPUs. A single GPU's pool is the only honest
+// budget for a pick, so a pick larger than the usable fraction of the
+// largest pool is disclosed by name rather than silently kept; a
+// device whose pool size is unknown (0) is disclosed as unknown too.
+func discreteFitNotes(cat agentclient.RuntimeModelCatalog) []string {
+	var budget int64
+	for _, g := range cat.Hardware.GPUs {
+		if g.MemoryBytes > budget {
+			budget = g.MemoryBytes
+		}
+	}
+	if budget <= 0 {
+		return []string{"discrete GPUs detected but per-GPU memory unknown: hardware fit not verified"}
+	}
+	usable := int64(float64(budget) * estimateUsableFraction)
+	var unfit []string
+	for _, t := range openTierOrder() {
+		id := cat.RecommendedOpenModels[string(t)]
+		if id == "" {
+			continue
+		}
+		m, ok := catalogModelByID(cat, id)
+		if !ok || m.SizeBytes <= 0 {
+			continue // size unknown: no invented verdict either way
+		}
+		if m.SizeBytes+estimateOverheadBytes(m.SizeBytes) > usable {
+			unfit = append(unfit, fmt.Sprintf("%s (%s)", t, openModelDisplay(cat, id)))
+		}
+	}
+	notes := []string{fmt.Sprintf("discrete GPUs: fit checked against the largest GPU's %s, not system RAM", formatBytes(budget))}
+	if len(unfit) > 0 {
+		notes = append(notes, "larger than any single GPU: "+strings.Join(unfit, ", ")+" — pick smaller models for these tiers")
+	}
+	return notes
+}
+
+// catalogModelByID finds a catalog model by inventory id (the form
+// RecommendedOpenModels is keyed by). False when the id does not
+// resolve, so callers can treat it as unknown instead of guessing.
+func catalogModelByID(cat agentclient.RuntimeModelCatalog, id string) (agentclient.RuntimeModel, bool) {
+	for _, m := range cat.Models {
+		if m.ID == id {
+			return m, true
+		}
+	}
+	return agentclient.RuntimeModel{}, false
 }
 
 // openTierOrder is the deterministic open-slot order used to build picks and

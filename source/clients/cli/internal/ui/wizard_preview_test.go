@@ -394,3 +394,52 @@ func TestWizardPreviewUnknownSelectionDoesNotPromiseDownload(t *testing.T) {
 		t.Fatalf("unknown model not disclosed: %s", text)
 	}
 }
+
+func TestWizardPreviewDisclosesUnknownTopology(t *testing.T) {
+	// RAM known but topology not probed (or an older server without the
+	// fields): the preview must still refuse a fit claim.
+	wp := &wizardPage{state: wizard.State{Step: wizard.StepDone, LocusMode: "open_only", TierPicks: map[string]string{"llama_server.most_capable": "Recommended Model"}}}
+	wp.catalog = agentclient.RuntimeModelCatalog{
+		Models: []agentclient.RuntimeModel{{
+			ID: "llama_server:catalog:recommended-model", DisplayName: "Recommended Model",
+			Runtime: "llama_server", Source: "catalog", DownloadState: "downloaded",
+		}},
+		RecommendedOpenModels: map[string]string{"most_capable": "llama_server:catalog:recommended-model"},
+		SystemRAMBytes:        64 << 30,
+		Hardware:              agentclient.HardwareTopology{Kind: agentclient.HardwareTopologyUnknown},
+		HardwareOK:            false, // old-server default
+	}
+	wp.catalogOK = true
+	summary := wp.summary()
+	if !strings.Contains(summary, "Memory topology is unknown; hardware fit unknown") {
+		t.Fatalf("missing unknown-topology disclosure: %s", summary)
+	}
+}
+
+func TestWizardPreviewDisclosesDiscreteFitPerGPU(t *testing.T) {
+	// Same RAM as a unified machine, but discrete GPUs: the preview must
+	// check fit against the largest GPU pool — never system RAM, never a
+	// sum across devices — and name picks that don't fit any single GPU.
+	wp := &wizardPage{state: wizard.State{Step: wizard.StepDone, LocusMode: "open_only", TierPicks: map[string]string{"llama_server.most_capable": "Big Model"}}}
+	wp.catalog = agentclient.RuntimeModelCatalog{
+		Models: []agentclient.RuntimeModel{{
+			ID: "llama_server:catalog:big-model", DisplayName: "Big Model",
+			Runtime: "llama_server", Source: "catalog", DownloadState: "downloaded", SizeBytes: 40 << 30,
+		}},
+		RecommendedOpenModels: map[string]string{"most_capable": "llama_server:catalog:big-model"},
+		SystemRAMBytes:        64 << 30, // plenty — but not GPU memory here
+		Hardware: agentclient.HardwareTopology{Kind: agentclient.HardwareTopologyDiscrete, GPUs: []agentclient.HardwareGPU{
+			{Name: "GTX 1080", MemoryBytes: 8 << 30},
+			{Name: "GTX 1080", MemoryBytes: 8 << 30},
+		}},
+		HardwareOK: true,
+	}
+	wp.catalogOK = true
+	summary := wp.summary()
+	if !strings.Contains(summary, "fit checked against the largest GPU's") {
+		t.Fatalf("missing per-GPU budget disclosure: %s", summary)
+	}
+	if !strings.Contains(summary, "larger than any single GPU") || !strings.Contains(summary, "most_capable") {
+		t.Fatalf("missing unfit pick disclosure: %s", summary)
+	}
+}

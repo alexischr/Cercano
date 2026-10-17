@@ -883,8 +883,17 @@ func (wp *wizardPage) addModelDownloadDisclosure(b *strings.Builder) {
 		b.WriteString("\nRuntime catalog unavailable: cannot determine requirements for open models.")
 		return
 	}
-	if wp.catalog.SystemRAMBytes == 0 {
+	switch {
+	case wp.catalog.SystemRAMBytes == 0:
 		b.WriteString("\nMachine memory is unknown; hardware fit unknown. Runtime checks still apply.")
+	case !wp.catalog.HardwareOK || wp.catalog.Hardware.Insufficient():
+		// Known total RAM but no topology (or an older server without
+		// the fields): still no fit claim — disclosed, not guessed.
+		b.WriteString("\nMemory topology is unknown; hardware fit unknown. Runtime checks still apply.")
+	case wp.catalog.Hardware.Kind == agentclient.HardwareTopologyDiscrete:
+		for _, n := range discreteFitNotes(wp.catalog) {
+			fmt.Fprintf(b, "\n%s", n)
+		}
 	}
 	seen := map[string]bool{}
 	downloads := 0
