@@ -206,3 +206,22 @@ Implemented directly after the user's request to finish the whole effort without
 Added tests for existing-account/no-download preview, explicit local-choice preservation, account connection before preview, saved preview progress, and customization/back navigation. Existing navigation tests now explicitly enter customization; interface scenario tests do the same. Fixed a nil-map initialization in the new test fixture after observing its panic.
 
 Verification: `go test ./internal/ui ./internal/wizard ./internal/slash`, matching `go vet`, and CLI `go build ./...` passed. No runtime/model validation, downloads, restarts, catalog-default changes, or paid inference were performed. This is a completed UI slice, not a claim that the entire acceptance checklist is complete.
+
+## Acceptance review and final integration gate — 2026-10-17
+
+This section is the current acceptance assessment; earlier dated sections describe intermediate implementations, not the final cancellation or hardware contracts.
+
+- **One-account start:** the loopback gRPC scenario now truly contains one account (the previous fixture contained two). It enters via `recommended`, verifies zero writes before confirmation, previews all task tiers, accepts with one locus update, and makes no account or download writes.
+- **Existing-user and multiple-account preservation:** `TestWizardScenarioRecommendedRerunAllModes` exercises the recommended shortcut for cloud_only, cloud_primary, open_primary, and open_only with two accounts. It checks zero pre-confirmation writes, explicit local-pick visibility/preservation, unrelated-slot preservation, account preservation, and no destructive reset. This tests coexistence/preservation, not automatic tier distribution between accounts. The wizard reuses the active account; multi-account assignment optimization remains unimplemented and must not be claimed complete.
+- **Customization, cancellation, and interruption:** existing scenario and unit tests cover customized mixed/local setup, account-preserving cancel, interrupted resume, apply failures, old progress, and explicit local overrides. The new shortcut changes presentation only, not the saved step schema or config patch scope.
+- **Local safety:** actual selected models are disclosed with deduplicated downloads and preliminary hardware warnings. The allocation and compatibility gates remain unchanged. No context/precision override is written. The original requirement for validated candidate-specific context recommendations is NOT complete: preview explicitly discloses deferral instead of inventing a context. That visibility task and candidate runtime validation are marked blocked.
+- **Model release evidence:** current catalog recommendations remain unchanged under the user's approved deferral. Qwen artifacts have listing/config evidence but no load/tool-call validation; no new Qwen default or allowlist entry ships. GLM catalog metadata is not new runtime evidence. Full theoretical/observed memory-band acceptance remains unfinished.
+
+Verification executed directly in this turn:
+
+- CLI: `go test -race ./internal/ui ./internal/wizard ./internal/slash` passed, including the new all-mode recommended-path RPC scenarios.
+- CLI: `go vet ./internal/ui ./internal/wizard ./internal/slash` and `go build ./...` passed.
+- Server: `go test ./internal/sysram ./pkg/agentclient ./pkg/setupstate ./internal/localruntime/llamaserver ./internal/managedrouting` passed.
+- Server: `go test ./internal/server -run 'RuntimeHardware|RuntimeModels|Wizard|Setup' -count=1` and `go build ./...` passed.
+
+These are deterministic software tests, not candidate inference/benchmark results. No live credentials were inspected, no model was downloaded or loaded, and no active runtime was stopped/restarted. The original model-release acceptance criteria and multi-account allocation task remain incomplete; completion of the wizard shortcut/integration slice does not silently waive them.

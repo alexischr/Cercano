@@ -394,6 +394,9 @@ func (s *wizardScenarioStub) writeCount() int {
 // configuration is written.
 func TestWizardScenarioCloudOnlyOneAccountFullAccept(t *testing.T) {
 	stub, client := newScenario(t)
+	stub.mu.Lock()
+	stub.profiles = stub.profiles[:1] // This scenario really has only one account.
+	stub.mu.Unlock()
 	wp := scenarioWizard(t, client)
 	if wp.state.Step != wizard.StepLocus {
 		t.Fatalf("fresh run should start at locus, got %s", wp.state.Step)
@@ -401,15 +404,11 @@ func TestWizardScenarioCloudOnlyOneAccountFullAccept(t *testing.T) {
 	if got := wp.recommendedLocus(); got != "cloud_only" {
 		t.Fatalf("resource discovery should recommend cloud_only for an account-holding user, got %q", got)
 	}
-	pressRows(t, wp, "customize")
-	if closed := pressRows(t, wp, "cloud_only"); closed {
-		t.Fatal("locus selection closed the page")
+	if closed := pressRows(t, wp, "recommended"); closed {
+		t.Fatal("recommendation must stop at preview")
 	}
-	if wp.state.Step != wizard.StepCloud {
-		t.Fatalf("cloud_only: want cloud step, got %s", wp.state.Step)
-	}
-	if closed := pressRows(t, wp, "use_existing"); closed {
-		t.Fatal("existing-account reuse closed the page")
+	if stub.writeCount() != 0 {
+		t.Fatal("recommendation wrote before confirmation")
 	}
 	if wp.state.Step != wizard.StepDone {
 		t.Fatalf("cloud_only: want done step, got %s", wp.state.Step)
@@ -446,7 +445,7 @@ func TestWizardScenarioCloudOnlyOneAccountFullAccept(t *testing.T) {
 		t.Fatalf("cloud-only accept enrolled %d download(s)", downloads)
 	}
 	stub.assertNoAccountWrites(t)
-	stub.assertProfilesIntact(t, "personal", "team-external")
+	stub.assertProfilesIntact(t, "personal")
 	stub.assertNeverReset(t)
 	if _, ok := wizard.Load(); ok {
 		t.Fatal("accept should clear the resume file")
@@ -725,6 +724,51 @@ func TestWizardScenarioGuidedRerunNeverInvokesSetupReset(t *testing.T) {
 			stub.assertNeverReset(t)
 			stub.assertNoAccountWrites(t)
 			stub.assertProfilesIntact(t, "personal", "team-external")
+		})
+	}
+}
+
+// Exercise the shortcut through real client RPCs, not only the customization
+// path, with multiple accounts present and every existing placement policy.
+func TestWizardScenarioRecommendedRerunAllModes(t *testing.T) {
+	for _, mode := range []string{"cloud_only", "cloud_primary", "open_primary", "open_only"} {
+		t.Run(mode, func(t *testing.T) {
+			stub, client := newScenario(t)
+			stub.mu.Lock()
+			stub.locusMode = mode
+			stub.modelTiers["llama_server.everyday"] = "preserved-explicit"
+			stub.modelTiers["unrelated.key"] = "untouched"
+			stub.mu.Unlock()
+			wp := scenarioWizard(t, client)
+			if pressRows(t, wp, "recommended") {
+				t.Fatal("closed before confirmation")
+			}
+			if wp.state.Step != wizard.StepDone {
+				t.Fatalf("expected preview, got %s: %s", wp.state.Step, wp.status)
+			}
+			if n := stub.writeCount(); n != 0 {
+				t.Fatalf("%d writes before confirmation", n)
+			}
+			if mode == "open_only" && !strings.Contains(wp.summary(), "no cloud routes or backups") {
+				t.Fatal("missing local-only disclosure")
+			}
+			if wizard.ModeUsesOpen(mode) && !strings.Contains(wp.summary(), "preserved-explicit") {
+				t.Fatal("preview lost explicit choice")
+			}
+			if !pressRows(t, wp, "finish") {
+				t.Fatalf("confirmation failed: %s", wp.status)
+			}
+			stub.mu.Lock()
+			gotMode := stub.locusMode
+			unrelated := stub.modelTiers["unrelated.key"]
+			explicit := stub.modelTiers["llama_server.everyday"]
+			stub.mu.Unlock()
+			if gotMode != mode || unrelated != "untouched" || explicit != "preserved-explicit" {
+				t.Fatalf("preservation failed: %s, %s, %s", gotMode, unrelated, explicit)
+			}
+			stub.assertNoAccountWrites(t)
+			stub.assertProfilesIntact(t, "personal", "team-external")
+			stub.assertNeverReset(t)
 		})
 	}
 }
