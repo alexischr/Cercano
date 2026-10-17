@@ -29,6 +29,6 @@ A child finishing while the main agent is busy leaves a durable pending notifica
 
 ## Implementation notes and remaining acceptance work
 
-Task status, child progress, restart reconciliation, and host completion handling have regression coverage. Live presentation of a host-generated completion turn's **main-chat response** is still being integrated; a child tab receiving its result is not the same as displaying the main agent's follow-up. Worker-main completion coverage and the final resource/consumer audit remain outstanding.
+Task status, child progress, restart reconciliation, and host completion handling have regression coverage. Host-generated main-chat replies now arrive through the normal conversation attachment, separately from child progress. Event cursors prevent duplicate replay, and saved-turn identities prevent a completed reply from duplicating restored history. Worker-main completion coverage and the final resource/consumer audit remain outstanding.
 
 The progress transport reads durable storage in bounded pages, with a 200 ms tail interval. It uses transport backpressure rather than an unbounded event queue. Lifecycle scanning is proportional to the chat's retained task history.

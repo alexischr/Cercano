@@ -139,6 +139,8 @@ type Model struct {
 	taskSubscriptionGeneration uint64
 	taskSubscriptionCancel     context.CancelFunc
 	taskProgressSequences      map[string]int64
+	backgroundTurns            map[string]*observedMainTurn
+	backgroundPrompts          map[string]bool
 	// turnGen identifies the live turn. Bumped on every submit AND every
 	// cancel; stream events carry the gen they were born under, and events
 	// whose gen doesn't match are ghosts of a dead turn — drained, never
@@ -1034,6 +1036,10 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 			nextModel = next
 		}
 	}()
+	if update, ok := msg.(conversationAttachmentMsg); ok {
+		cmd := m.applyConversationAttachment(update)
+		return m, cmd
+	}
 	if update, ok := msg.(taskSubscriptionMsg); ok {
 		cmd := m.applyTaskSubscription(update)
 		return m, cmd

@@ -317,6 +317,13 @@ message TokenDelta {
 
 // The response message for StreamProcessRequest.
 message StreamProcessResponse {
+  // Host-assigned identity for replay and cross-stream duplicate suppression.
+  string turn_epoch = 20;
+  uint64 turn_generation = 21;
+  uint64 event_sequence = 22;
+  bool background_turn = 23;
+  string persisted_turn_id = 24;
+
   oneof payload {
     ProgressUpdate    progress = 1;
     ProcessRequestResponse final_response = 2;
@@ -1433,6 +1440,9 @@ message ToolExecComplete {
   int32 start_line = 5;
 }
 message PermissionRequired {
+  string turn_epoch = 20;
+  uint64 turn_generation = 21;
+  bool background_turn = 22;
   string tool_use_id = 1;
   string tool_name = 2;
   string args_json = 3;
@@ -1704,6 +1714,9 @@ message SubmitClaudeLoginCodeResponse {
 // ordering — and thus the regen diff — minimal.
 message AttachConversationRequest {
   string conversation_id = 1;
+  string after_turn_epoch = 2;
+  uint64 after_turn_generation = 3;
+  uint64 after_event_sequence = 4;
 }
 
 // ============================================================

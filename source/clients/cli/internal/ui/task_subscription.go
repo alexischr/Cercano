@@ -27,13 +27,15 @@ func (m *Model) ensureTaskSubscription() tea.Cmd {
 	m.taskSubscriptionParent = m.convID
 	m.taskSubscriptionGeneration++
 	m.taskProgressSequences = make(map[string]int64)
+	m.backgroundTurns = nil
+	m.backgroundPrompts = nil
 	if m.agent == nil || m.convID == "" {
 		return nil
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	m.taskSubscriptionCancel = cancel
 	parent, generation, client := m.convID, m.taskSubscriptionGeneration, m.agent
-	return func() tea.Msg {
+	taskCmd := func() tea.Msg {
 		updates, err := client.SubscribeTasks(ctx, parent)
 		if err != nil {
 			return taskSubscriptionMsg{parent: parent, generation: generation, update: agentclient.TaskUpdate{Err: err}}
@@ -52,6 +54,7 @@ func (m *Model) ensureTaskSubscription() tea.Cmd {
 		}
 		return wait()
 	}
+	return tea.Batch(taskCmd, attachMainConversationCmd(ctx, client, parent, generation))
 }
 func (m *Model) applyTaskSubscription(msg taskSubscriptionMsg) tea.Cmd {
 	if msg.parent != m.convID || msg.generation != m.taskSubscriptionGeneration {

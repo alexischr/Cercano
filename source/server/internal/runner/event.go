@@ -50,8 +50,13 @@ type Authentication struct {
 }
 
 type Event struct {
-	Authentication *Authentication
-	Kind           EventKind
+	PersistedTurnID string
+	TurnEpoch       string
+	TurnGeneration  uint64
+	EventSequence   uint64
+	BackgroundTurn  bool
+	Authentication  *Authentication
+	Kind            EventKind
 
 	// Text: EventToken text delta; EventProgress message.
 	Text string

@@ -47,11 +47,13 @@ type grpcConnAlias = grpc.ClientConn
 // SDK methods read c.conn / c.agent through readConn — never touch the
 // fields directly outside that helper.
 type Client struct {
-	connMu       sync.Mutex
-	conn         *grpc.ClientConn
-	agent        proto.AgentClient
-	AutoLaunched bool   // true if Dial spawned a new cercano process
-	ServerLog    string // path to the auto-launched server's log file, if any
+	observationMu sync.Mutex
+	observedTurns map[string]turnVersion
+	connMu        sync.Mutex
+	conn          *grpc.ClientConn
+	agent         proto.AgentClient
+	AutoLaunched  bool   // true if Dial spawned a new cercano process
+	ServerLog     string // path to the auto-launched server's log file, if any
 
 	// addr is the dial target — kept so reconnect() can redial after a
 	// crash without threading it through every callsite.
@@ -2184,130 +2186,13 @@ func (c *Client) streamChat(ctx context.Context, conversationID, input, workDir 
 				out <- StreamMsg{Type: TypeError, Err: err}
 				return
 			}
-			if auth := msg.GetAuthenticationRequired(); auth != nil {
+			c.observeTurn(conversationID, msg)
+			if decoded := decodeStreamResponse(msg); decoded != nil {
 				select {
-				case out <- StreamMsg{Type: TypeAuthentication, Authentication: &AuthenticationRequired{ConversationID: auth.GetConversationId(), RequestID: auth.GetRequestId(), Provider: auth.GetProvider(), Profile: auth.GetProfileName(), Reason: auth.GetReason(), Fallback: auth.GetFallback(), RetrySafe: auth.GetRetrySafe(), Resolved: auth.GetResolved()}}:
+				case out <- *decoded:
 				case <-ctx.Done():
 					return
 				}
-				continue
-			}
-			if td := msg.GetTokenDelta(); td != nil {
-				out <- StreamMsg{Type: TypeToken, Token: td.GetContent()}
-				continue
-			}
-			if pg := msg.GetProgress(); pg != nil {
-				out <- StreamMsg{Type: TypeProgress, Note: pg.GetMessage()}
-				continue
-			}
-			if fr := msg.GetFinalResponse(); fr != nil {
-				m := fr.GetRoutingMetadata()
-				out <- StreamMsg{
-					Type:   TypeDone,
-					Final:  fr.GetOutput(),
-					Notice: fr.GetNotice(),
-					Model:  m.GetModelName(),
-					TokIn:  int(fr.GetInputTokens()),
-					TokOut: int(fr.GetOutputTokens()),
-				}
-				continue
-			}
-			if tus := msg.GetToolUseStart(); tus != nil {
-				out <- StreamMsg{
-					Type:      TypeToolUseStart,
-					ToolUseID: tus.GetToolUseId(),
-					ToolName:  tus.GetToolName(),
-				}
-				continue
-			}
-			if tup := msg.GetToolUseStop(); tup != nil {
-				out <- StreamMsg{
-					Type:        TypeToolUseStop,
-					ToolUseID:   tup.GetToolUseId(),
-					ArgsSummary: tup.GetArgsSummary(),
-				}
-				continue
-			}
-			if tes := msg.GetToolExecStart(); tes != nil {
-				out <- StreamMsg{
-					Type:      TypeToolExecStart,
-					ToolUseID: tes.GetToolUseId(),
-				}
-				continue
-			}
-			if tec := msg.GetToolExecComplete(); tec != nil {
-				out <- StreamMsg{
-					Type:      TypeToolExecComplete,
-					ToolUseID: tec.GetToolUseId(),
-					Summary:   tec.GetSummary(),
-					Detail:    tec.GetDetail(),
-					StartLine: int(tec.GetStartLine()),
-					IsError:   tec.GetIsError(),
-				}
-				continue
-			}
-			if pr := msg.GetPermissionRequired(); pr != nil {
-				out <- StreamMsg{
-					Type:        TypePermissionRequired,
-					ToolUseID:   pr.GetToolUseId(),
-					ToolName:    pr.GetToolName(),
-					ArgsJSON:    pr.GetArgsJson(),
-					Tier:        pr.GetTier(),
-					Destructive: pr.GetDestructive(),
-				}
-				continue
-			}
-			if rs := msg.GetRouteSelected(); rs != nil {
-				out <- StreamMsg{
-					Type:       TypeRouteSelected,
-					RouteModel: rs.GetModel(),
-					RouteCloud: rs.GetIsCloud(),
-				}
-				continue
-			}
-			if ro := msg.GetRolloverOffered(); ro != nil {
-				out <- StreamMsg{
-					Type:           TypeRolloverOffered,
-					OfferID:        ro.GetOfferId(),
-					ConvID:         ro.GetConversationId(),
-					RolloverReason: ro.GetReason(),
-					RawTokens:      ro.GetRawTokens(),
-					HandoffPreview: ro.GetHandoffPreview(),
-				}
-				continue
-			}
-			if we := msg.GetWatchdogEvent(); we != nil {
-				out <- streamMsgFromWatchdogEvent(we)
-				continue
-			}
-			if tc := msg.GetTaskChange(); tc != nil {
-				out <- StreamMsg{
-					Type:           TypeTaskChange,
-					TaskChangeKind: tc.GetKind(),
-					Task:           taskNodeFromProto(tc.GetTask()),
-				}
-				continue
-			}
-			if se := msg.GetSubAgentEvent(); se != nil {
-				out <- StreamMsg{
-					Type:             TypeSubAgent,
-					SubAgentID:       se.GetId(),
-					SubAgentParentID: se.GetParentId(),
-					SubAgentTitle:    se.GetTitle(),
-					SubAgentKind:     se.GetKind(),
-					GrantedTools:     append([]string(nil), se.GetGrantedTools()...),
-					IgnoredTools:     append([]string(nil), se.GetIgnoredTools()...),
-					SubAgentText:     se.GetText(),
-					SubAgentToolID:   se.GetToolUseId(),
-					ToolUseID:        se.GetToolUseId(),
-					ToolName:         se.GetToolName(),
-					ArgsSummary:      se.GetArgsSummary(),
-					Summary:          se.GetSummary(),
-					Detail:           se.GetDetail(),
-					StartLine:        int(se.GetStartLine()),
-					IsError:          se.GetIsError(),
-				}
-				continue
 			}
 		}
 	}()
@@ -2912,4 +2797,117 @@ func catalogAccountStatusFromProto(p *proto.CatalogAccountStatus) *CatalogAccoun
 		Error:       p.GetError(),
 		RefreshedAt: p.GetRefreshedAt(),
 	}
+}
+
+func decodeStreamResponse(msg *proto.StreamProcessResponse) *StreamMsg {
+	if auth := msg.GetAuthenticationRequired(); auth != nil {
+		return &StreamMsg{Type: TypeAuthentication, Authentication: &AuthenticationRequired{ConversationID: auth.GetConversationId(), RequestID: auth.GetRequestId(), Provider: auth.GetProvider(), Profile: auth.GetProfileName(), Reason: auth.GetReason(), Fallback: auth.GetFallback(), RetrySafe: auth.GetRetrySafe(), Resolved: auth.GetResolved()}}
+	}
+
+	if td := msg.GetTokenDelta(); td != nil {
+		return &StreamMsg{Type: TypeToken, Token: td.GetContent()}
+	}
+	if pg := msg.GetProgress(); pg != nil {
+		return &StreamMsg{Type: TypeProgress, Note: pg.GetMessage()}
+	}
+	if fr := msg.GetFinalResponse(); fr != nil {
+		m := fr.GetRoutingMetadata()
+		return &StreamMsg{
+			Type:   TypeDone,
+			Final:  fr.GetOutput(),
+			Notice: fr.GetNotice(),
+			Model:  m.GetModelName(),
+			TokIn:  int(fr.GetInputTokens()),
+			TokOut: int(fr.GetOutputTokens()),
+		}
+	}
+	if tus := msg.GetToolUseStart(); tus != nil {
+		return &StreamMsg{
+			Type:      TypeToolUseStart,
+			ToolUseID: tus.GetToolUseId(),
+			ToolName:  tus.GetToolName(),
+		}
+	}
+	if tup := msg.GetToolUseStop(); tup != nil {
+		return &StreamMsg{
+			Type:        TypeToolUseStop,
+			ToolUseID:   tup.GetToolUseId(),
+			ArgsSummary: tup.GetArgsSummary(),
+		}
+	}
+	if tes := msg.GetToolExecStart(); tes != nil {
+		return &StreamMsg{
+			Type:      TypeToolExecStart,
+			ToolUseID: tes.GetToolUseId(),
+		}
+	}
+	if tec := msg.GetToolExecComplete(); tec != nil {
+		return &StreamMsg{
+			Type:      TypeToolExecComplete,
+			ToolUseID: tec.GetToolUseId(),
+			Summary:   tec.GetSummary(),
+			Detail:    tec.GetDetail(),
+			StartLine: int(tec.GetStartLine()),
+			IsError:   tec.GetIsError(),
+		}
+	}
+	if pr := msg.GetPermissionRequired(); pr != nil {
+		return &StreamMsg{
+			Type:        TypePermissionRequired,
+			ToolUseID:   pr.GetToolUseId(),
+			ToolName:    pr.GetToolName(),
+			ArgsJSON:    pr.GetArgsJson(),
+			Tier:        pr.GetTier(),
+			Destructive: pr.GetDestructive(),
+		}
+	}
+	if rs := msg.GetRouteSelected(); rs != nil {
+		return &StreamMsg{
+			Type:       TypeRouteSelected,
+			RouteModel: rs.GetModel(),
+			RouteCloud: rs.GetIsCloud(),
+		}
+	}
+	if ro := msg.GetRolloverOffered(); ro != nil {
+		return &StreamMsg{
+			Type:           TypeRolloverOffered,
+			OfferID:        ro.GetOfferId(),
+			ConvID:         ro.GetConversationId(),
+			RolloverReason: ro.GetReason(),
+			RawTokens:      ro.GetRawTokens(),
+			HandoffPreview: ro.GetHandoffPreview(),
+		}
+	}
+	if we := msg.GetWatchdogEvent(); we != nil {
+		decoded := streamMsgFromWatchdogEvent(we)
+		return &decoded
+	}
+	if tc := msg.GetTaskChange(); tc != nil {
+		return &StreamMsg{
+			Type:           TypeTaskChange,
+			TaskChangeKind: tc.GetKind(),
+			Task:           taskNodeFromProto(tc.GetTask()),
+		}
+	}
+	if se := msg.GetSubAgentEvent(); se != nil {
+		return &StreamMsg{
+			Type:             TypeSubAgent,
+			SubAgentID:       se.GetId(),
+			SubAgentParentID: se.GetParentId(),
+			SubAgentTitle:    se.GetTitle(),
+			SubAgentKind:     se.GetKind(),
+			GrantedTools:     append([]string(nil), se.GetGrantedTools()...),
+			IgnoredTools:     append([]string(nil), se.GetIgnoredTools()...),
+			SubAgentText:     se.GetText(),
+			SubAgentToolID:   se.GetToolUseId(),
+			ToolUseID:        se.GetToolUseId(),
+			ToolName:         se.GetToolName(),
+			ArgsSummary:      se.GetArgsSummary(),
+			Summary:          se.GetSummary(),
+			Detail:           se.GetDetail(),
+			StartLine:        int(se.GetStartLine()),
+			IsError:          se.GetIsError(),
+		}
+	}
+	return nil
 }

@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"time"
 
 	"cercano/source/server/internal/conversation"
+	runnersvc "cercano/source/server/internal/runner"
 	"cercano/source/server/pkg/proto"
 	"google.golang.org/grpc"
 )
@@ -27,6 +29,10 @@ type completionTurnLease struct {
 // Runner events already reach the conversation broker; publishing them again
 // here would duplicate output. Approval prompts are retained by pendingPrompts.
 type completionTurnStream struct {
+	baselineTurnID string
+	server         *Server
+	parent         string
+	generation     uint64
 	grpc.ServerStream
 	ctx       context.Context
 	succeeded bool
@@ -39,6 +45,14 @@ func (s *completionTurnStream) Send(response *proto.StreamProcessResponse) error
 	}
 	if final := response.GetFinalResponse(); final != nil && final.GetRoutingMetadata().GetModelName() != "" {
 		s.succeeded = true
+		if s.server != nil {
+			persisted := ""
+			latest := s.server.latestCompletionTurn(s.parent)
+			if latest.ID != s.baselineTurnID && latest.Role == "assistant" {
+				persisted = latest.ID
+			}
+			s.server.turnBroker.Publish(s.parent, s.generation, runnersvc.Event{Kind: runnersvc.EventDone, PersistedTurnID: persisted, Result: runnersvc.Result{FinalText: final.GetOutput(), Model: final.GetRoutingMetadata().GetModelName(), InputTokens: int(final.GetInputTokens()), OutputTokens: int(final.GetOutputTokens()), Notice: final.GetNotice()}})
+		}
 	}
 	return nil
 }
@@ -101,8 +115,11 @@ func (s *Server) tryTaskCompletionWake(parentCtx context.Context, parent string)
 	if len(notices) == 0 {
 		return
 	}
-	stream := &completionTurnStream{ctx: ctx}
+	stream := &completionTurnStream{ctx: ctx, server: s, parent: parent, generation: gen, baselineTurnID: s.latestCompletionTurn(parent).ID}
 	err = s.streamConversationTurn(&proto.ProcessRequestRequest{ConversationId: parent, Input: input, WorkDir: info.ProjectDir, DebugMode: info.DevWorkDir != ""}, stream, &completionTurnLease{ctx, gen, release})
+	if !stream.succeeded {
+		s.turnBroker.Publish(parent, gen, runnersvc.Event{Kind: runnersvc.EventDone, Result: runnersvc.Result{Notice: "Automatic follow-up did not finish; task results remain available."}})
+	}
 	if err != nil {
 		log.Printf("task completion turn %s: %v", parent, err)
 		return
@@ -192,4 +209,19 @@ func continuationAnnouncement(gate autonomyGate, turn int) string {
 		return "Processing delegated task completions."
 	}
 	return autonomyContinuationAnnouncement(gate.run.RunID, turn)
+}
+
+// A completion's final persisted emission already has a stable identity. Link
+// replay to that identity, not to text equality or a new database migration.
+func (s *Server) latestCompletionTurn(parent string) conversation.Turn {
+	if s.persistSvc == nil || s.persistSvc.Store() == nil {
+		return conversation.Turn{}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	turns, _, _, err := s.persistSvc.Store().GetTailTurns(ctx, parent, 1)
+	if err != nil || len(turns) == 0 {
+		return conversation.Turn{}
+	}
+	return turns[len(turns)-1]
 }

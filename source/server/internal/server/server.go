@@ -3478,41 +3478,42 @@ func (s *Server) AttachConversation(req *proto.AttachConversationRequest, stream
 		return grpcstatus.Error(codes.InvalidArgument, "conversation_id is required")
 	}
 
-	replay, ch, detach := s.turnBroker.Attach(convID)
+	changes, detach := s.turnBroker.Observe(convID)
 	defer detach()
-
 	promptChanges, detachPrompts := s.pendingPrompts.subscribe(convID)
 	defer detachPrompts()
-
-	// Send the replay buffer first (events published before this Attach call).
-	for _, ev := range replay {
-		if err := sendRunnerEvent(stream, ev); err != nil {
-			return err
-		}
-	}
-
-	// Forward live events until the channel closes or the client disconnects.
+	epoch, gen, seq := req.GetAfterTurnEpoch(), req.GetAfterTurnGeneration(), req.GetAfterEventSequence()
 	for {
+		for {
+			page := s.turnBroker.ReplayPage(convID, epoch, gen, seq)
+			if len(page) == 0 {
+				break
+			}
+			for _, ev := range page {
+				if s.turnBroker.IsCurrent(convID, ev.TurnGeneration) {
+					if err := sendAttachedEvent(stream, ev); err != nil {
+						return err
+					}
+				}
+				epoch, gen, seq = ev.TurnEpoch, ev.TurnGeneration, ev.EventSequence
+			}
+		}
 		select {
+		case <-changes:
 		case <-promptChanges:
 			for _, prompt := range s.pendingPrompts.snapshot(convID) {
-				if err := stream.Send(&proto.StreamProcessResponse{Payload: &proto.StreamProcessResponse_PermissionRequired{PermissionRequired: prompt}}); err != nil {
+				if prompt.TurnGeneration != 0 && !s.turnBroker.IsCurrent(convID, prompt.TurnGeneration) {
+					continue
+				}
+				if err := stream.Send(&proto.StreamProcessResponse{TurnEpoch: prompt.TurnEpoch, TurnGeneration: prompt.TurnGeneration, BackgroundTurn: prompt.BackgroundTurn, Payload: &proto.StreamProcessResponse_PermissionRequired{PermissionRequired: prompt}}); err != nil {
 					return err
 				}
-			}
-
-		case ev, ok := <-ch:
-			if !ok {
-				// Broker closed ch — turn ended or was superseded.
-				return nil
-			}
-			if err := sendRunnerEvent(stream, ev); err != nil {
-				return err
 			}
 		case <-stream.Context().Done():
 			return stream.Context().Err()
 		}
 	}
+
 }
 
 // streamProcessRequestWithToolLoop drives the native tool-calling loop and
@@ -3582,6 +3583,10 @@ func (s *Server) streamConversationTurn(req *proto.ProcessRequestRequest, stream
 			return false, nil
 		}
 		prompt := &proto.PermissionRequired{ToolUseId: toolUseID, ToolName: name, ArgsJson: string(args), Tier: string(tier), Destructive: destructive}
+		meta := s.turnBroker.TurnMetadata(convID, turnGen)
+		prompt.TurnEpoch = meta.TurnEpoch
+		prompt.TurnGeneration = meta.TurnGeneration
+		prompt.BackgroundTurn = meta.BackgroundTurn
 		var forget func()
 		defer func() {
 			if forget != nil {
@@ -4097,6 +4102,9 @@ func isTurnCancellation(err error) bool {
 // EventWatchdog/escalate is silently dropped — behavior-preserving (old sink
 // did the same).
 func sendRunnerEvent(stream streamResponseSender, ev runnersvc.Event) error {
+	if ev.TurnEpoch != "" {
+		stream = identifiedStreamSender{streamResponseSender: stream, event: ev}
+	}
 	switch ev.Kind {
 	case runnersvc.EventAuthentication:
 		if ev.Authentication == nil {
@@ -4623,4 +4631,25 @@ func (s *Server) profileModelEvidence(p config.CloudProfile, model string) model
 
 func (s *Server) restartRuntimeTool(ctx context.Context, id string) (json.RawMessage, error) {
 	return runtimecontrol.Restart(ctx, s, id)
+}
+
+// Identity is host-owned and shared by request delivery and attachment replay.
+type identifiedStreamSender struct {
+	streamResponseSender
+	event runnersvc.Event
+}
+
+func (s identifiedStreamSender) Send(msg *proto.StreamProcessResponse) error {
+	msg.PersistedTurnId = s.event.PersistedTurnID
+	msg.TurnEpoch = s.event.TurnEpoch
+	msg.TurnGeneration = s.event.TurnGeneration
+	msg.EventSequence = s.event.EventSequence
+	msg.BackgroundTurn = s.event.BackgroundTurn
+	return s.streamResponseSender.Send(msg)
+}
+func sendAttachedEvent(stream streamResponseSender, ev runnersvc.Event) error {
+	if ev.Kind != runnersvc.EventDone {
+		return sendRunnerEvent(stream, ev)
+	}
+	return (identifiedStreamSender{streamResponseSender: stream, event: ev}).Send(&proto.StreamProcessResponse{Payload: &proto.StreamProcessResponse_FinalResponse{FinalResponse: &proto.ProcessRequestResponse{Output: ev.Result.FinalText, InputTokens: int32(ev.Result.InputTokens), OutputTokens: int32(ev.Result.OutputTokens), Notice: ev.Result.Notice, RoutingMetadata: &proto.RoutingMetadata{ModelName: ev.Result.Model, IsCloud: ev.Result.IsCloud}}}})
 }

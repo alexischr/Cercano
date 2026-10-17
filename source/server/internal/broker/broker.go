@@ -24,6 +24,7 @@ package broker
 
 import (
 	"context"
+	"crypto/rand"
 	"sync"
 
 	"cercano/source/server/internal/runner"
@@ -48,6 +49,8 @@ type losslessItem struct {
 
 // convState bundles all per-conversation mutable state under Broker.mu.
 type convState struct {
+	background bool
+	observers  map[chan struct{}]struct{}
 	// turn-exclusivity
 	gen    uint64      // current turn generation (monotonic, starts at 0 = no turn)
 	handle *turnHandle // nil when no active turn
@@ -68,13 +71,14 @@ type turnHandle struct {
 // Broker is the per-conversation turn registry, fan-out hub, and replay buffer.
 // The zero value is not usable; call New.
 type Broker struct {
+	epoch string
 	mu    sync.Mutex
 	convs map[string]*convState
 }
 
 // New returns a ready-to-use Broker.
 func New() *Broker {
-	return &Broker{
+	return &Broker{epoch: rand.Text(),
 		convs: make(map[string]*convState),
 	}
 }
@@ -84,7 +88,7 @@ func New() *Broker {
 func (b *Broker) convLocked(conv string) *convState {
 	cs, ok := b.convs[conv]
 	if !ok {
-		cs = &convState{
+		cs = &convState{observers: make(map[chan struct{}]struct{}),
 			subs:  make(map[int]chan runner.Event),
 			lsubs: make(map[int]*losslessSub),
 		}
@@ -130,6 +134,7 @@ func (b *Broker) beginTurn(parent context.Context, conv string, idleOnly bool) (
 		cs.handle.cancel() // supersede the turn already running on this conversation
 	}
 	cs.gen++
+	cs.background = idleOnly
 	h := &turnHandle{gen: cs.gen, cancel: cancel}
 	cs.handle = h
 	cs.buffer = nil // reset replay buffer for the new turn
@@ -231,7 +236,17 @@ func (b *Broker) Publish(conv string, gen uint64, ev runner.Event) {
 	if !ok || cs.gen != gen {
 		return // fenced: stale or unknown conversation
 	}
+	ev.TurnEpoch = b.epoch
+	ev.TurnGeneration = gen
+	ev.EventSequence = uint64(len(cs.buffer) + 1)
+	ev.BackgroundTurn = cs.background
 	cs.buffer = append(cs.buffer, ev)
+	for ch := range cs.observers {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
 	for _, ch := range cs.subs {
 		select {
 		case ch <- ev:
@@ -456,4 +471,54 @@ func (b *Broker) AttachLosslessWithBarrierAndFinish(conv string) (replay []runne
 		return ack
 	}
 	return replay, out, barrier, finish, detach
+}
+
+// Observe signals replay changes without queueing events or dropping content.
+// The observer drains bounded pages from the existing turn replay buffer.
+func (b *Broker) Observe(conv string) (<-chan struct{}, func()) {
+	b.mu.Lock()
+	cs := b.convLocked(conv)
+	ch := make(chan struct{}, 1)
+	cs.observers[ch] = struct{}{}
+	ch <- struct{}{}
+	b.mu.Unlock()
+	return ch, func() { b.mu.Lock(); delete(cs.observers, ch); b.mu.Unlock() }
+}
+func (b *Broker) ReplayPage(conv, epoch string, gen, after uint64) []runner.Event {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	cs := b.convLocked(conv)
+	if epoch != b.epoch || gen != cs.gen {
+		after = 0
+	}
+	if after >= uint64(len(cs.buffer)) {
+		return nil
+	}
+	end := after + 128
+	if end > uint64(len(cs.buffer)) {
+		end = uint64(len(cs.buffer))
+	}
+	page := append([]runner.Event(nil), cs.buffer[after:end]...)
+	persisted := ""
+	if len(cs.buffer) > 0 {
+		last := cs.buffer[len(cs.buffer)-1]
+		if last.Kind == runner.EventDone {
+			persisted = last.PersistedTurnID
+		}
+	}
+	for i := range page {
+		if persisted != "" {
+			page[i].PersistedTurnID = persisted
+		}
+	}
+	return page
+}
+func (b *Broker) TurnMetadata(conv string, gen uint64) runner.Event {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	cs := b.convLocked(conv)
+	if cs.gen != gen {
+		return runner.Event{}
+	}
+	return runner.Event{TurnEpoch: b.epoch, TurnGeneration: gen, BackgroundTurn: cs.background}
 }

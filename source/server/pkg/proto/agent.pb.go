@@ -465,6 +465,12 @@ func (x *TokenDelta) GetContent() string {
 // The response message for StreamProcessRequest.
 type StreamProcessResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
+	// Host-assigned identity for replay and cross-stream duplicate suppression.
+	TurnEpoch       string `protobuf:"bytes,20,opt,name=turn_epoch,json=turnEpoch,proto3" json:"turn_epoch,omitempty"`
+	TurnGeneration  uint64 `protobuf:"varint,21,opt,name=turn_generation,json=turnGeneration,proto3" json:"turn_generation,omitempty"`
+	EventSequence   uint64 `protobuf:"varint,22,opt,name=event_sequence,json=eventSequence,proto3" json:"event_sequence,omitempty"`
+	BackgroundTurn  bool   `protobuf:"varint,23,opt,name=background_turn,json=backgroundTurn,proto3" json:"background_turn,omitempty"`
+	PersistedTurnId string `protobuf:"bytes,24,opt,name=persisted_turn_id,json=persistedTurnId,proto3" json:"persisted_turn_id,omitempty"`
 	// Types that are valid to be assigned to Payload:
 	//
 	//	*StreamProcessResponse_Progress
@@ -514,6 +520,41 @@ func (x *StreamProcessResponse) ProtoReflect() protoreflect.Message {
 // Deprecated: Use StreamProcessResponse.ProtoReflect.Descriptor instead.
 func (*StreamProcessResponse) Descriptor() ([]byte, []int) {
 	return file_agent_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *StreamProcessResponse) GetTurnEpoch() string {
+	if x != nil {
+		return x.TurnEpoch
+	}
+	return ""
+}
+
+func (x *StreamProcessResponse) GetTurnGeneration() uint64 {
+	if x != nil {
+		return x.TurnGeneration
+	}
+	return 0
+}
+
+func (x *StreamProcessResponse) GetEventSequence() uint64 {
+	if x != nil {
+		return x.EventSequence
+	}
+	return 0
+}
+
+func (x *StreamProcessResponse) GetBackgroundTurn() bool {
+	if x != nil {
+		return x.BackgroundTurn
+	}
+	return false
+}
+
+func (x *StreamProcessResponse) GetPersistedTurnId() string {
+	if x != nil {
+		return x.PersistedTurnId
+	}
+	return ""
 }
 
 func (x *StreamProcessResponse) GetPayload() isStreamProcessResponse_Payload {
@@ -10166,14 +10207,17 @@ func (x *ToolExecComplete) GetStartLine() int32 {
 }
 
 type PermissionRequired struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ToolUseId     string                 `protobuf:"bytes,1,opt,name=tool_use_id,json=toolUseId,proto3" json:"tool_use_id,omitempty"`
-	ToolName      string                 `protobuf:"bytes,2,opt,name=tool_name,json=toolName,proto3" json:"tool_name,omitempty"`
-	ArgsJson      string                 `protobuf:"bytes,3,opt,name=args_json,json=argsJson,proto3" json:"args_json,omitempty"`
-	Tier          string                 `protobuf:"bytes,4,opt,name=tier,proto3" json:"tier,omitempty"`                // "W" | "X"
-	Destructive   bool                   `protobuf:"varint,5,opt,name=destructive,proto3" json:"destructive,omitempty"` // display-only ⚠ hint (MCP destructiveHint); never affects gating
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	TurnEpoch      string                 `protobuf:"bytes,20,opt,name=turn_epoch,json=turnEpoch,proto3" json:"turn_epoch,omitempty"`
+	TurnGeneration uint64                 `protobuf:"varint,21,opt,name=turn_generation,json=turnGeneration,proto3" json:"turn_generation,omitempty"`
+	BackgroundTurn bool                   `protobuf:"varint,22,opt,name=background_turn,json=backgroundTurn,proto3" json:"background_turn,omitempty"`
+	ToolUseId      string                 `protobuf:"bytes,1,opt,name=tool_use_id,json=toolUseId,proto3" json:"tool_use_id,omitempty"`
+	ToolName       string                 `protobuf:"bytes,2,opt,name=tool_name,json=toolName,proto3" json:"tool_name,omitempty"`
+	ArgsJson       string                 `protobuf:"bytes,3,opt,name=args_json,json=argsJson,proto3" json:"args_json,omitempty"`
+	Tier           string                 `protobuf:"bytes,4,opt,name=tier,proto3" json:"tier,omitempty"`                // "W" | "X"
+	Destructive    bool                   `protobuf:"varint,5,opt,name=destructive,proto3" json:"destructive,omitempty"` // display-only ⚠ hint (MCP destructiveHint); never affects gating
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *PermissionRequired) Reset() {
@@ -10204,6 +10248,27 @@ func (x *PermissionRequired) ProtoReflect() protoreflect.Message {
 // Deprecated: Use PermissionRequired.ProtoReflect.Descriptor instead.
 func (*PermissionRequired) Descriptor() ([]byte, []int) {
 	return file_agent_proto_rawDescGZIP(), []int{143}
+}
+
+func (x *PermissionRequired) GetTurnEpoch() string {
+	if x != nil {
+		return x.TurnEpoch
+	}
+	return ""
+}
+
+func (x *PermissionRequired) GetTurnGeneration() uint64 {
+	if x != nil {
+		return x.TurnGeneration
+	}
+	return 0
+}
+
+func (x *PermissionRequired) GetBackgroundTurn() bool {
+	if x != nil {
+		return x.BackgroundTurn
+	}
+	return false
 }
 
 func (x *PermissionRequired) GetToolUseId() string {
@@ -13042,10 +13107,13 @@ func (x *SubmitClaudeLoginCodeResponse) GetError() string {
 // AttachConversation RPC). Declared at file end to keep the generated message
 // ordering — and thus the regen diff — minimal.
 type AttachConversationRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	ConversationId string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	ConversationId      string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	AfterTurnEpoch      string                 `protobuf:"bytes,2,opt,name=after_turn_epoch,json=afterTurnEpoch,proto3" json:"after_turn_epoch,omitempty"`
+	AfterTurnGeneration uint64                 `protobuf:"varint,3,opt,name=after_turn_generation,json=afterTurnGeneration,proto3" json:"after_turn_generation,omitempty"`
+	AfterEventSequence  uint64                 `protobuf:"varint,4,opt,name=after_event_sequence,json=afterEventSequence,proto3" json:"after_event_sequence,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *AttachConversationRequest) Reset() {
@@ -13083,6 +13151,27 @@ func (x *AttachConversationRequest) GetConversationId() string {
 		return x.ConversationId
 	}
 	return ""
+}
+
+func (x *AttachConversationRequest) GetAfterTurnEpoch() string {
+	if x != nil {
+		return x.AfterTurnEpoch
+	}
+	return ""
+}
+
+func (x *AttachConversationRequest) GetAfterTurnGeneration() uint64 {
+	if x != nil {
+		return x.AfterTurnGeneration
+	}
+	return 0
+}
+
+func (x *AttachConversationRequest) GetAfterEventSequence() uint64 {
+	if x != nil {
+		return x.AfterEventSequence
+	}
+	return 0
 }
 
 // HostToWorker is the host→worker envelope.
@@ -20129,8 +20218,14 @@ const file_agent_proto_rawDesc = "" +
 	"\x04data\x18\x03 \x01(\fR\x04data\"&\n" +
 	"\n" +
 	"TokenDelta\x12\x18\n" +
-	"\acontent\x18\x01 \x01(\tR\acontent\"\xb6\a\n" +
-	"\x15StreamProcessResponse\x123\n" +
+	"\acontent\x18\x01 \x01(\tR\acontent\"\xfa\b\n" +
+	"\x15StreamProcessResponse\x12\x1d\n" +
+	"\n" +
+	"turn_epoch\x18\x14 \x01(\tR\tturnEpoch\x12'\n" +
+	"\x0fturn_generation\x18\x15 \x01(\x04R\x0eturnGeneration\x12%\n" +
+	"\x0eevent_sequence\x18\x16 \x01(\x04R\reventSequence\x12'\n" +
+	"\x0fbackground_turn\x18\x17 \x01(\bR\x0ebackgroundTurn\x12*\n" +
+	"\x11persisted_turn_id\x18\x18 \x01(\tR\x0fpersistedTurnId\x123\n" +
 	"\bprogress\x18\x01 \x01(\v2\x15.agent.ProgressUpdateH\x00R\bprogress\x12F\n" +
 	"\x0efinal_response\x18\x02 \x01(\v2\x1d.agent.ProcessRequestResponseH\x00R\rfinalResponse\x124\n" +
 	"\vtoken_delta\x18\x03 \x01(\v2\x11.agent.TokenDeltaH\x00R\n" +
@@ -20894,8 +20989,12 @@ const file_agent_proto_rawDesc = "" +
 	"\bis_error\x18\x03 \x01(\bR\aisError\x12\x16\n" +
 	"\x06detail\x18\x04 \x01(\tR\x06detail\x12\x1d\n" +
 	"\n" +
-	"start_line\x18\x05 \x01(\x05R\tstartLine\"\xa4\x01\n" +
-	"\x12PermissionRequired\x12\x1e\n" +
+	"start_line\x18\x05 \x01(\x05R\tstartLine\"\x95\x02\n" +
+	"\x12PermissionRequired\x12\x1d\n" +
+	"\n" +
+	"turn_epoch\x18\x14 \x01(\tR\tturnEpoch\x12'\n" +
+	"\x0fturn_generation\x18\x15 \x01(\x04R\x0eturnGeneration\x12'\n" +
+	"\x0fbackground_turn\x18\x16 \x01(\bR\x0ebackgroundTurn\x12\x1e\n" +
 	"\vtool_use_id\x18\x01 \x01(\tR\ttoolUseId\x12\x1b\n" +
 	"\ttool_name\x18\x02 \x01(\tR\btoolName\x12\x1b\n" +
 	"\targs_json\x18\x03 \x01(\tR\bargsJson\x12\x12\n" +
@@ -21134,9 +21233,12 @@ const file_agent_proto_rawDesc = "" +
 	"\x04code\x18\x02 \x01(\tR\x04code\"Q\n" +
 	"\x1dSubmitClaudeLoginCodeResponse\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12\x14\n" +
-	"\x05error\x18\x02 \x01(\tR\x05error\"D\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\"\xd4\x01\n" +
 	"\x19AttachConversationRequest\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\"\xc3\b\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12(\n" +
+	"\x10after_turn_epoch\x18\x02 \x01(\tR\x0eafterTurnEpoch\x122\n" +
+	"\x15after_turn_generation\x18\x03 \x01(\x04R\x13afterTurnGeneration\x120\n" +
+	"\x14after_event_sequence\x18\x04 \x01(\x04R\x12afterEventSequence\"\xc3\b\n" +
 	"\fHostToWorker\x12(\n" +
 	"\x05start\x18\x01 \x01(\v2\x10.agent.StartTurnH\x00R\x05start\x12@\n" +
 	"\rperm_response\x18\x02 \x01(\v2\x19.agent.PermissionResponseH\x00R\fpermResponse\x12'\n" +
