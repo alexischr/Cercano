@@ -1,9 +1,13 @@
 package server
 
 import (
+	"cercano/source/server/internal/dispatch"
+	"cercano/source/server/internal/taskrun"
 	"context"
 	"fmt"
 	"net"
+	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -182,5 +186,71 @@ func TestTaskSubscriptionPaginationCursorAndDismissal(t *testing.T) {
 	_ = s.SubscribeTasks(&proto.SubscribeTasksRequest{ParentId: "owner", Cursors: []*proto.TaskProgressCursor{{TaskId: "task-000", Sequence: 2}, {TaskId: "foreign-task", Sequence: 999}}}, probe)
 	if snapshots != conversation.TaskSubscriptionPageSize+1 || progress != 1 {
 		t.Fatalf("snapshots=%d progress=%d", snapshots, progress)
+	}
+}
+
+func TestTaskSubscriptionAfterStoreReopenReportsInterruptedWithoutReplay(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tasks.db")
+	store, err := conversation.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, _ := newTestServer()
+	s.persistSvc = &stubPersistSvc{store: store}
+	seedObservedTask(t, s, "owner", "task", "child")
+	if err := store.(conversation.DispatchEventStore).AppendDispatchEvent(t.Context(), conversation.DispatchEvent{ConversationID: "child", Seq: 1, Kind: "note", PayloadJSON: `{"text":"preserved work"}`}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := conversation.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	var executions atomic.Int32
+	manager, err := taskrun.New(reopened.(conversation.TaskStore), func(context.Context, dispatch.Spec) (dispatch.Result, error) {
+		executions.Add(1)
+		return dispatch.Result{}, nil
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close(t.Context())
+	next, _ := newTestServer()
+	next.persistSvc = &stubPersistSvc{store: reopened}
+	client := taskObserverClient(t, next)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	updates, err := client.SubscribeTasks(ctx, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	interrupted, preserved := false, false
+	for {
+		select {
+		case update, ok := <-updates:
+			if !ok || update.Err != nil {
+				t.Fatalf("subscription ended: %v", update.Err)
+			}
+			if task := update.Event.GetTask(); task != nil {
+				interrupted = task.Status == "interrupted"
+			}
+			if progress := update.Event.GetProgress(); progress != nil {
+				preserved = progress.PayloadJson == `{"text":"preserved work"}`
+			}
+			if update.Event.GetSnapshotComplete() {
+				if !interrupted || !preserved || executions.Load() != 0 {
+					t.Fatalf("interrupted=%v preserved=%v executions=%d", interrupted, preserved, executions.Load())
+				}
+				cancel()
+				for range updates {
+				}
+				return
+			}
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		}
 	}
 }

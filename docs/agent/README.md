@@ -5,7 +5,8 @@ delegation, configurable inference routes, and persistent conversations.
 
 Start with the **[feature guide](features/README.md)** for what makes Cercano
 different and why each capability matters. This page covers setup, commands,
-and the agent architecture.
+and the agent architecture. See [independent delegated tasks](independent-tasks.md)
+for dispatch receipts, task controls, child lifetime, and completion handling.
 
 Looking for the external co-processor integration? It is
 **[deprecated for now](../co-processor/README.md)**; its historical instructions
