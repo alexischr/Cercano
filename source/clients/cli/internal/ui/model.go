@@ -133,7 +133,12 @@ type Model struct {
 	// cancelStream cancels the context of the in-flight StreamChat so Esc can
 	// abort a running prompt. Nil when nothing is streaming. The driver returns
 	// it from Submit; the host stores it here.
-	cancelStream context.CancelFunc
+	cancelStream               context.CancelFunc
+	taskSubscriptionParent     string
+	taskSubscriptionClient     *agentclient.Client
+	taskSubscriptionGeneration uint64
+	taskSubscriptionCancel     context.CancelFunc
+	taskProgressSequences      map[string]int64
 	// turnGen identifies the live turn. Bumped on every submit AND every
 	// cancel; stream events carry the gen they were born under, and events
 	// whose gen doesn't match are ghosts of a dead turn — drained, never
@@ -1020,12 +1025,19 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 	// Schedule after the reducer so background transcript updates are coalesced.
 	defer func() {
 		if next, ok := nextModel.(Model); ok {
+			if cmd := next.ensureTaskSubscription(); cmd != nil {
+				nextCmd = tea.Batch(nextCmd, cmd)
+			}
 			if cmd := next.conversationSearchCmd(); cmd != nil {
 				nextCmd = tea.Batch(nextCmd, cmd)
 			}
 			nextModel = next
 		}
 	}()
+	if update, ok := msg.(taskSubscriptionMsg); ok {
+		cmd := m.applyTaskSubscription(update)
+		return m, cmd
+	}
 	if result, ok := msg.(conversationSearchResultMsg); ok {
 		m.applyConversationSearchResult(result)
 		return m, nil

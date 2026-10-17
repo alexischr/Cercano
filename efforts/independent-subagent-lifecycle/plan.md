@@ -55,7 +55,7 @@ Objective: integrate durable completion notification with the existing single-ma
 Objective: display and control independent children accurately without weakening main-stream safety. Files: source/proto/agent.proto where required and generated bindings, server attach/list/control handlers, source/clients/cli/internal/ui/model.go and child-tab/event handling, queue and subagent_stale_cleanup tests. Tests: client/server transport integration and CLI state tests.
 
 - [ ] Extend existing task listing, event attachment, and control transport as needed; regenerate bindings with repository tooling
-- [ ] Keep live child tabs active when the main conversation is steered, canceled, or finishes normally
+- [x] Keep live child tabs active when the main conversation is steered, canceled, or finishes normally
 - [ ] Preserve cleanup of genuinely stale main-turn activity; distinguish actual child interruption/failure from a lost main stream
 - [~] Rehydrate task status and available progress after reconnect and show interrupted status after agent restart
 - [ ] Keep dismiss-tab and stop-task semantics distinct

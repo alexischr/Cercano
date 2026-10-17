@@ -23,6 +23,7 @@ const (
 	Agent_ProcessRequest_FullMethodName                        = "/agent.Agent/ProcessRequest"
 	Agent_StreamProcessRequest_FullMethodName                  = "/agent.Agent/StreamProcessRequest"
 	Agent_AttachConversation_FullMethodName                    = "/agent.Agent/AttachConversation"
+	Agent_SubscribeTasks_FullMethodName                        = "/agent.Agent/SubscribeTasks"
 	Agent_UpdateConfig_FullMethodName                          = "/agent.Agent/UpdateConfig"
 	Agent_ResetSetup_FullMethodName                            = "/agent.Agent/ResetSetup"
 	Agent_ShutdownAgent_FullMethodName                         = "/agent.Agent/ShutdownAgent"
@@ -117,6 +118,9 @@ type AgentClient interface {
 	// live, using the same StreamProcessResponse vocabulary as StreamProcessRequest.
 	// Observe-only: it does not send input or answer permission prompts.
 	AttachConversation(ctx context.Context, in *AttachConversationRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamProcessResponse], error)
+	// Independent task snapshot plus durable progress replay, scoped to one parent.
+	// Canceling this observation stream never stops task execution.
+	SubscribeTasks(ctx context.Context, in *SubscribeTasksRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TaskSubscriptionEvent], error)
 	// UpdateConfig updates runtime configuration (model, provider). Some changes
 	// (notably open_runtime swaps) require an agent restart before all worker-side
 	// providers and model-tier mappings are rebuilt.
@@ -406,6 +410,25 @@ func (c *agentClient) AttachConversation(ctx context.Context, in *AttachConversa
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Agent_AttachConversationClient = grpc.ServerStreamingClient[StreamProcessResponse]
 
+func (c *agentClient) SubscribeTasks(ctx context.Context, in *SubscribeTasksRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TaskSubscriptionEvent], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Agent_ServiceDesc.Streams[2], Agent_SubscribeTasks_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[SubscribeTasksRequest, TaskSubscriptionEvent]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Agent_SubscribeTasksClient = grpc.ServerStreamingClient[TaskSubscriptionEvent]
+
 func (c *agentClient) UpdateConfig(ctx context.Context, in *UpdateConfigRequest, opts ...grpc.CallOption) (*UpdateConfigResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(UpdateConfigResponse)
@@ -468,7 +491,7 @@ func (c *agentClient) ResumeConversation(ctx context.Context, in *ResumeConversa
 
 func (c *agentClient) StreamResumeConversation(ctx context.Context, in *ResumeConversationRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ResumeConversationChunk], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Agent_ServiceDesc.Streams[2], Agent_StreamResumeConversation_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Agent_ServiceDesc.Streams[3], Agent_StreamResumeConversation_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -487,7 +510,7 @@ type Agent_StreamResumeConversationClient = grpc.ServerStreamingClient[ResumeCon
 
 func (c *agentClient) StreamResumeConversationViewportFirst(ctx context.Context, in *ResumeConversationViewportFirstRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ResumeConversationViewportFirstEvent], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Agent_ServiceDesc.Streams[3], Agent_StreamResumeConversationViewportFirst_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Agent_ServiceDesc.Streams[4], Agent_StreamResumeConversationViewportFirst_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -616,7 +639,7 @@ func (c *agentClient) GetOpenRuntimeStatus(ctx context.Context, in *GetOpenRunti
 
 func (c *agentClient) InstallOpenRuntime(ctx context.Context, in *InstallOpenRuntimeRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[InstallProgress], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Agent_ServiceDesc.Streams[4], Agent_InstallOpenRuntime_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Agent_ServiceDesc.Streams[5], Agent_InstallOpenRuntime_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -635,7 +658,7 @@ type Agent_InstallOpenRuntimeClient = grpc.ServerStreamingClient[InstallProgress
 
 func (c *agentClient) RegenerateContext(ctx context.Context, in *RegenerateContextRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[RegenerateContextProgress], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Agent_ServiceDesc.Streams[5], Agent_RegenerateContext_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Agent_ServiceDesc.Streams[6], Agent_RegenerateContext_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -664,7 +687,7 @@ func (c *agentClient) ExportContext(ctx context.Context, in *ExportContextReques
 
 func (c *agentClient) ExportTrajectory(ctx context.Context, in *ExportTrajectoryRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ExportTrajectoryEvent], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Agent_ServiceDesc.Streams[6], Agent_ExportTrajectory_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Agent_ServiceDesc.Streams[7], Agent_ExportTrajectory_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -853,7 +876,7 @@ func (c *agentClient) GetModelRAMEstimate(ctx context.Context, in *GetModelRAMEs
 
 func (c *agentClient) StreamRuntimeLogs(ctx context.Context, in *StreamRuntimeLogsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[RuntimeLogEntry], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Agent_ServiceDesc.Streams[7], Agent_StreamRuntimeLogs_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Agent_ServiceDesc.Streams[8], Agent_StreamRuntimeLogs_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -932,7 +955,7 @@ func (c *agentClient) GetSessionProfile(ctx context.Context, in *GetSessionProfi
 
 func (c *agentClient) SubscribeEvents(ctx context.Context, in *SubscribeEventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ClientEvent], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Agent_ServiceDesc.Streams[8], Agent_SubscribeEvents_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Agent_ServiceDesc.Streams[9], Agent_SubscribeEvents_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1151,7 +1174,7 @@ func (c *agentClient) ListCloudProfileModels(ctx context.Context, in *ListCloudP
 
 func (c *agentClient) StartChatGPTLogin(ctx context.Context, in *StartChatGPTLoginRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StartChatGPTLoginEvent], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Agent_ServiceDesc.Streams[9], Agent_StartChatGPTLogin_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Agent_ServiceDesc.Streams[10], Agent_StartChatGPTLogin_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1170,7 +1193,7 @@ type Agent_StartChatGPTLoginClient = grpc.ServerStreamingClient[StartChatGPTLogi
 
 func (c *agentClient) StartClaudeLogin(ctx context.Context, in *StartClaudeLoginRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StartClaudeLoginEvent], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Agent_ServiceDesc.Streams[10], Agent_StartClaudeLogin_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Agent_ServiceDesc.Streams[11], Agent_StartClaudeLogin_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1199,7 +1222,7 @@ func (c *agentClient) SubmitClaudeLoginCode(ctx context.Context, in *SubmitClaud
 
 func (c *agentClient) ReauthenticateCloud(ctx context.Context, in *CloudReauthenticationRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[CloudLoginEvent], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Agent_ServiceDesc.Streams[11], Agent_ReauthenticateCloud_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Agent_ServiceDesc.Streams[12], Agent_ReauthenticateCloud_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1254,6 +1277,9 @@ type AgentServer interface {
 	// live, using the same StreamProcessResponse vocabulary as StreamProcessRequest.
 	// Observe-only: it does not send input or answer permission prompts.
 	AttachConversation(*AttachConversationRequest, grpc.ServerStreamingServer[StreamProcessResponse]) error
+	// Independent task snapshot plus durable progress replay, scoped to one parent.
+	// Canceling this observation stream never stops task execution.
+	SubscribeTasks(*SubscribeTasksRequest, grpc.ServerStreamingServer[TaskSubscriptionEvent]) error
 	// UpdateConfig updates runtime configuration (model, provider). Some changes
 	// (notably open_runtime swaps) require an agent restart before all worker-side
 	// providers and model-tier mappings are rebuilt.
@@ -1496,6 +1522,9 @@ func (UnimplementedAgentServer) StreamProcessRequest(*ProcessRequestRequest, grp
 }
 func (UnimplementedAgentServer) AttachConversation(*AttachConversationRequest, grpc.ServerStreamingServer[StreamProcessResponse]) error {
 	return status.Error(codes.Unimplemented, "method AttachConversation not implemented")
+}
+func (UnimplementedAgentServer) SubscribeTasks(*SubscribeTasksRequest, grpc.ServerStreamingServer[TaskSubscriptionEvent]) error {
+	return status.Error(codes.Unimplemented, "method SubscribeTasks not implemented")
 }
 func (UnimplementedAgentServer) UpdateConfig(context.Context, *UpdateConfigRequest) (*UpdateConfigResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdateConfig not implemented")
@@ -1797,6 +1826,17 @@ func _Agent_AttachConversation_Handler(srv interface{}, stream grpc.ServerStream
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Agent_AttachConversationServer = grpc.ServerStreamingServer[StreamProcessResponse]
+
+func _Agent_SubscribeTasks_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(SubscribeTasksRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(AgentServer).SubscribeTasks(m, &grpc.GenericServerStream[SubscribeTasksRequest, TaskSubscriptionEvent]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Agent_SubscribeTasksServer = grpc.ServerStreamingServer[TaskSubscriptionEvent]
 
 func _Agent_UpdateConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(UpdateConfigRequest)
@@ -3341,6 +3381,11 @@ var Agent_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "AttachConversation",
 			Handler:       _Agent_AttachConversation_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "SubscribeTasks",
+			Handler:       _Agent_SubscribeTasks_Handler,
 			ServerStreams: true,
 		},
 		{

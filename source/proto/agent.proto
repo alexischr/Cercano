@@ -22,6 +22,11 @@ service Agent {
   // Observe-only: it does not send input or answer permission prompts.
   rpc AttachConversation (AttachConversationRequest) returns (stream StreamProcessResponse) {}
 
+  // Independent task snapshot plus durable progress replay, scoped to one parent.
+  // Canceling this observation stream never stops task execution.
+  rpc SubscribeTasks (SubscribeTasksRequest) returns (stream TaskSubscriptionEvent) {}
+
+
   // UpdateConfig updates runtime configuration (model, provider). Some changes
   // (notably open_runtime swaps) require an agent restart before all worker-side
   // providers and model-tier mappings are rebuilt.
@@ -2590,4 +2595,33 @@ message TaskControlResponse {
  bytes result_json = 2;
  string error = 3;
  bool not_found = 4;
+}
+
+// Cursors refer only to durable per-child dispatch evidence, not main-turn generations.
+message TaskProgressCursor { string task_id = 1; int64 sequence = 2; }
+message SubscribeTasksRequest {
+ string parent_id = 1;
+ repeated TaskProgressCursor cursors = 2;
+}
+message TaskLifecycleSnapshot {
+ string task_id = 1;
+ string child_id = 2;
+ string status = 3;
+ string task = 4;
+ string error = 5;
+}
+message TaskProgressRecord {
+ string task_id = 1;
+ string child_id = 2;
+ int64 sequence = 3;
+ string kind = 4;
+ int32 iteration = 5;
+ string payload_json = 6;
+}
+message TaskSubscriptionEvent {
+ oneof payload {
+  TaskLifecycleSnapshot task = 1;
+  TaskProgressRecord progress = 2;
+  bool snapshot_complete = 3;
+ }
 }
