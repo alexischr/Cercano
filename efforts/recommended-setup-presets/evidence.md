@@ -124,3 +124,57 @@ Verification in this follow-up: CLI UI/wizard/slash tests and production build p
 Fake-server regression tests now exercise apply across all four locus modes. A failing probe showed unrelated/retired resumed tier keys were sent to UpdateConfig; apply now permits only current wizard-owned local slots. Another failing probe showed conflicting cloud Economy picks caused a locus write before validation; validation now occurs before the first write. A real-constructor resume probe showed an empty saved local slot received a shipped default before current configuration was discovered; discovery now precedes resumed autofill, preserving the explicit configured assignment. CLI UI/wizard/slash tests and production build pass after these changes (fe5c42ac6ad8 and 4e75fd9504a4).
 
 Remaining interface gap: agentclient.RuntimeModelCatalog (client.go) exposes SystemRAMBytes and RecommendedOpenModels, but no unified-memory/discrete-GPU topology or GPU memory. ListRuntimeModels maps only those fields from the protocol. llamaserver.RecommendedOpenModels accepts only totalBytes. Therefore equal-system-RAM machines with different GPU memory topology cannot be distinguished by these recommendation inputs. Existing runtime allocation checks remain intact, but are not evidence for a topology-aware setup recommendation. Completing the approved topology-aware memory-band requirement needs either an additive server/catalog capability interface or an explicit narrowing to provisional, topology-unknown suggestions. Qwen runtime validation remains separately deferred; this interface gap is not resolved by that deferral.
+
+
+## Memory topology interface implemented (user-authorized extension) — 2026-10-17
+
+The user approved extending the existing server/catalog/protocol/client path rather than deferring topology-aware recommendations. The interface gap above is closed additively; all pre-existing fields, explicit picks, context/runtime safety checks, and RAM-band behavior are unchanged, and every new field is additive and backward-compatible.
+
+### Server-side probe — `source/server/internal/sysram`
+
+- `topology.go` defines the three-valued model: `TopologyUnified`, `TopologyDiscrete`, `TopologyUnknown` (never "" and never treating total system RAM as GPU RAM), plus `GPUDevice`/`MemoryTopology` structs. `TopologyForLinux` classifies from sysfs-integrated/discrete signals without ever synthesizing a unified pool from discrete devices, and `parseNvidiaSmiGPUs` parses `nvidia-smi` output per device (name may contain commas; unparsable memory yields a device with size 0 — known device, unknown pool — rather than a fabricated size).
+- `topology_darwin.go`: Apple Silicon reports unified with `UnifiedMemoryBytes = hw.memsize`; Intel Macs report discrete with an empty GPU list; any probe failure reports unknown.
+- `topology_linux.go`: probes nvidia-smi with a timeout; discrete devices are reported individually with their own memory; failure or no discrete GPUs on a non-integrated-probe yields unknown or unified respectively per the classification function. `topology_other.go` reports unknown on other platforms.
+- Tests (`topology_test.go`, `topology_darwin_test.go`) are deterministic — no live nvidia-smi or hardware dependency; parse cases cover real-world output, comma-bearing names, unparsable memory, and garbage. A live-probe consistency test on the dev host confirmed the Darwin unified path matches `sysram.Total()`; it passes in the suite run on this machine (unified-memory host) without asserting any committed hardware figure.
+
+### Protocol — `source/proto/agent.proto` (regenerated via `source/proto/generate.sh`, protoc 34.1 / protoc-gen-go v1.36.11 / grpc v1.6.2)
+
+`ListRuntimeModelsResponse` gains additive fields: `memory_topology` ("unified"/"discrete"/"unknown"), `unified_memory_bytes`, repeated `gpu` entries (`name`, `memory_bytes`), and `hardware_ok` (server-side probes succeeded). Old servers omitting these fields are indistinguishable from unknown, which is exactly the semantics clients apply.
+
+### Server — `source/server/internal/server/server.go` `ListRuntimeModels`
+
+Populates the new response fields from `sysram.Topology()`; sets `HardwareOk` only when the RAM and topology probes actually succeeded. The server's RAM-band picks (`recommendedOpenModels` via `catalogdefaults.ForRuntime`) are unchanged — the server does not fabricate topology-aware bands it cannot support; it reports the facts and lets the client disclose honestly.
+
+### Client — `source/server/pkg/agentclient/client.go`
+
+- `RuntimeModelCatalog` gains `Hardware HardwareTopology` and `HardwareOK bool`; `HardwareTopology{Kind, UnifiedMemoryBytes, GPUs []HardwareGPU}` with `HardwareTopologyUnified/Discrete/Unknown` constants and `Insufficient()` (empty or unknown kind).
+- `mapHardwareTopology` maps the proto response; a response with no topology fields (old server) maps to unknown with `HardwareOK` false — no invented unified or discrete claim. `runtime_hardware_test.go` pins unified, discrete, unknown, and old-server-default mappings.
+
+### Recommendation logic — `source/clients/cli/internal/ui/wizard_recommend.go`
+
+- `hardwareNotes(cat)`: unknown RAM keeps the existing smallest-profile note; `!HardwareOK || Insufficient()` (including old servers) yields "memory topology unknown: hardware fit not verified for this machine"; discrete machines get a per-GPU fit check; probed unified machines get no caveat (the RAM-band picks genuinely apply there).
+- `discreteFitNotes(cat)`: the budget is the single largest GPU pool × the existing usable fraction — never system RAM, never a sum across devices; picks larger than that budget are disclosed by tier and name ("larger than any single GPU: …"); a discrete topology with no known pool size is disclosed as "per-GPU memory unknown: hardware fit not verified". Picks whose catalog size is unknown get no invented verdict either way. Server band picks still defer unchanged (the server is not contradicted), but the client refuses to present them as machine-fit-verified.
+
+### Preview — `source/clients/cli/internal/ui/wizard_page.go`
+
+`addModelDownloadDisclosure` extends the existing unknown-RAM branch: unknown topology (including old servers) prints "Memory topology is unknown; hardware fit unknown…"; discrete machines print the discrete fit notes (per-GPU budget and any too-large picks). The catalog-unavailable branch is retained unchanged.
+
+### Tests added
+
+- `sysram` deterministic topology tests (parse + classification, all platforms).
+- `agentclient/runtime_hardware_test.go` — proto mapping incl. old-server defaults.
+- `wizard_recommend_test.go` — `TestRecommendEqualRAMDifferentTopology` (same 64 GiB RAM: probed-unified no caveat; discrete-fits per-GPU budget note; discrete two×8 GiB cards must not be summed into a 16 GiB budget and the too-large pick is named per tier; discrete with unknown pool; topology-unknown note) and `TestRecommendOldServerDefaultsDisclosed` (old server: picks defer but "memory topology unknown" is disclosed, never a discrete/unified claim).
+- `wizard_preview_test.go` — `TestWizardPreviewDisclosesUnknownTopology` and `TestWizardPreviewDisclosesDiscreteFitPerGPU` (2×8 GiB GPUs, 64 GiB RAM, 32 GiB pick: must disclose per-GPU budget and name the unfit pick; never promise system-RAM fit).
+
+### Verification
+
+- `gofmt -l` clean for all touched packages; `go vet` clean for `internal/ui`.
+- Builds: `go build ./...` in both `source/server` and `source/clients/cli` modules pass.
+- Tests: `go test ./internal/sysram/... ./pkg/agentclient/...` (server module) and `go test ./internal/ui/...` (CLI module) all pass, including all pre-existing recommendation/preview/apply/resume/cancellation tests (no regressions to explicit-pick preservation, context/runtime safety checks, or no-side-effect guarantees).
+
+### Remaining limitations (honest disclosure)
+
+- The server's band selection itself remains RAM-only; topology-awareness is disclosure + per-GPU fit verification at the client, not a new topology-based band generator.
+- nvidia-smi is the only discrete-GPU probe (no AMD `rocm-smi` or Windows `nvidia-smi` path verified); AMD/other discrete GPUs on Linux report unknown.
+- Discrete fit uses weights + overhead fraction against one GPU pool; it does not verify multi-GPU sharding or runtime allocation.
+- Qwen default remains gated: no `qwen35` allowlist change, no downloads, no runtime restart/stop, no live credential reads, no paid inference, no push/merge. Runtime validation stays deferred per the user's earlier approval.
