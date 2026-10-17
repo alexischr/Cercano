@@ -570,7 +570,10 @@ func (x *Service) RunAgenticDispatch(ctx context.Context, spec dispatch.Spec, se
 	// land in a hidden "subagent" conversation linked to the parent, so a
 	// dispatch can be post-mortemed from the DB instead of dead-ending at the
 	// parent's tool_result.
-	subConvID := conversation.NewID()
+	subConvID := spec.SubConversationID
+	if subConvID == "" {
+		subConvID = conversation.NewID()
+	}
 	var onTurn func(m llm.Message)
 	// persisted reports whether the sub-agent conversation ROW was created (a
 	// store in-process, or the worker's host proxy). subConvID still identifies

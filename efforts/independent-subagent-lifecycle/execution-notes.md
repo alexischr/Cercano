@@ -29,4 +29,4 @@ Main-turn orchestration is in `server.go:streamProcessRequestWithToolLoop`. It c
 
 Automatic completion wake-up when disconnected creates a main-agent turn with no initiating approval stream. Existing grants must remain authoritative and no new action may be implicitly approved. For newly gated actions, choose between retaining a pending approval for reconnection (suspending execution until approval) and returning an explicit approval-unavailable result (requiring a later retry).
 
-Recommendation: retain a pending approval for reconnection, without executing the gated action. This retains intent but adds reconnectable permission-request lifecycle behavior. Because this affects permission interaction semantics, implementation is paused for explicit approval rather than selecting it silently.
+Approved by the user: retain a pending approval for reconnection, without executing the gated action. This retains intent and requires reconnectable permission-request lifecycle behavior. Existing grants remain unchanged; disconnected execution never implies approval. Implementation resumed after this approval.

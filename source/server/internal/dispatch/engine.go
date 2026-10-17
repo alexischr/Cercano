@@ -70,6 +70,10 @@ type Spec struct {
 
 	// Agentic-only fields (ignored for OneShot).
 
+	// SubConversationID optionally reserves child identity before execution. Only
+	// host-owned tasks set it; synchronous callers retain generated identities.
+	SubConversationID string
+
 	// Task is the open-ended instruction for the agentic tool loop.
 	Task string
 

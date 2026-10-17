@@ -17,9 +17,9 @@ Objective: establish minimal reproductions of the current coupling and reusable 
 
 Objective: introduce independent task ownership backed by the existing persistence infrastructure. Files: new host-owned task manager and tests under server internals, host-service tools and persistence, dispatch types as needed, existing persistence schema and migrations located in Phase 1. Tests: lifecycle transitions, acceptance failures, terminal-state races, isolation, bounded inspection, startup reconciliation, and cancellation ownership.
 
-- [ ] Define stable task identity, parent linkage, accepted/running/terminal status, inspectable output references, and explicit interrupted outcomes
+- [x] Define stable task identity, parent linkage, accepted/running/terminal status, inspectable output references, and explicit interrupted outcomes
 - [ ] Persist accepted work before acknowledging launch; ensure launch failures cannot leave fictitious running tasks
-- [ ] Implement host-owned execution contexts, explicit task stop, task listing and inspection, and cancellable waits that do not cancel the child
+- [~] Implement host-owned execution contexts, explicit task stop, task listing and inspection, and cancellable waits that do not cancel the child
 - [ ] Preserve route metadata, granted and ignored tools, suspicion warnings, errors, budgets, partial transcripts, and final results
 - [ ] Persist terminal outcomes and pending completion information consistently, with startup reconciliation for interrupted tasks
 - [ ] Enforce task ownership and existing authorization boundaries on inspection and control
