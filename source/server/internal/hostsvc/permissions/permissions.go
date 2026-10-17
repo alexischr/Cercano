@@ -35,6 +35,8 @@ type Broker interface {
 	// the given conversation. The barrier is keyed per conversation so two
 	// live conversations with colliding tool-use IDs stay isolated.
 	Wait(ctx context.Context, conversationID, toolUseID string) (agent.Decision, error)
+	// WaitWithNotify registers the decision before publishing the prompt.
+	WaitWithNotify(ctx context.Context, conversationID, toolUseID string, notify func() error) (agent.Decision, error)
 	// Resolve posts a human decision for the named tool-use ID within the
 	// given conversation. See Wait for why the conversation scope matters.
 	Resolve(conversationID, toolUseID string, d agent.Decision) bool
@@ -102,6 +104,13 @@ func (p *broker) Wait(ctx context.Context, conversationID, toolUseID string) (ag
 		return agent.Decision{}, nil // no barrier → zero decision (matches pre-refactor)
 	}
 	return p.pending.Wait(ctx, conversationID, toolUseID)
+}
+
+func (p *broker) WaitWithNotify(ctx context.Context, conversationID, toolUseID string, notify func() error) (agent.Decision, error) {
+	if p.pending == nil {
+		return agent.Decision{}, nil
+	}
+	return p.pending.WaitWithNotify(ctx, conversationID, toolUseID, notify)
 }
 
 func (p *broker) Resolve(conversationID, toolUseID string, d agent.Decision) bool {

@@ -3520,20 +3520,19 @@ func (s *Server) streamProcessRequestWithToolLoop(req *proto.ProcessRequestReque
 		if s.permBroker == nil || !s.permBroker.HasPending() {
 			return false, nil
 		}
-		if err := stream.Send(&proto.StreamProcessResponse{
-			Payload: &proto.StreamProcessResponse_PermissionRequired{
-				PermissionRequired: &proto.PermissionRequired{
-					ToolUseId:   toolUseID,
-					ToolName:    name,
-					ArgsJson:    string(args),
-					Tier:        string(tier),
-					Destructive: destructive,
+		d, err := s.permBroker.WaitWithNotify(ctx, convID, toolUseID, func() error {
+			return stream.Send(&proto.StreamProcessResponse{
+				Payload: &proto.StreamProcessResponse_PermissionRequired{
+					PermissionRequired: &proto.PermissionRequired{
+						ToolUseId:   toolUseID,
+						ToolName:    name,
+						ArgsJson:    string(args),
+						Tier:        string(tier),
+						Destructive: destructive,
+					},
 				},
-			},
-		}); err != nil {
-			return false, err
-		}
-		d, err := s.permBroker.Wait(ctx, convID, toolUseID)
+			})
+		})
 		if err != nil {
 			return false, err
 		}

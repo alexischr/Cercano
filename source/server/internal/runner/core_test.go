@@ -321,6 +321,9 @@ func (p *fakePerms) HasPending() bool                     { return false }
 func (p *fakePerms) Wait(_ context.Context, _, _ string) (agent.Decision, error) {
 	return agent.Decision{}, nil
 }
+func (p *fakePerms) WaitWithNotify(_ context.Context, _, _ string, _ func() error) (agent.Decision, error) {
+	return agent.Decision{}, nil // No pending barrier; do not publish a prompt.
+}
 func (p *fakePerms) Resolve(_, _ string, _ agent.Decision) bool     { return true }
 func (p *fakePerms) Store() *agent.PermissionStore                  { return p.store }
 func (p *fakePerms) StartWatcher(_ context.Context, _ string) error { return nil }
