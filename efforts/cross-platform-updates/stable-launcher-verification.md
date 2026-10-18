@@ -1,4 +1,4 @@
-# Stable launcher handoff — local verification
+# Stable launcher handoff — local and native CI verification
 
 The user approved implementing the full stable launcher with temporary-installation tests only. The entrypoint integration is now in both agent and CLI mains after private installation-context verification and before normal command/config initialization. Private updater dispatch retains its existing earlier position.
 
@@ -20,8 +20,9 @@ The user approved implementing the full stable launcher with temporary-installat
 - Real agent and CLI binaries built locally and invoked through temporary enrolled stable paths pass their offline version commands without creating normal application configuration or starting an agent/TUI.
 - Agent command suite, full CLI suite, and focused vet pass.
 - Windows amd64 launcher fixture and agent compile; Windows vet passes. Linux amd64 launcher fixture compiles. Windows/Linux CLI binaries compile.
-- Native CI workflow includes launcher, installation-context and fixture packages and relevant path filters. No push or native remote run performed in this slice.
+- Following explicit push authorization, native CI run [39163845140](https://github.com/cercano-ai/Cercano/actions/runs/39163845140) passed on Windows, Linux and macOS at `2acbd98108383a91a040fb478a4de70192ca01e2`, including the full CLI suite.
+- Earlier runs exposed fixture-only portability defects: shared installation fixtures created permissive directories before private-directory validation, and source-wiring tests retained CRLF carriage returns. Commits `8795fc013389` and `2acbd9810838` fix those fixtures without relaxing production checks. The CRLF failure was reproduced before fixing.
 
 ## Limits
 
-Native Windows/Linux execution and interactive console behavior remain pending. This is launch admission, not proof that processes and descendants have exited or that health succeeded. Full updater invocation, owned-process lifecycle, recovery/cleanup and package-manager integration are still separate plan work. No live enrollment, installed selection, database migration, agent restart or publication was performed. The pre-existing locators_test.go edit is excluded from this checkpoint.
+Native Windows/Linux fixture execution passed; real interactive console acceptance remains pending. This is launch admission, not proof that processes and descendants have exited or that health succeeded. Full updater invocation, owned-process lifecycle, recovery/cleanup and package-manager integration are still separate plan work. No live enrollment, installed selection, database migration, agent restart or publication was performed. The pre-existing locators_test.go edit is excluded from this checkpoint.
