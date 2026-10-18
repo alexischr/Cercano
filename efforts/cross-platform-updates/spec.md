@@ -184,6 +184,10 @@ The user approved waiting for idle and never cancelling active work without expl
 | Outcome | Preserves user work unless the user chooses otherwise | Predictable unattended completion window |
 | Side effects | Needs clear waiting/defer controls | Needs prominent countdown and stronger cancellation guarantees |
 
+### Read-only agent health RPC
+
+Approved (2026-10-18): add one additive, read-only Agent RPC, `GetAgentHealth`, for the updater's pre-activation verification. It reports the build version and honest lifecycle readiness, and reports not-ready with stable machine-readable reasons (`startup_incomplete`, `admission_paused`, `shutdown_begun`) before startup is complete, while update admission is paused, or after shutdown has begun. The agent PID is observational only and never an authorization input. The RPC takes no listener, performs no live actions or push, and is exempt from update-work admission so it stays answerable while the updater pauses work. Callers treat `Unimplemented` from an older server as unknown-not-ready and fail closed. No control authorization, compatibility gate, or transport boundary is authorized by this RPC; those remain governed by the sections above.
+
 Shared Go coordination, exclusion of Velopack, package-manager ownership by default, and an in-app update action were settled before these four decisions. They are constraints, not questions to reopen during routine implementation.
 
 ## Validation and rollout requirements

@@ -49,6 +49,26 @@ service Agent {
   // only ShutdownAgent, this method returns Unimplemented on them.
   rpc ShutdownAgentWhenIdle (ShutdownAgentWhenIdleRequest) returns (ShutdownAgentWhenIdleResponse) {}
 
+  // GetAgentHealth is an additive, read-only lifecycle probe for updaters,
+  // monitors, and attached clients. It performs NO actions, pushes nothing,
+  // and holds no work lifetime: the server exempts it from update-work
+  // admission, so it stays callable while update preparation holds the pause.
+  //
+  // ready is honest lifecycle readiness, not model/service health: it is
+  // false until the process entrypoint marks startup complete, while update
+  // preparation has paused admission (see update_admission.go), and after
+  // shutdown begins. not_ready_reasons names each unmet lifecycle condition
+  // (stable machine-readable strings, documented in agent_health.go).
+  //
+  // version reports the build version ("dev" when unset) and pid is the
+  // serving process's PID. Both are OBSERVATIONAL only — pid is an identity
+  // guard in the spirit of ShutdownAgentWhenIdle, never authentication, and
+  // equality proves nothing about installation ownership.
+  //
+  // Old agents built before this RPC return Unimplemented; callers must treat
+  // that as "health unavailable on this server", not as a failed check.
+  rpc GetAgentHealth (GetAgentHealthRequest) returns (GetAgentHealthResponse) {}
+
   // GetConfig returns the current runtime config. API key is reported as a
   // presence bool only — the literal value never leaves the agent.
   rpc GetConfig (GetConfigRequest) returns (GetConfigResponse) {}
@@ -541,6 +561,22 @@ message ShutdownAgentWhenIdleRequest {
 message ShutdownAgentWhenIdleResponse {
   bool accepted = 1;
   string message = 2;
+}
+
+// GetAgentHealthRequest is empty; the probe observes process-local lifecycle
+// state only.
+message GetAgentHealthRequest {}
+
+// GetAgentHealthResponse reports the serving agent's build version and PID
+// (observational only, never authentication) plus its honest lifecycle
+// readiness. ready is true only when startup is complete, update-work
+// admission is not paused, and shutdown has not begun. not_ready_reasons
+// carries one stable string per unmet condition.
+message GetAgentHealthResponse {
+  string version = 1;            // build version; "dev" when unset
+  int32 pid = 2;                 // observational identity guard only
+  bool ready = 3;                // honest lifecycle readiness
+  repeated string not_ready_reasons = 4;
 }
 
 // The response message for ProcessRequest.

@@ -654,6 +654,10 @@ func startGRPCServer(cfg config.Config, bindAddr string, events *crashlog.Writer
 			log.Printf("gRPC server error: %v", err)
 		}
 	}()
+	// Startup-complete ownership (GetAgentHealth): everything above — listener
+	// bound, every service wired, server serving — must finish before the
+	// health probe may report ready. Mark it only after Serve is running.
+	srv.MarkStartupComplete()
 
 	cleanup := func() {
 		stopTUINotices()

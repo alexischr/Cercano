@@ -135,10 +135,16 @@ func agentFullMethodPrefix() string {
 // reconnects), which is exactly the work class update preparation waits for.
 // GetAgentInfo does not exist in this proto (there is no such RPC on
 // agent.Agent), so there is nothing to exempt under that name.
+// GetAgentHealth (see agent_health.go) is the third: a read-only lifecycle
+// probe with zero side effects, no work lifetime, and no pause mutation
+// (admissionPausedSnapshot is observational). Its whole purpose is to answer
+// "is this agent usable?" from outside — including DURING the pause — so it
+// must be servable while update preparation holds the gate.
 func updateAdmissionExemptUnary(prefix string) map[string]bool {
 	return map[string]bool{
 		prefix + "ShutdownAgent":         true,
 		prefix + "ShutdownAgentWhenIdle": true,
+		prefix + "GetAgentHealth":        true,
 	}
 }
 

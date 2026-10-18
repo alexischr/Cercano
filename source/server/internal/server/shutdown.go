@@ -25,6 +25,7 @@ import (
 // subsequent GracefulStop only has to wait for real in-flight work. Safe to
 // call on a server that never created an event hub, and idempotent.
 func (s *Server) BeginShutdown() {
+	s.lifecycle.markShutdownBegun()
 	if s.events != nil {
 		s.events.closeAll()
 	}

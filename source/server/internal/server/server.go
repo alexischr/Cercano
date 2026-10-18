@@ -105,8 +105,7 @@ type McpManager interface {
 }
 
 // Server is the gRPC server for the Agent service.
-type Server struct {
-	pendingForceSave         *ForceSaveFailure
+type Server struct {	pendingForceSave         *ForceSaveFailure
 	forceSaveRecorder        func(context.Context, []broker.ActiveTurn) error // test seam; production defaults to durable store
 	forcePersistenceDeadline time.Time                                        // shared bounded final-write window; guarded by safeStopMu
 
@@ -177,6 +176,12 @@ type Server struct {
 	requestAccounting   map[string]requestAccountingSnapshot
 
 	buildVersion string // surfaced in exported trajectory metadata
+
+	// lifecycle feeds the read-only GetAgentHealth probe (agent_health.go):
+	// one-way marks for startup completion (MarkStartupComplete, owned by the
+	// process entrypoint) and shutdown begun (BeginShutdown). Zero value is
+	// honestly not-ready.
+	lifecycle agentLifecycle
 
 	events *eventHub // server->client push fan-out (SubscribeEvents)
 

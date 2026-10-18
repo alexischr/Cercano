@@ -27,6 +27,7 @@ const (
 	Agent_ResetSetup_FullMethodName                            = "/agent.Agent/ResetSetup"
 	Agent_ShutdownAgent_FullMethodName                         = "/agent.Agent/ShutdownAgent"
 	Agent_ShutdownAgentWhenIdle_FullMethodName                 = "/agent.Agent/ShutdownAgentWhenIdle"
+	Agent_GetAgentHealth_FullMethodName                        = "/agent.Agent/GetAgentHealth"
 	Agent_GetConfig_FullMethodName                             = "/agent.Agent/GetConfig"
 	Agent_ListConversations_FullMethodName                     = "/agent.Agent/ListConversations"
 	Agent_ResumeConversation_FullMethodName                    = "/agent.Agent/ResumeConversation"
@@ -140,6 +141,25 @@ type AgentClient interface {
 	// boundary and never authenticates the caller. While old agents implement
 	// only ShutdownAgent, this method returns Unimplemented on them.
 	ShutdownAgentWhenIdle(ctx context.Context, in *ShutdownAgentWhenIdleRequest, opts ...grpc.CallOption) (*ShutdownAgentWhenIdleResponse, error)
+	// GetAgentHealth is an additive, read-only lifecycle probe for updaters,
+	// monitors, and attached clients. It performs NO actions, pushes nothing,
+	// and holds no work lifetime: the server exempts it from update-work
+	// admission, so it stays callable while update preparation holds the pause.
+	//
+	// ready is honest lifecycle readiness, not model/service health: it is
+	// false until the process entrypoint marks startup complete, while update
+	// preparation has paused admission (see update_admission.go), and after
+	// shutdown begins. not_ready_reasons names each unmet lifecycle condition
+	// (stable machine-readable strings, documented in agent_health.go).
+	//
+	// version reports the build version ("dev" when unset) and pid is the
+	// serving process's PID. Both are OBSERVATIONAL only — pid is an identity
+	// guard in the spirit of ShutdownAgentWhenIdle, never authentication, and
+	// equality proves nothing about installation ownership.
+	//
+	// Old agents built before this RPC return Unimplemented; callers must treat
+	// that as "health unavailable on this server", not as a failed check.
+	GetAgentHealth(ctx context.Context, in *GetAgentHealthRequest, opts ...grpc.CallOption) (*GetAgentHealthResponse, error)
 	// GetConfig returns the current runtime config. API key is reported as a
 	// presence bool only — the literal value never leaves the agent.
 	GetConfig(ctx context.Context, in *GetConfigRequest, opts ...grpc.CallOption) (*GetConfigResponse, error)
@@ -446,6 +466,16 @@ func (c *agentClient) ShutdownAgentWhenIdle(ctx context.Context, in *ShutdownAge
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ShutdownAgentWhenIdleResponse)
 	err := c.cc.Invoke(ctx, Agent_ShutdownAgentWhenIdle_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentClient) GetAgentHealth(ctx context.Context, in *GetAgentHealthRequest, opts ...grpc.CallOption) (*GetAgentHealthResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetAgentHealthResponse)
+	err := c.cc.Invoke(ctx, Agent_GetAgentHealth_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1283,6 +1313,25 @@ type AgentServer interface {
 	// boundary and never authenticates the caller. While old agents implement
 	// only ShutdownAgent, this method returns Unimplemented on them.
 	ShutdownAgentWhenIdle(context.Context, *ShutdownAgentWhenIdleRequest) (*ShutdownAgentWhenIdleResponse, error)
+	// GetAgentHealth is an additive, read-only lifecycle probe for updaters,
+	// monitors, and attached clients. It performs NO actions, pushes nothing,
+	// and holds no work lifetime: the server exempts it from update-work
+	// admission, so it stays callable while update preparation holds the pause.
+	//
+	// ready is honest lifecycle readiness, not model/service health: it is
+	// false until the process entrypoint marks startup complete, while update
+	// preparation has paused admission (see update_admission.go), and after
+	// shutdown begins. not_ready_reasons names each unmet lifecycle condition
+	// (stable machine-readable strings, documented in agent_health.go).
+	//
+	// version reports the build version ("dev" when unset) and pid is the
+	// serving process's PID. Both are OBSERVATIONAL only — pid is an identity
+	// guard in the spirit of ShutdownAgentWhenIdle, never authentication, and
+	// equality proves nothing about installation ownership.
+	//
+	// Old agents built before this RPC return Unimplemented; callers must treat
+	// that as "health unavailable on this server", not as a failed check.
+	GetAgentHealth(context.Context, *GetAgentHealthRequest) (*GetAgentHealthResponse, error)
 	// GetConfig returns the current runtime config. API key is reported as a
 	// presence bool only — the literal value never leaves the agent.
 	GetConfig(context.Context, *GetConfigRequest) (*GetConfigResponse, error)
@@ -1520,6 +1569,9 @@ func (UnimplementedAgentServer) ShutdownAgent(context.Context, *ShutdownAgentReq
 }
 func (UnimplementedAgentServer) ShutdownAgentWhenIdle(context.Context, *ShutdownAgentWhenIdleRequest) (*ShutdownAgentWhenIdleResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ShutdownAgentWhenIdle not implemented")
+}
+func (UnimplementedAgentServer) GetAgentHealth(context.Context, *GetAgentHealthRequest) (*GetAgentHealthResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetAgentHealth not implemented")
 }
 func (UnimplementedAgentServer) GetConfig(context.Context, *GetConfigRequest) (*GetConfigResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetConfig not implemented")
@@ -1878,6 +1930,24 @@ func _Agent_ShutdownAgentWhenIdle_Handler(srv interface{}, ctx context.Context, 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(AgentServer).ShutdownAgentWhenIdle(ctx, req.(*ShutdownAgentWhenIdleRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Agent_GetAgentHealth_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetAgentHealthRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServer).GetAgentHealth(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Agent_GetAgentHealth_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServer).GetAgentHealth(ctx, req.(*GetAgentHealthRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -3102,6 +3172,10 @@ var Agent_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ShutdownAgentWhenIdle",
 			Handler:    _Agent_ShutdownAgentWhenIdle_Handler,
+		},
+		{
+			MethodName: "GetAgentHealth",
+			Handler:    _Agent_GetAgentHealth_Handler,
 		},
 		{
 			MethodName: "GetConfig",

@@ -33,6 +33,7 @@ type mockAgentClient struct {
 	getSkillResp    *proto.GetSkillResponse
 	getSkillErr     error
 	lastGetSkillReq *proto.GetSkillRequest
+	healthErr       error
 }
 
 func (m *mockAgentClient) ProcessRequest(ctx context.Context, in *proto.ProcessRequestRequest, opts ...grpc.CallOption) (*proto.ProcessRequestResponse, error) {
@@ -312,6 +313,10 @@ func (m *mockAgentClient) RemoveCloudProfile(ctx context.Context, in *proto.Remo
 
 func (m *mockAgentClient) GetOpenRuntimeStatus(ctx context.Context, in *proto.GetOpenRuntimeStatusRequest, opts ...grpc.CallOption) (*proto.GetOpenRuntimeStatusResponse, error) {
 	return &proto.GetOpenRuntimeStatusResponse{}, nil
+}
+
+func (m *mockAgentClient) GetAgentHealth(ctx context.Context, in *proto.GetAgentHealthRequest, opts ...grpc.CallOption) (*proto.GetAgentHealthResponse, error) {
+	return &proto.GetAgentHealthResponse{Ready: true}, m.healthErr
 }
 
 func (m *mockAgentClient) InstallOpenRuntime(ctx context.Context, in *proto.InstallOpenRuntimeRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[proto.InstallProgress], error) {

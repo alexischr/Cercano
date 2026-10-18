@@ -1858,6 +1858,35 @@ func (c *Client) ShutdownAgent(ctx context.Context, reason string) error {
 	return nil
 }
 
+// AgentHealth mirrors the read-only GetAgentHealth probe result.
+type AgentHealth struct {
+	Version         string
+	Pid             int32
+	Ready           bool
+	NotReadyReasons []string
+}
+
+// Health implements the additive read-only agent lifecycle health RPC
+// (agent.proto GetAgentHealth; server agent_health.go). It performs no live
+// action: purely observational — ready is true only when startup is complete,
+// update-work admission is not paused, and shutdown has not begun.
+func (c *Client) Health(ctx context.Context) (*AgentHealth, error) {
+	ag := c.agent
+	if ag == nil {
+		return nil, errors.New("agent client is not connected")
+	}
+	resp, err := ag.GetAgentHealth(ctx, &proto.GetAgentHealthRequest{})
+	if err != nil {
+		return nil, err
+	}
+	return &AgentHealth{
+		Version:         resp.GetVersion(),
+		Pid:             resp.GetPid(),
+		Ready:           resp.GetReady(),
+		NotReadyReasons: append([]string(nil), resp.GetNotReadyReasons()...),
+	}, nil
+}
+
 func mapRuntimeModels(models []*proto.RuntimeModel) []RuntimeModel {
 	out := make([]RuntimeModel, 0, len(models))
 	for _, model := range models {
