@@ -891,9 +891,17 @@ func (wp *wizardPage) addModelDownloadDisclosure(b *strings.Builder) {
 		// the fields): still no fit claim — disclosed, not guessed.
 		b.WriteString("\nMemory topology is unknown; hardware fit unknown. Runtime checks still apply.")
 	case wp.catalog.Hardware.Kind == agentclient.HardwareTopologyDiscrete:
-		for _, n := range discreteFitNotes(wp.catalog) {
+		// Screen the user's actual selected local picks — not the
+		// server's RecommendedOpenModels, which may differ from the
+		// selections being applied — against the discrete GPUs.
+		for _, n := range discreteFitNotes(wp.catalog, wp.selectedOpenPicks()) {
 			fmt.Fprintf(b, "\n%s", n)
 		}
+	case wp.catalog.Hardware.Kind == agentclient.HardwareTopologyUnified:
+		// Same honesty standard on unified machines: the RAM band is a
+		// preliminary weight-budget screen only; context/KV-cache
+		// headroom and runtime fit are not verified here.
+		b.WriteString("\nUnified memory: preliminary weight-budget screen only; context/KV-cache headroom and runtime fit are not verified here. Runtime checks still apply.")
 	}
 	seen := map[string]bool{}
 	downloads := 0
@@ -921,6 +929,19 @@ func (wp *wizardPage) addModelDownloadDisclosure(b *strings.Builder) {
 	if downloads > 0 {
 		b.WriteString("\nAfter confirmation, missing models download in the background — track progress with /m.")
 	}
+}
+
+// selectedOpenPicks snapshots the user's actual selected local open picks
+// (display-name convention, like enrollOpenDownloads) for weight-budget
+// screening. Read-only: it never mutates wp.state.
+func (wp *wizardPage) selectedOpenPicks() map[config.Tier]string {
+	picks := make(map[config.Tier]string)
+	for _, t := range openTierOrder() {
+		if v := wp.state.TierPicks[wizardOpenTierKey(t)]; v != "" {
+			picks[t] = v
+		}
+	}
+	return picks
 }
 
 // locusMainSide maps a locus mode to the side (wizard.SideCloud/SideOpen)

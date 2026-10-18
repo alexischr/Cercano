@@ -2,6 +2,7 @@ package ui
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -416,6 +417,55 @@ func TestWizardPreviewDisclosesUnknownTopology(t *testing.T) {
 	}
 }
 
+func TestWizardPreviewDiscreteScreensSelectedPicks(t *testing.T) {
+	// The preview must screen the user's actual selected local picks — not
+	// the server's RecommendedOpenModels, which may differ from the
+	// selections being applied — and must not mutate the picks while
+	// doing so.
+	wp := &wizardPage{state: wizard.State{
+		Step:      wizard.StepDone,
+		LocusMode: "open_only",
+		TierPicks: map[string]string{"llama_server.most_capable": "Custom Big Model"},
+	}}
+	wp.catalog = agentclient.RuntimeModelCatalog{
+		Models: []agentclient.RuntimeModel{
+			{
+				ID: "llama_server:catalog:custom-big-model", DisplayName: "Custom Big Model",
+				Runtime: "llama_server", Source: "catalog", DownloadState: "downloaded", SizeBytes: 40 << 30,
+			},
+			{
+				ID: "llama_server:catalog:recommended-model", DisplayName: "Recommended Model",
+				Runtime: "llama_server", Source: "catalog", DownloadState: "downloaded", SizeBytes: 4 << 30,
+			},
+		},
+		// The server's band pick fits the GPUs; the user's explicit
+		// selection does not. Screening the band instead of the
+		// selection would silently pass an unfit pick.
+		RecommendedOpenModels: map[string]string{"most_capable": "llama_server:catalog:recommended-model"},
+		SystemRAMBytes:        64 << 30,
+		Hardware: agentclient.HardwareTopology{Kind: agentclient.HardwareTopologyDiscrete, GPUs: []agentclient.HardwareGPU{
+			{Name: "GTX 1080", MemoryBytes: 8 << 30},
+			{Name: "GTX 1080", MemoryBytes: 8 << 30},
+		}},
+		HardwareOK: true,
+	}
+	wp.catalogOK = true
+	before := make(map[string]string, len(wp.state.TierPicks))
+	for k, v := range wp.state.TierPicks {
+		before[k] = v
+	}
+	summary := wp.summary()
+	if !strings.Contains(summary, "larger than any single GPU") || !strings.Contains(summary, "Custom Big Model") {
+		t.Fatalf("the selected (unfit) pick must be disclosed, got:\n%s", summary)
+	}
+	if !strings.Contains(summary, "preliminary weight-budget screen") || strings.Contains(summary, "fit checked") {
+		t.Fatalf("the screen must be named a preliminary weight-budget screen, never a fit check, got:\n%s", summary)
+	}
+	if !reflect.DeepEqual(wp.state.TierPicks, before) {
+		t.Fatalf("screening must not mutate picks: before %v, after %v", before, wp.state.TierPicks)
+	}
+}
+
 func TestWizardPreviewDisclosesDiscreteFitPerGPU(t *testing.T) {
 	// Same RAM as a unified machine, but discrete GPUs: the preview must
 	// check fit against the largest GPU pool — never system RAM, never a
@@ -436,7 +486,7 @@ func TestWizardPreviewDisclosesDiscreteFitPerGPU(t *testing.T) {
 	}
 	wp.catalogOK = true
 	summary := wp.summary()
-	if !strings.Contains(summary, "fit checked against the largest GPU's") {
+	if !strings.Contains(summary, "preliminary weight-budget screen against the largest GPU's") {
 		t.Fatalf("missing per-GPU budget disclosure: %s", summary)
 	}
 	if !strings.Contains(summary, "larger than any single GPU") || !strings.Contains(summary, "most_capable") {

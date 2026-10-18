@@ -150,37 +150,52 @@ func recommendSetup(in wizardRecommendInputs) wizardRecommendation {
 		}
 		rec.Downloads = requiredDownloads(in.Catalog, in.CatalogOK, rec.OpenPicks)
 		if in.CatalogOK {
-			rec.Notes = append(rec.Notes, hardwareNotes(in.Catalog)...)
+			rec.Notes = append(rec.Notes, hardwareNotes(in.Catalog, rec.OpenPicks)...)
 		}
 	}
 	return rec
 }
 
-// hardwareNotes records the honest limits of the server's RAM-band open
-// recommendations given what was actually probed about this machine.
-// Unknown hardware (including an older server without topology fields —
-// HardwareOK false, topology unknown) is disclosed as unknown rather
-// than covered by a RAM-band claim, and discrete machines get a fit
-// check against their real GPU memory: system RAM is never treated as
-// GPU memory, and per-device pools are never summed into one budget.
-func hardwareNotes(cat agentclient.RuntimeModelCatalog) []string {
+// hardwareNotes records the honest limits of the open picks given what was
+// actually probed about this machine, and names the client's screen for what
+// it is: a preliminary weight-budget screen — weights plus a heuristic
+// overhead allowance against one memory pool — never a runtime fit
+// verification. Context/KV-cache headroom, allocation, and serving capacity
+// are validated at runtime, not here. Unknown hardware (including an older
+// server without topology fields — HardwareOK false, topology unknown) is
+// disclosed as unknown rather than covered by a RAM-band claim; discrete
+// machines get a weight-budget screen of the actual picks against their real
+// GPU memory (system RAM is never treated as GPU memory, and per-device
+// pools are never summed into one budget); unified machines get the same
+// limitation disclosure — the screen's context deferral is not a fit verdict
+// there either. Picks are read-only input; they are never mutated here.
+func hardwareNotes(cat agentclient.RuntimeModelCatalog, picks map[config.Tier]string) []string {
 	switch {
 	case cat.SystemRAMBytes <= 0:
 		return []string{"machine memory unknown: the server recommended its smallest curated profile"}
 	case !cat.HardwareOK || cat.Hardware.Insufficient():
 		return []string{"memory topology unknown: hardware fit not verified for this machine"}
 	case cat.Hardware.Kind == agentclient.HardwareTopologyDiscrete:
-		return discreteFitNotes(cat)
+		return discreteFitNotes(cat, picks)
+	case cat.Hardware.Kind == agentclient.HardwareTopologyUnified:
+		return []string{"unified memory: preliminary weight-budget screen only — context/KV-cache headroom is not checked and runtime fit is not verified; runtime checks still apply"}
 	}
 	return nil
 }
 
-// discreteFitNotes checks the server's RAM-band picks against the
-// machine's discrete GPUs. A single GPU's pool is the only honest
-// budget for a pick, so a pick larger than the usable fraction of the
-// largest pool is disclosed by name rather than silently kept; a
-// device whose pool size is unknown (0) is disclosed as unknown too.
-func discreteFitNotes(cat agentclient.RuntimeModelCatalog) []string {
+// discreteFitNotes screens the actual open picks against the machine's
+// discrete GPUs. This is a preliminary weight-budget screen, not a runtime
+// fit verification: it compares model weights plus a heuristic overhead
+// allowance against the usable fraction of the single largest GPU pool —
+// never system RAM, never a sum across devices — and context/KV-cache
+// headroom is not included (runtime allocation and serving-capacity checks
+// still apply). A single GPU's pool is the only honest budget for a pick,
+// so a pick larger than the usable fraction of the largest pool is
+// disclosed by name rather than silently kept; a device whose pool size
+// is unknown (0) is disclosed as unknown; and a pick whose model size is
+// unknown (no catalog record or a zero size) is disclosed as unscreened
+// rather than silently skipped. Picks are read-only input.
+func discreteFitNotes(cat agentclient.RuntimeModelCatalog, picks map[config.Tier]string) []string {
 	var budget int64
 	for _, g := range cat.Hardware.GPUs {
 		if g.MemoryBytes > budget {
@@ -191,21 +206,29 @@ func discreteFitNotes(cat agentclient.RuntimeModelCatalog) []string {
 		return []string{"discrete GPUs detected but per-GPU memory unknown: hardware fit not verified"}
 	}
 	usable := int64(float64(budget) * estimateUsableFraction)
-	var unfit []string
+	var unfit, unsized []string
 	for _, t := range openTierOrder() {
-		id := cat.RecommendedOpenModels[string(t)]
-		if id == "" {
+		pick := picks[t]
+		if pick == "" {
 			continue
 		}
-		m, ok := catalogModelByID(cat, id)
+		// Picks arrive as catalog ids (recommendSetup) or slot labels
+		// (the wizard preview's display-name convention); either form
+		// resolves against the catalog.
+		m, ok := openModelByLabel(cat, pick)
 		if !ok || m.SizeBytes <= 0 {
-			continue // size unknown: no invented verdict either way
+			// No invented verdict either way — the gap is disclosed.
+			unsized = append(unsized, fmt.Sprintf("%s (%s)", t, pick))
+			continue
 		}
 		if m.SizeBytes+estimateOverheadBytes(m.SizeBytes) > usable {
-			unfit = append(unfit, fmt.Sprintf("%s (%s)", t, openModelDisplay(cat, id)))
+			unfit = append(unfit, fmt.Sprintf("%s (%s)", t, openModelDisplay(cat, pick)))
 		}
 	}
-	notes := []string{fmt.Sprintf("discrete GPUs: fit checked against the largest GPU's %s, not system RAM", formatBytes(budget))}
+	notes := []string{fmt.Sprintf("discrete GPUs: preliminary weight-budget screen against the largest GPU's %s, not system RAM (weights + estimated overhead only; context/KV-cache not included, runtime fit not verified)", formatBytes(budget))}
+	if len(unsized) > 0 {
+		notes = append(notes, "model size unknown (weight budget not screened): "+strings.Join(unsized, ", "))
+	}
 	if len(unfit) > 0 {
 		notes = append(notes, "larger than any single GPU: "+strings.Join(unfit, ", ")+" — pick smaller models for these tiers")
 	}

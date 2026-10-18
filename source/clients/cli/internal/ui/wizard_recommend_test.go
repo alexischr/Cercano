@@ -133,8 +133,14 @@ func TestRecommendMixedDisclosesCloudUse(t *testing.T) {
 	if !reflect.DeepEqual(got.Downloads, wantDownloads) {
 		t.Errorf("mixed downloads: want %v, got %v", wantDownloads, got.Downloads)
 	}
-	if len(got.Notes) != 0 {
-		t.Errorf("mixed: unexpected notes %v", got.Notes)
+	// The probed unified machine carries the honest preliminary-screen
+	// limitation note (context deferral); nothing else is unexpected.
+	joined := strings.Join(got.Notes, "\n")
+	if !strings.Contains(joined, "unified memory: preliminary weight-budget screen") {
+		t.Errorf("mixed: want the unified preliminary-screen limitation note, got %v", got.Notes)
+	}
+	if strings.Contains(joined, "fit checked") {
+		t.Errorf("mixed: must not claim a runtime fit check, got %v", got.Notes)
 	}
 }
 
@@ -441,8 +447,9 @@ func TestRecommendEqualRAMDifferentTopology(t *testing.T) {
 			name:       "unified",
 			topology:   agentclient.HardwareTopology{Kind: agentclient.HardwareTopologyUnified, UnifiedMemoryBytes: 64 << 30},
 			hardwareOK: true,
-			// Probed unified memory: the RAM-band picks are genuinely
-			// supported; no topology caveat at all.
+			// Probed unified memory: no topology caveat — but the
+			// preliminary-screen limitation note still applies (see
+			// TestRecommendUnifiedDisclosesContextDeferral).
 			wantNoNote: "memory topology unknown",
 		},
 		{
@@ -451,7 +458,7 @@ func TestRecommendEqualRAMDifferentTopology(t *testing.T) {
 				{Name: "RTX A6000", MemoryBytes: 48 << 30},
 			}},
 			hardwareOK: true,
-			wantNote:   "discrete GPUs: fit checked against the largest GPU's",
+			wantNote:   "discrete GPUs: preliminary weight-budget screen against the largest GPU's",
 			wantNoNote: "larger than any single GPU",
 		},
 		{
@@ -461,7 +468,7 @@ func TestRecommendEqualRAMDifferentTopology(t *testing.T) {
 				{Name: "GTX 1080", MemoryBytes: 8 << 30},
 			}},
 			hardwareOK: true,
-			wantNote:   "discrete GPUs: fit checked against the largest GPU's",
+			wantNote:   "discrete GPUs: preliminary weight-budget screen against the largest GPU's",
 			wantUnfit:  true,
 		},
 		{
@@ -514,6 +521,94 @@ func TestRecommendEqualRAMDifferentTopology(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// --- Reproduction tests for misleading hardware disclosures -----------------
+//
+// These tests pin the honest wording contract for the hardware screen: the
+// client runs a *preliminary weight-budget screen* (weights + heuristic
+// overhead against one memory pool), never a runtime fit verification.
+// Context/KV-cache headroom, allocation, and serving capacity are validated
+// at runtime, not here, and unknown sizes (model or device) must be
+// disclosed, never silently passed.
+
+func TestRecommendDiscreteScreenIsPreliminaryWeightBudget(t *testing.T) {
+	// A discrete machine whose picks all fit: the screen still must not
+	// claim "fit checked" as if runtime fit were verified, and must say
+	// what the screen does and does not cover.
+	cat := hardwareTestCatalog(agentclient.HardwareTopology{
+		Kind: agentclient.HardwareTopologyDiscrete,
+		GPUs: []agentclient.HardwareGPU{{Name: "RTX A6000", MemoryBytes: 48 << 30}},
+	}, true)
+	got := recommendSetup(wizardRecommendInputs{
+		LocusMode: "open_only", Recs: testRecs(), RecsOK: true, Catalog: cat, CatalogOK: true,
+	})
+	joined := strings.Join(got.Notes, "\n")
+	if strings.Contains(joined, "fit checked") {
+		t.Errorf("must not claim a runtime fit check, got %q", joined)
+	}
+	if !strings.Contains(joined, "preliminary weight-budget screen") {
+		t.Errorf("must name the screen a preliminary weight-budget screen, got %q", joined)
+	}
+	if !strings.Contains(joined, "context") {
+		t.Errorf("must disclose the context/KV-cache limitation, got %q", joined)
+	}
+}
+
+func TestRecommendDiscreteUnknownModelSizeDisclosed(t *testing.T) {
+	// Picks whose catalog size is unknown (a size-0 record, or an id that
+	// resolves to nothing) must be disclosed as unscreened — never skipped
+	// silently, which would read as a pass.
+	cat := hardwareTestCatalog(agentclient.HardwareTopology{
+		Kind: agentclient.HardwareTopologyDiscrete,
+		GPUs: []agentclient.HardwareGPU{{Name: "RTX A6000", MemoryBytes: 48 << 30}},
+	}, true)
+	cat.Models = append(cat.Models, agentclient.RuntimeModel{
+		ID: "llama_server:catalog:unsized-model", DisplayName: "display:llama_server:catalog:unsized-model", Runtime: "llama_server", // SizeBytes 0: known model, unknown size
+	})
+	cat.RecommendedOpenModels = map[string]string{
+		"most_capable": "llama_server:catalog:unsized-model",
+		"embedding":    "llama_server:catalog:not-in-catalog", // resolves to no catalog entry
+	}
+	got := recommendSetup(wizardRecommendInputs{
+		LocusMode: "open_only", Recs: testRecs(), RecsOK: true, Catalog: cat, CatalogOK: true,
+	})
+	joined := strings.Join(got.Notes, "\n")
+	if !strings.Contains(joined, "model size unknown") {
+		t.Errorf("unknown model sizes must be disclosed, got %q", joined)
+	}
+	if !strings.Contains(joined, "most_capable") || !strings.Contains(joined, "embedding") {
+		t.Errorf("unknown-size disclosure must name the affected tiers, got %q", joined)
+	}
+	// And the disclosure must not fabricate a verdict either way.
+	if strings.Contains(joined, "larger than any single GPU") {
+		t.Errorf("unknown size must not produce an unfit verdict, got %q", joined)
+	}
+}
+
+func TestRecommendUnifiedDisclosesContextDeferral(t *testing.T) {
+	// A probed unified machine: the RAM-band picks are not a runtime fit
+	// verdict there either — context/KV-cache headroom is not checked, so
+	// a caveat must be present rather than silence.
+	cat := hardwareTestCatalog(agentclient.HardwareTopology{
+		Kind: agentclient.HardwareTopologyUnified, UnifiedMemoryBytes: 64 << 30,
+	}, true)
+	got := recommendSetup(wizardRecommendInputs{
+		LocusMode: "open_only", Recs: testRecs(), RecsOK: true, Catalog: cat, CatalogOK: true,
+	})
+	joined := strings.Join(got.Notes, "\n")
+	if joined == "" {
+		t.Fatal("unified machines must carry the preliminary-screen limitation note, got none")
+	}
+	if !strings.Contains(joined, "unified memory: preliminary weight-budget screen") {
+		t.Errorf("want unified preliminary weight-budget screen note, got %q", joined)
+	}
+	if !strings.Contains(joined, "context") {
+		t.Errorf("want the context/KV-cache limitation disclosed, got %q", joined)
+	}
+	if strings.Contains(joined, "fit checked") {
+		t.Errorf("must not claim a runtime fit check, got %q", joined)
 	}
 }
 

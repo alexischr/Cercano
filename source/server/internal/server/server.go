@@ -2674,12 +2674,44 @@ func (s *Server) ListRuntimeModels(ctx context.Context, req *proto.ListRuntimeMo
 	}
 	s.appendMistralModels(ctx, req.GetProfileName(), resp)
 	resp.SystemRamBytes = sysram.Total()
+	applyHardwareProbes(resp, sysram.Total(), sysram.Topology())
 	// RAM-tiered open recommendations: the wizard autofills its open tier picks
 	// from these, so every suggestion is a gate-verified curated model that
 	// cannot be incompatible. Keyed the same as SystemRamBytes above so the
 	// verdict and the recommendation agree on the machine's memory.
 	resp.RecommendedOpenModels = s.recommendedOpenModels(uint64(resp.SystemRamBytes))
 	return resp, nil
+}
+
+// applyHardwareProbes writes the RAM and memory-topology probe results
+// onto a ListRuntimeModels wire response. Pure and seam-testable: the
+// production path passes the live sysram probes; tests pass fake probe
+// results, so probe-to-wire mapping is exercised without live hardware.
+func applyHardwareProbes(resp *proto.ListRuntimeModelsResponse, total int64, topo sysram.MemoryTopology) {
+	resp.SystemRamBytes = total
+	// Memory topology: how the machine organizes compute memory — unified
+	// (system RAM really is the GPU budget), discrete (per-device pools,
+	// never summed, never conflated with system RAM) or unknown (failed
+	// or unavailable probe; older clients see kind "unknown" and must
+	// disclose it rather than guess). Unified reuses the SystemRamBytes
+	// probe so the two numbers can never disagree on the same pool.
+	switch topo.Kind {
+	case sysram.TopologyUnified:
+		resp.MemoryTopology = sysram.TopologyUnified
+		resp.UnifiedMemoryBytes = topo.UnifiedMemoryBytes
+	case sysram.TopologyDiscrete:
+		resp.MemoryTopology = sysram.TopologyDiscrete
+		for _, g := range topo.GPUs {
+			resp.Gpus = append(resp.Gpus, &proto.GPUMemory{Name: g.Name, GpuMemoryBytes: g.MemoryBytes})
+		}
+	default:
+		resp.MemoryTopology = sysram.TopologyUnknown
+	}
+	// Hardware disclosure: the RAM-band recommendations above are honest
+	// only when both probes (RAM + topology) succeeded. Unknown hardware
+	// must not receive them as confident support.
+	resp.HardwareOk = resp.SystemRamBytes > 0 && resp.MemoryTopology != sysram.TopologyUnknown
+}
 }
 
 // Acquisition values for RuntimeModel.acquisition — how a model is obtained.
