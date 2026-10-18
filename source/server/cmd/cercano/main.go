@@ -64,6 +64,7 @@ import (
 	"cercano/source/server/pkg/config"
 	"cercano/source/server/pkg/installcontext"
 	"cercano/source/server/pkg/proto"
+	"cercano/source/server/pkg/stablelaunch"
 	"cercano/source/server/pkg/update"
 
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -895,6 +896,12 @@ func main() {
 		os.Exit(code)
 	} else {
 		verified = v
+	}
+	if handled, code, err := stablelaunch.Startup(os.Args[1:], false, verified); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "cercano: refusing installed launch:", err)
+		}
+		os.Exit(code)
 	}
 	// Handle subcommands before flag parsing.
 	if len(os.Args) > 1 {

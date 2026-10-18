@@ -86,10 +86,11 @@ func TestMainWiresPrivateDispatchAndInstallContextClaimInOrder(t *testing.T) {
 }
 
 func TestMainWiresRefusalExits(t *testing.T) {
-	// Both gates must exit with the returned refusal code (exactly two
+	// All three gates must exit with the returned refusal code (exactly three
 	// `os.Exit(code)` occurrences in main(), one per gate).
 	assertMatches(t, "gate exits", `os\.Exit\(code\)$`,
 		[]string{
+			"os.Exit(code)",
 			"os.Exit(code)",
 			"os.Exit(code)",
 		})
@@ -136,4 +137,14 @@ func TestMainWiresVersionCapabilityQuery(t *testing.T) {
 			`fmt.Printf("cercano v%s\n", version)`,
 			`fmt.Printf("cercano v%s\n", version)`,
 		})
+}
+
+func TestMainStableLauncherRunsAfterChildVerificationBeforeCommands(t *testing.T) {
+	text := strings.Join(mainEncodedLines, "\n")
+	claim := strings.Index(text, "claimInstallContext(os.Args)")
+	launch := strings.Index(text, "stablelaunch.Startup(os.Args[1:], false, verified)")
+	commands := strings.Index(text, "switch os.Args[1] {")
+	if claim < 0 || launch <= claim || commands <= launch {
+		t.Fatal("stable launcher is outside verified startup boundary")
+	}
 }

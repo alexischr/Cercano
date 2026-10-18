@@ -20,6 +20,7 @@ import (
 	"cercano/source/server/pkg/agentclient"
 	"cercano/source/server/pkg/config"
 	"cercano/source/server/pkg/installcontext"
+	"cercano/source/server/pkg/stablelaunch"
 )
 
 // version is set at build time via -ldflags "-X main.version=...".
@@ -44,6 +45,12 @@ func main() {
 		os.Exit(code)
 	} else {
 		verified = v
+	}
+	if handled, code, err := stablelaunch.Startup(os.Args[1:], true, verified); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "cercano: refusing installed launch:", err)
+		}
+		os.Exit(code)
 	}
 
 	handoffFD := flag.Int("internal-tui-handoff-fd", -1, "Private TUI restart descriptor")

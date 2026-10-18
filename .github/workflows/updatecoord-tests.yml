@@ -8,6 +8,9 @@ on:
       - 'source/server/internal/updatecoord/**'
       - 'source/server/pkg/update/**'
       - 'source/server/pkg/forcesave/**'
+      - 'source/server/pkg/stablelaunch/**'
+      - 'source/server/pkg/installcontext/**'
+      - 'source/server/pkg/installcontexttest/**'
       - 'source/server/internal/server/**'
       - 'source/server/internal/broker/**'
       - 'source/server/cmd/cercano/**'
@@ -50,6 +53,16 @@ jobs:
       - name: Native temporary-state and subprocess tests
         working-directory: source/server
         run: go test -count=1 -timeout=2m ./internal/updatecoord/... ./pkg/update ./pkg/forcesave
+      - name: Stable foreground launcher and child verification
+        working-directory: source/server
+        run: go test -count=1 -timeout=2m ./pkg/stablelaunch ./pkg/installcontext ./pkg/installcontexttest
+      - name: Stable launcher race checks
+        if: runner.os != 'Windows'
+        working-directory: source/server
+        run: go test -race -count=1 -timeout=2m ./pkg/stablelaunch
+      - name: Stable launcher static checks
+        working-directory: source/server
+        run: go vet ./pkg/stablelaunch
       - name: Windows launch lock tests
         # Only the Windows-specific launch-lock primitives are hermetic on
         # Windows today; do not run the rest of the server suite here.

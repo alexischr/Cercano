@@ -119,6 +119,16 @@ func (i *Install) ChildEnv() []string {
 // clientSource must be real executable files (usually os.Executable()); the
 // selected members are byte-for-byte copies of them.
 func Build(t testing.TB, agentSource, clientSource string) *Install {
+	return build(t, agentSource, clientSource, false)
+}
+
+// BuildCandidate selects an exact restarting candidate without claiming health
+// or completion. Used only by disposable startup/launcher fixtures.
+func BuildCandidate(t testing.TB, agentSource, clientSource string) *Install {
+	return build(t, agentSource, clientSource, true)
+}
+
+func build(t testing.TB, agentSource, clientSource string, candidate bool) *Install {
 	t.Helper()
 	ctx := context.Background()
 
@@ -243,7 +253,11 @@ func Build(t testing.TB, agentSource, clientSource string) *Install {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, cp := range []state.JournalCheckpoint{state.JournalSwitchIntent, state.JournalSelected, state.JournalHealthVerified, state.JournalComplete} {
+	checkpoints := []state.JournalCheckpoint{state.JournalSwitchIntent, state.JournalSelected}
+	if !candidate {
+		checkpoints = append(checkpoints, state.JournalHealthVerified, state.JournalComplete)
+	}
+	for _, cp := range checkpoints {
 		journal.Checkpoint = cp
 		rev, err = store.SaveActivationJournal(ctx, rev, journal)
 		if err != nil {
@@ -256,12 +270,18 @@ func Build(t testing.TB, agentSource, clientSource string) *Install {
 	}
 	rec.State = operation.StateComplete
 	rec.HealthVerified = true
+	if candidate {
+		rec.State = operation.StateRestarting
+		rec.HealthVerified = false
+	}
 	if _, err = store.SaveOperationRecord(ctx, r, rec); err != nil {
 		t.Fatal(err)
 	}
 	// A newer pending operation must not invalidate the completed selection.
-	if _, err = state.NewAdapter(store).Start(ctx, "2.0.0"); err != nil {
-		t.Fatal(err)
+	if !candidate {
+		if _, err = state.NewAdapter(store).Start(ctx, "2.0.0"); err != nil {
+			t.Fatal(err)
+		}
 	}
 	selected := activation.Selection{
 		SchemaVersion:          1,
