@@ -72,7 +72,7 @@ Objective: turn the versioned-directory experiment into a recoverable installati
 - [ ] Implement bounded verified target acquisition through TUF and strict archive validation before staging
 - [ ] Reject traversal, symlinks/reparse surprises, duplicate or unexpected members, missing binaries, oversized downloads and wrong platform/architecture
 - [ ] Stage agent and client in one complete immutable version directory with safe permissions
-- [ ] Implement durable operation records, version selection and startup reconciliation with platform-specific semantics
+- [~] Implement durable operation records, version selection and startup reconciliation with platform-specific semantics
 - [ ] Activate only after the lifecycle coordinator has reached the safe boundary
 - [ ] Test interruption before staging, before selection, during selection and before health confirmation on native Windows and Linux
 - [ ] Implement explicit recovery to the previous complete version after initial startup or health failure
