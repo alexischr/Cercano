@@ -161,13 +161,14 @@ func build(t testing.TB, agentSource, clientSource string, candidate bool) *Inst
 	// Derive the state root exactly the way the child will (home plus the
 	// platform probes ChildEnv sets), then build the protected chain with
 	// privdir.Ensure BEFORE opening the SQLite store — required on Windows.
+	// The probe subdirectories are NOT pre-created: StateRoot is pure, and
+	// on Linux (xdg-state) and Windows (localappdata) the state root IS one
+	// of them. Pre-creating it permissively would make privdir.Ensure
+	// refuse the existing directory (unix 0755; Windows inherited DACL),
+	// the CI 39162207104 failure. Ensure provisions the state root itself
+	// with the approved private policy.
 	localappdata := filepath.Join(home, "localappdata")
 	xdgState := filepath.Join(home, "xdg-state")
-	for _, dir := range []string{localappdata, xdgState} {
-		if err = os.Mkdir(dir, 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
 	stateRoot, err := state.StateRoot(runtime.GOOS, home, localappdata, xdgState)
 	if err != nil {
 		t.Fatal(err)
