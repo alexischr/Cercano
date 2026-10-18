@@ -1294,6 +1294,12 @@ type RuntimeModelCatalog struct {
 	// the curated catalog failed to load. The setup wizard autofills its
 	// open tier picks from this so every pick is gate-compatible.
 	RecommendedOpenModels map[string]string
+	// HardwareOK reports that both server-side hardware probes (system
+	// RAM and memory topology) succeeded; false for an older server that
+	// predates the topology fields. Hardware carries the probed
+	// topology. See HardwareTopology.
+	HardwareOK bool
+	Hardware   HardwareTopology
 }
 
 func (c *Client) ListRuntimeModelsForProfile(ctx context.Context, profileName string) (RuntimeModelCatalog, error) {
@@ -1306,6 +1312,8 @@ func (c *Client) ListRuntimeModelsForProfile(ctx context.Context, profileName st
 		CatalogAccountStatus:  mapCatalogAccountStatus(resp.GetCatalogAccountStatus()),
 		SystemRAMBytes:        resp.GetSystemRamBytes(),
 		RecommendedOpenModels: resp.GetRecommendedOpenModels(),
+		HardwareOK:            resp.GetHardwareOk(),
+		Hardware:              mapHardwareTopology(resp),
 	}
 	if s := resp.GetCatalogUpdatedAt(); s != "" {
 		if t, terr := time.Parse(time.RFC3339, s); terr == nil {

@@ -748,6 +748,35 @@ message ListRuntimeModelsResponse {
   // Empty when the curated catalog fails to load. The setup wizard uses
   // this to autofill the open tier picks with gate-compatible models.
   map<string, string> recommended_open_models = 6;
+  // memory_topology is how the machine organizes compute memory:
+  // "unified" (system RAM is the GPU budget, see unified_memory_bytes),
+  // "discrete" (per-device GPU pools, see gpus; pools are never summed
+  // and are never conflated with system RAM), or "unknown" (the probe
+  // failed or is unavailable on this platform). Older servers that do
+  // not send this field are indistinguishable from unknown, which is
+  // exactly the semantics clients must apply.
+  string memory_topology = 7;
+  // unified_memory_bytes is the size of the unified memory pool. Only
+  // meaningful when memory_topology is "unified", where it reuses the
+  // same probe as system_ram_bytes so the two numbers cannot disagree
+  // about the same pool. 0 otherwise.
+  int64 unified_memory_bytes = 8;
+  // hardware_ok reports that both hardware probes (system RAM and
+  // memory topology) succeeded on the server. Clients must not present
+  // RAM-band recommendations as machine-fit-verified when this is
+  // false.
+  bool hardware_ok = 9;
+  // gpus lists the discrete GPU memory pools, one entry per device.
+  // memory_bytes 0 means the device was detected but its pool size is
+  // unknown — a known device with an unknown pool, not zero memory.
+  // Only populated when memory_topology is "discrete".
+  repeated GPUMemory gpus = 10;
+}
+
+// GPUMemory is one discrete GPU device's memory pool.
+message GPUMemory {
+  string name = 1;
+  int64 gpu_memory_bytes = 2;
 }
 
 // GetModelRAMEstimate resolves the numbers a client needs to predict

@@ -2712,7 +2712,6 @@ func applyHardwareProbes(resp *proto.ListRuntimeModelsResponse, total int64, top
 	// must not receive them as confident support.
 	resp.HardwareOk = resp.SystemRamBytes > 0 && resp.MemoryTopology != sysram.TopologyUnknown
 }
-}
 
 // Acquisition values for RuntimeModel.acquisition — how a model is obtained.
 // This is the distinction a picker must not get wrong: offering a download
