@@ -23,7 +23,15 @@ func loadMainLines() []string {
 	if err != nil {
 		panic(err)
 	}
-	return strings.Split(string(data), "\n")
+	return splitSourceLines(string(data))
+}
+
+// splitSourceLines splits Go source into lines, normalizing CRLF line
+// endings to LF so a Windows checkout of main.go behaves identically to
+// Linux/macOS — in particular, `$`-anchored regexes (e.g. `verified = v$`)
+// must not fail on a trailing carriage return.
+func splitSourceLines(data string) []string {
+	return strings.Split(strings.ReplaceAll(data, "\r\n", "\n"), "\n")
 }
 
 // assertMatches fails with the pattern and the mismatched lines.
@@ -119,6 +127,23 @@ func TestMainWiresVerifiedContextPropagation(t *testing.T) {
 		[]string{"runMCPMode(cfg, *grpcAddr)"})
 	assertMatches(t, "TUI notices verified", `startInstalledTUINotices\(verified, srv\)`,
 		[]string{"stopTUINotices := startInstalledTUINotices(verified, srv)"})
+}
+
+// TestSplitSourceLinesNormalizesCRLF guards the Windows-CRLF regression
+// fixed alongside CI run 39162961836: a CRLF checkout left a trailing \r on
+// every line, so `$`-anchored patterns matched zero lines.
+func TestSplitSourceLinesNormalizesCRLF(t *testing.T) {
+	lines := splitSourceLines("var verified installcontext.Verified\r\n\t\tverified = v\r\n")
+	re := regexp.MustCompile(`verified = v$`)
+	matched := 0
+	for _, line := range lines {
+		if re.MatchString(line) {
+			matched++
+		}
+	}
+	if matched != 1 {
+		t.Fatalf("CRLF source: `verified = v$` matched %d lines, want 1 (line endings must be normalized)", matched)
+	}
 }
 
 func TestMainWiresVersionCapabilityQuery(t *testing.T) {
