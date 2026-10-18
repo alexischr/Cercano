@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"math"
 
@@ -101,6 +102,94 @@ func (s *Store) completedSelectionOperation(ctx context.Context, tx *sql.Tx, tar
 		return 0, false, nil
 	}
 	return found.OpID, true, nil
+}
+
+// LoadCandidateSelectionManifest resolves the manifest that authorizes the
+// CURRENT operation's candidate child startup, exactly as the user approved:
+// the current, allocated operation must be in the restarting or health-check
+// lifecycle and its activation journal must sit at the Selected checkpoint,
+// with the journal's target facts and prior+1 selection generation matching
+// the caller's selection. Journal, operation and manifest bindings are
+// checked in one read transaction, sharing the strict loaders of the
+// completed path; the persisted manifest is immutable (written once) and
+// never re-derived from disk. Anything outside that exact startup window —
+// other lifecycle states, other journal checkpoints, no operation, no
+// journal, no manifest, unallocated records, or fact/generation mismatches
+// between the journal, operation and selection — is refused as
+// ErrRecordNotFound (nothing selected for startup) or ErrCorruptDatabase
+// (inconsistent persisted facts), never treated as a completed install.
+// This is not a completed-install API: completed selections keep using
+// LoadCompletedSelectionManifest, which still refuses candidate states.
+func (s *Store) LoadCandidateSelectionManifest(ctx context.Context, target SelectedVersion) (ActivationManifest, error) {
+	if ctx == nil || ValidateVersionString(target.Version) != nil || ValidateStagedRelativeIdentifier(target.Directory) != nil || !IsLowerHexSHA256(target.ArtifactSHA256) || target.Generation < 1 {
+		return ActivationManifest{}, ErrInvalidRecord
+	}
+	ctx, cancel := context.WithTimeout(ctx, opTimeout)
+	defer cancel()
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return ActivationManifest{}, err
+	}
+	defer tx.Rollback()
+	rec, _, found, err := s.loadCurrentOperation(ctx, tx)
+	if err != nil {
+		return ActivationManifest{}, err
+	}
+	if !found {
+		return ActivationManifest{}, fmt.Errorf("%w: no allocated operation to authorize candidate startup", ErrRecordNotFound)
+	}
+	if rec.State != operation.StateRestarting && rec.State != operation.StateHealthCheck {
+		return ActivationManifest{}, fmt.Errorf("%w: operation %d is %q, not a candidate startup lifecycle", ErrRecordNotFound, rec.ID, rec.State)
+	}
+	if rec.TargetVersion != target.Version {
+		return ActivationManifest{}, fmt.Errorf("%w: current operation %d targets %q, selection names %q", ErrCorruptDatabase, rec.ID, rec.TargetVersion, target.Version)
+	}
+	var rowInstall, payload string
+	var revision int64
+	err = tx.QueryRowContext(ctx,
+		`SELECT install_id, revision, journal_json FROM activation_journals WHERE op_id = ?`, rec.ID).Scan(&rowInstall, &revision, &payload)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ActivationManifest{}, fmt.Errorf("%w: activation journal %d", ErrRecordNotFound, rec.ID)
+	}
+	if err != nil {
+		return ActivationManifest{}, fmt.Errorf("state: load activation journal: %w", err)
+	}
+	if rowInstall != s.installID {
+		return ActivationManifest{}, fmt.Errorf("%w: journal row names installation %q, store is %q", ErrInstallIDMismatch, rowInstall, s.installID)
+	}
+	if revision < 1 {
+		return ActivationManifest{}, fmt.Errorf("%w: activation journal %d at revision %d", ErrCorruptDatabase, rec.ID, revision)
+	}
+	j, err := decodeActivationJournal([]byte(payload))
+	if err != nil {
+		return ActivationManifest{}, fmt.Errorf("%w: activation journal %d: %v", ErrCorruptDatabase, rec.ID, err)
+	}
+	if j.InstallID != s.installID {
+		return ActivationManifest{}, fmt.Errorf("%w: activation journal %d is bound to a different installation", ErrInstallIDMismatch, rec.ID)
+	}
+	if j.OpID != rec.ID {
+		return ActivationManifest{}, fmt.Errorf("%w: activation journal %d names operation %d", ErrCorruptDatabase, rec.ID, j.OpID)
+	}
+	if j.Checkpoint != JournalSelected {
+		return ActivationManifest{}, fmt.Errorf("%w: operation %d journal is at checkpoint %q, not the approved selected checkpoint", ErrRecordNotFound, rec.ID, j.Checkpoint)
+	}
+	if j.TargetVersion != target.Version || j.StagedVersionDir != target.Directory || j.VerifiedArtifactSHA256 != target.ArtifactSHA256 {
+		return ActivationManifest{}, fmt.Errorf("%w: selected journal %d facts do not match the selection", ErrCorruptDatabase, rec.ID)
+	}
+	if j.PriorSelectionGeneration == math.MaxInt64 || j.PriorSelectionGeneration+1 != target.Generation {
+		return ActivationManifest{}, fmt.Errorf("%w: selected journal %d generation %d does not immediately precede selection generation %d", ErrCorruptDatabase, rec.ID, j.PriorSelectionGeneration, target.Generation)
+	}
+	m, _, err := s.loadActivationManifestConn(ctx, tx, rec.ID)
+	if err != nil {
+		return ActivationManifest{}, err
+	}
+	if m.TargetVersion != target.Version || m.StagedVersionDir != target.Directory || m.VerifiedArtifactSHA256 != target.ArtifactSHA256 {
+		return ActivationManifest{}, ErrCorruptDatabase
+	}
+	if err := tx.Commit(); err != nil {
+		return ActivationManifest{}, err
+	}
+	return m, nil
 }
 
 // LoadCompletedSelectionManifest resolves fingerprints for an exact completed,

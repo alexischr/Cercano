@@ -39,6 +39,8 @@ type childFixture struct {
 	stateRoot string
 	agentExe  string
 	clientExe string
+	// selectionPath is set by candidateChildFixture only.
+	selectionPath string
 }
 
 func verifiedChildFixture(t *testing.T) childFixture {
