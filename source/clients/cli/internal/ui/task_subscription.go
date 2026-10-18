@@ -82,12 +82,22 @@ func (m *Model) applyTaskSubscription(msg taskSubscriptionMsg) tea.Cmd {
 			tab.view.AppendEntry(&Entry{Role: RoleUser, Content: task.Task})
 			m.taskProgressSequences[task.TaskId] = 0
 		}
+		previous := tab.taskStatus
 		changed := tab.applyTaskLifecycle(task.TaskId, task.Status)
 		if (fresh || changed) && task.Error != "" {
 			tab.view.AppendEntry(&Entry{Role: RoleSystem, Content: "Task " + task.Status + ": " + task.Error})
 		}
 		tab.view.SetStreaming(!tab.done)
 		tab.view.rebuild()
+		// Regression probe task_terminal_retire_test.go: an independent task that
+		// completes while no parent turn is running must retire its own tab now,
+		// matching dispatch children that retire on their own "done" event,
+		// instead of lingering until the next cleanupFinishedSubAgentTabs sweep.
+		// retireFinishedSubAgentTab spares restored and user-dismissed tabs, and
+		// failed/stopped/interrupted tabs stay for post-mortem review.
+		if task.Status == "completed" && previous != "completed" {
+			m.retireFinishedSubAgentTab(task.ChildId)
+		}
 	}
 	if progress := event.GetProgress(); progress != nil && !m.chatTabs.closed[progress.ChildId] {
 		tab := m.chatTabs.tabs[progress.ChildId]
