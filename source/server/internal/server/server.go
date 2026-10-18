@@ -589,7 +589,7 @@ func (s *Server) Shutdown() {
 // server lifetime. The store is the host's durable conversation store (the
 // delegating_tasks tables live there) and the executor is the existing
 // synchronous dispatch engine — host-owned, engine-executed. Completion
-// notifications are currently logged; delivery is a separate integration step.
+// notifications use a host-owned wake context, independent of any main turn.
 //
 // Idempotent under concurrent calls; no-op after Shutdown closed the manager.
 // Returns false when no wiring was possible (store unavailable or previous
@@ -621,6 +621,9 @@ func (s *Server) ensureTaskManager() bool {
 		log.Printf("[taskrun] manager unavailable: %v", err)
 		return false
 	}
+	// Publish the manager and its wake lifetime together under taskRunMu. A
+	// completion must never observe a live manager without a wake context.
+	s.taskWakeCtx, s.taskWakeCancel = context.WithCancel(context.Background())
 	s.taskManager = m
 	return true
 }
@@ -629,24 +632,36 @@ func (s *Server) ensureTaskManager() bool {
 // down. Interrupted tasks are reconciled at the next start.
 func (s *Server) closeTaskManager() {
 	s.taskRunMu.Lock()
-	if s.taskManager == nil {
-		// Mark closed even when never constructed so a racing ensureTaskManager
-		// cannot start one mid-shutdown.
-		s.taskManagerClosed = true
-		s.taskRunMu.Unlock()
-		return
-	}
 	m := s.taskManager
 	s.taskManager = nil
+	// Block new callbacks before canceling existing background turns. This
+	// also makes taskWakeWG.Wait safe: no callback can Add after this point.
 	s.taskManagerClosed = true
+	if s.taskWakeCancel != nil {
+		s.taskWakeCancel()
+	}
 	s.taskRunMu.Unlock()
 	// Bounded: running executors observe the host cancel (engine honors ctx)
 	// and outcome persistence carries its own 10 s timeout. Does not wait
 	// unboundedly on a wedged executor — the process is exiting anyway.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if err := m.Close(ctx); err != nil {
-		log.Printf("[taskrun] shutdown close: %v", err)
+	if m != nil {
+		if err := m.Close(ctx); err != nil {
+			log.Printf("[taskrun] shutdown close: %v", err)
+		}
+	}
+	// Drain completion handling before its persistence/provider dependencies
+	// close, within the same shutdown budget used for child execution.
+	wakesDone := make(chan struct{})
+	go func() {
+		s.taskWakeWG.Wait()
+		close(wakesDone)
+	}()
+	select {
+	case <-wakesDone:
+	case <-ctx.Done():
+		log.Printf("[taskrun] shutdown completion drain: %v", ctx.Err())
 	}
 }
 
@@ -657,11 +672,9 @@ func (s *Server) taskRunManager() *taskrun.Manager {
 	return s.taskManager
 }
 
-// notifyTaskChange handles a taskrun completion notification. The current
-// ClientEvent schema has no task-change variant (proto.TaskChange rides only
-// the in-turn StreamProcessResponse), and adding one is out of scope for this
-// slice — so today this logs; a durable record exists in the task store and is
-// reconciled at restart. Never blocks or panics.
+// notifyTaskChange coalesces completion wake requests per parent. The host-owned
+// callback attempts an idle-only turn; a busy parent consumes pending results at
+// a safe boundary or schedules another attempt when its current turn releases.
 func (s *Server) notifyTaskChange(parent string) {
 	s.taskRunMu.Lock()
 	if parent == "" || s.taskManagerClosed || s.taskManager == nil || s.taskWakeCtx == nil {
