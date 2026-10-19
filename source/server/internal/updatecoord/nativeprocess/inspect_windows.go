@@ -10,9 +10,11 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// Read-only observation. PROCESS_QUERY_LIMITED_INFORMATION grants image name,
-// times and exit status; it grants no right to signal, terminate, or inject
-// into the observed process, and no token or privilege is opened or enabled.
+// Read-only observation. PROCESS_QUERY_LIMITED_INFORMATION grants image
+// name, times and exit status; it grants no right to signal, terminate, or
+// inject into the observed process. No privilege is enabled: the only other
+// handle opened is a read-only TOKEN_QUERY process token, used solely to
+// read the user SID.
 const queryLimited = windows.PROCESS_QUERY_LIMITED_INFORMATION
 
 // Windows reports this exit code while a process is still running. Any other
@@ -66,8 +68,9 @@ const maxPID32 = uint64(^uint32(0))
 
 func observeWindows(pid int) (Identity, error) {
 	// Pinned handle: image name, creation time, token SID and exit status are
-	// all read from this one kernel object. False is shared-handles-inherit,
-	// not the inherit flag.
+	// all read from this one kernel object. The false argument is
+	// bInheritHandle: the returned handle cannot be inherited by future child
+	// processes of this one.
 	handle, err := windows.OpenProcess(queryLimited, false, uint32(pid))
 	if err != nil {
 		return Identity{}, fmt.Errorf("inspect PID %d: open process: %w", pid, err)
@@ -131,7 +134,7 @@ func processImageName(handle windows.Handle, pid int) (string, error) {
 	return "", fmt.Errorf("inspect PID %d: image name exceeds %d characters", pid, maxImageNameChars)
 }
 
-func processCreationTime(handle windows.Handle, pid int) (int64, error) {
+func processCreationTime(handle windows.Handle, pid int) (uint64, error) {
 	var creation, exit, kernel, user windows.Filetime
 	if err := windows.GetProcessTimes(handle, &creation, &exit, &kernel, &user); err != nil {
 		return 0, fmt.Errorf("inspect PID %d: process times: %w", pid, err)
@@ -139,8 +142,12 @@ func processCreationTime(handle windows.Handle, pid int) (int64, error) {
 	if creation.LowDateTime == 0 && creation.HighDateTime == 0 {
 		return 0, fmt.Errorf("inspect PID %d: kernel reported no creation time", pid)
 	}
-	// Raw FILETIME: 100-nanosecond intervals since 1601-01-01 UTC.
-	return int64(creation.Nanoseconds()), nil
+	// Raw FILETIME: the 64-bit count of 100-nanosecond intervals since
+	// 1601-01-01 UTC, exactly as the kernel reported it. Note this is NOT
+	// Filetime.Nanoseconds(), which re-bases to the Unix epoch and rescales
+	// to nanoseconds ((raw - 116444736000000000) * 100); callers use this as
+	// a stable identity value, not as a Go time.
+	return uint64(creation.HighDateTime)<<32 | uint64(creation.LowDateTime), nil
 }
 
 func processUserSID(handle windows.Handle, pid int) (string, error) {

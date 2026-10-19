@@ -19,7 +19,7 @@ type Identity struct {
 	// WindowsStartFileTime is the process creation time as a raw Windows
 	// FILETIME: 100-nanosecond intervals since 1601-01-01 UTC. It is
 	// deliberately not folded into the Unix start-time fields.
-	WindowsStartFileTime int64
+	WindowsStartFileTime uint64
 }
 
 func (p Identity) SameProcess(other Identity) bool {
