@@ -42,3 +42,11 @@ Run: https://github.com/cercano-ai/Cercano/actions/runs/39195494165
 Review caught legitimate non-LISTEN TIME_WAIT rows with zero inode being rejected; a failing portable regression demonstrated the issue before correction. LISTEN rows still require nonzero inodes, including off-port rows. Test subprocesses are bounded and reaped on failure paths.
 
 Support limits: both TCP tables must be readable. A host with IPv6 disabled and no tcp6 table returns uncertainty even for IPv4; missing data is not interpreted as absence. The observed listener is in the target's network namespace, which does not establish reachability from the updater's namespace. No exclusivity, exit, or health-success inference is authorized.
+
+## Windows identity slice — native verification
+
+Native CI run [39318042928](https://github.com/cercano-ai/Cercano/actions/runs/39318042928), commit `a8e63ac4e7342f6a88b6f359887991c3e328f33a`, passed on Windows, Ubuntu and macOS, including the full CLI suite. Unix race checks passed; Windows race checks remain skipped. This supersedes the earlier Windows identity implementation/verification limitation, not the remaining listener or health integration boundaries.
+
+The Windows fixture previously compared a kernel-reported short executable path with an expanded long pathname. The correction compares pinned file identity rather than spelling; the alias regression resolves the long form first so an already-short executable pathname does not itself cause a skip. Production identity inspection was not changed by this fixture correction. Windows creation time retains raw unsigned FILETIME representation rather than converted Unix nanoseconds.
+
+These results do not establish exclusive listener ownership, candidate health, descendant exit, or completed update integration. No live agent was stopped or installation modified.
