@@ -2,26 +2,14 @@
 package brewrestart
 
 import (
+	"cercano/source/server/internal/updatecoord/nativeprocess"
 	"fmt"
 	"path/filepath"
 	"strings"
 )
 
-// Identity is obtained from the kernel, not from mutable argv[0] or PATH.
-// Start time distinguishes a process from a later reuse of the same PID.
-type Identity struct {
-	PID               int
-	UID               uint32
-	Executable        string
-	StartSeconds      uint64
-	StartMicroseconds uint64
-}
-
-func (p Identity) SameProcess(other Identity) bool {
-	return p.PID == other.PID && p.UID == other.UID &&
-		p.StartSeconds == other.StartSeconds && p.StartMicroseconds == other.StartMicroseconds &&
-		p.Executable == other.Executable
-}
+// Identity is a kernel observation, shared with updater candidate inspection.
+type Identity = nativeprocess.Identity
 
 // FormulaRoot accepts only the canonical layout installed by the formula.
 // The caller resolves the NEW binary's symlinks; a running process's kernel

@@ -1,6 +1,6 @@
 //go:build darwin && cgo
 
-package brewrestart
+package nativeprocess
 
 /*
 #include <errno.h>
