@@ -10,6 +10,12 @@ A new disposable listener fixture checks current-process identity, owned loopbac
 
 Verification: both package race suites and vet pass locally on macOS. Builds pass with cgo disabled and for Windows/amd64 and Linux/amd64. Windows/Linux native inspection is still explicitly unsupported; those builds are not execution evidence. The existing updatecoord CI glob includes the new package, but no new CI run or push was performed.
 
+## Linux identity slice
+
+Linux Inspect now reads bounded stat/status records and the kernel executable link through an anchored /proc directory, repeating identity observations before returning. Linux start ticks have their own Identity field, distinct from macOS wall-clock start seconds/microseconds. Missing proc data remains uncertainty, never manufactured ESRCH proof. Listener inspection still returns an explicit unsupported error.
+
+Portable parser/lifetime tests and existing macOS race suites pass. Linux vet and test compilation, plus Windows builds, pass. Linux-only tests check the actual current process and invalid/absent PIDs but have not been executed: this host is macOS and docker, podman and limactl were not found on PATH. Native Linux execution is required before treating this slice as verified.
+
 ## Remaining boundary
 
 HoldsListener is a per-process observation, explicitly not proof of unique endpoint ownership. A responder's reported PID or a server-side endpoint self-check cannot replace updater-side evidence. Candidate launch lifetime binding, Windows/Linux inspection, competing listener handling, bounded health probing and reconnect evidence remain to be implemented before health may authorize activation completion. No live agent or installed files were changed.

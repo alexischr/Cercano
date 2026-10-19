@@ -5,15 +5,17 @@ package nativeprocess
 // Identity is obtained from the kernel, not from mutable argv[0] or PATH.
 // Start time distinguishes a process from a later reuse of the same PID.
 type Identity struct {
-	PID               int
-	UID               uint32
-	Executable        string
+	PID        int
+	UID        uint32
+	Executable string
+	// StartTicks is Linux boot-relative clock ticks; macOS uses the fields below.
+	StartTicks        uint64
 	StartSeconds      uint64
 	StartMicroseconds uint64
 }
 
 func (p Identity) SameProcess(other Identity) bool {
 	return p.PID == other.PID && p.UID == other.UID &&
-		p.StartSeconds == other.StartSeconds && p.StartMicroseconds == other.StartMicroseconds &&
+		p.StartTicks == other.StartTicks && p.StartSeconds == other.StartSeconds && p.StartMicroseconds == other.StartMicroseconds &&
 		p.Executable == other.Executable
 }
