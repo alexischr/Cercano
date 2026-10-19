@@ -3,7 +3,6 @@
 package nativeprocess
 
 import (
-	"net/netip"
 	"os"
 	"path/filepath"
 	"testing"
@@ -28,9 +27,6 @@ func TestLinuxInspectCurrentProcess(t *testing.T) {
 	again, e := Inspect(os.Getpid())
 	if e != nil || !id.SameProcess(again) {
 		t.Fatal("unstable identity", again, e)
-	}
-	if owns, e := HoldsListener(id, netip.MustParseAddrPort("127.0.0.1:12345")); owns || e == nil {
-		t.Fatal("unimplemented listener check authorized")
 	}
 }
 

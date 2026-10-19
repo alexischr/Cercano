@@ -21,3 +21,22 @@ Run: https://github.com/cercano-ai/Cercano/actions/runs/39187460069
 ## Remaining boundary
 
 HoldsListener is a per-process observation, explicitly not proof of unique endpoint ownership. A responder's reported PID or a server-side endpoint self-check cannot replace updater-side evidence. Candidate launch lifetime binding, Windows/Linux inspection, competing listener handling, bounded health probing and reconnect evidence remain to be implemented before health may authorize activation completion. No live agent or installed files were changed.
+
+## Linux listener slice — approved scope and implementation
+
+User approval (this session, no later instruction supersedes it): bounded Linux HoldsListener in internal/updatecoord/nativeprocess, using /proc TCP tables matched to exact process socket descriptors, repeated identity checks, no elevation, and fail-closed uncertainty. Scope guardrails honored:
+
+- Target-network-namespace tables (/proc/<pid>/net/tcp{,6}) via an anchored /proc/<pid> root, not the host namespace tables.
+- Endpoint restricted to explicit loopback address, nonzero port, no zone. Stale/foreign identity and any user other than the current UID are rejected; identity is re-inspected after the socket observation.
+- Exact family/address matches plus family-appropriate wildcard bindings are accepted. A dual-stack IPv6 wildcard socket asked about an IPv4 endpoint is explicitly undecided — /proc does not expose IPV6_V6ONLY — and is reported as uncertainty, not as a match or a miss. Never claims exclusive endpoint ownership or service health.
+- Two socket-inode sets bracket the table reads through anchored /proc/<pid>/fd; a changed set, vanished descriptor during enumeration, unreadable input or invalid parsed framing/fields is an error. These repeated observations are not an atomic kernel snapshot and cannot exclude changes that occur and reverse between samples.
+- All reads bounded (fd count, read sizes, table bytes, batched directory reads); kernel word endianness handled via native layout; the decimal inode column and hex address/port/state columns are decoded accordingly.
+- Pure parsers (listener_parse.go) are platform-independent and covered by portable tests: table parsing for IPv4/IPv6, wildcard matching, dual-stack ambiguity, malformed/truncated/oversized record rejection, socket-link decoding and bounded-read rejection.
+
+Linux-native fixtures (listener_linux_test.go): owned IPv4 listener, IPv6 loopback and wildcard, IPv4 wildcard, closed listener becomes verified false only after fd stability, stale-identity and foreign-UID rejection, invalid endpoints (non-loopback, zero port, zoned), a helper process proving an unrelated same-user process's listener is not ours and is ours when asked for its own identity, vanished-process uncertainty instead of clean absence, and a churn test asserting fd churn can never produce a verified false for a held listener.
+
+Verification honesty: macOS host — go test, go vet and go test -race for updatecoord and brewrestart all pass, full module builds. Linux/amd64 with cgo disabled — go build ./..., go vet and test compilation pass. No Linux runtime (no docker/podman/lima/colima on this host) and no CI run: the Linux-only fixtures have no native execution evidence yet. Windows remains unsupported. Darwin implementation is untouched. No production health wiring or live agent actions. Native Linux verification remains pending; local compilation is not a substitute.
+
+Review caught legitimate non-LISTEN TIME_WAIT rows with zero inode being rejected; a failing portable regression demonstrated the issue before correction. LISTEN rows still require nonzero inodes, including off-port rows. Test subprocesses are bounded and reaped on failure paths.
+
+Support limits: both TCP tables must be readable. A host with IPv6 disabled and no tcp6 table returns uncertainty even for IPv4; missing data is not interpreted as absence. The observed listener is in the target's network namespace, which does not establish reachability from the updater's namespace. No exclusivity, exit, or health-success inference is authorized.
