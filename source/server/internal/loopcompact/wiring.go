@@ -162,7 +162,7 @@ func BuildSummarizer(deps WiringDeps) Summarize {
 		// Keep local capacity-aware chunking. Cloud requests retain their existing
 		// prompt construction; provider-profile failover runs within this context.
 		if selected.IsCloud {
-			return call(ctx, compaction.BuildSummaryPrompt(msgs), compaction.DefaultSummaryOutputReserve)
+			return call(ctx, compaction.BuildSummaryPromptWithTask(msgs, compaction.TaskReferenceFrom(ctx)), compaction.DefaultSummaryOutputReserve)
 		}
 		summary, _, err := compaction.SummarizeBudgetedLocal(ctx, msgs, window, compaction.DefaultSummaryOutputReserve, call)
 		return summary, err
