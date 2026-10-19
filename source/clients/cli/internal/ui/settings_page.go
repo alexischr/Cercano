@@ -96,6 +96,7 @@ type settingsPage struct {
 	// under it). Loaded alongside profiles under the same profilesLoaded gate.
 	cloudView                agentclient.CloudProvidersView
 	cloudSelected            string
+	cloudAdvanced            bool
 	cloudDraft               cloudDraft
 	cloudDraftNew            bool
 	cloudDirty               bool
@@ -386,6 +387,13 @@ func (sp *settingsPage) View() string {
 func (sp *settingsPage) onCommit(key, value string) (string, tea.Cmd, error) {
 	if strings.HasPrefix(key, "routing-") {
 		return sp.commitRouting(key, value)
+	}
+	if key == "cloud-advanced" {
+		sp.cloudAdvanced = !sp.cloudAdvanced
+		if sp.form != nil {
+			sp.form.Reload()
+		}
+		return "", nil, nil
 	}
 	if key == "cloud-catalog-action" {
 		if _, field := sp.catalogPrerequisite(); field != "" {

@@ -55,6 +55,7 @@ func TestCloudDetailsSeparatesIdentityFromProfileID(t *testing.T) {
 	sp.profiles = []agentclient.CloudProfileInfo{profile}
 	sp.cloudView = agentclient.CloudProvidersView{Providers: []agentclient.CloudProvider{{ID: "openai-responses", Label: "ChatGPT", Profiles: sp.profiles}}}
 	sp.selectCloudRow("profile:chatgpt-2")
+	sp.cloudAdvanced = true
 	section := sp.buildCloudSection()
 	seen := map[string]form.Field{}
 	for _, field := range section.Fields {

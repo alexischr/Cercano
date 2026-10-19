@@ -27,6 +27,7 @@ func (sp *settingsPage) selectCloudRow(rowID string) {
 	sp.invalidateCatalog()
 	sp.catalogPicker = nil
 	sp.cloudSelected = rowID
+	sp.cloudAdvanced = false
 	sp.cloudDirty = false
 	sp.cloudDraft = cloudDraft{Choices: (&agentclient.CloudModelChoices{}).Clone()}
 	sp.cloudDraftNew = true
@@ -93,7 +94,7 @@ func (sp *settingsPage) cloudDetailFields(r cloudRow) []form.Field {
 	il := func(s string) string { return cloudDetailIndent + s }
 	var out []form.Field
 	if sp.cloudDraftNew {
-		out = append(out, form.NewText("cloud-name", il("Profile ID"), d.Name, "internal account identifier"))
+		out = append(out, form.NewText("cloud-name", il("Account name"), d.Name, "A unique name for this connection"))
 	} else {
 		account := agentclient.CloudProfileInfo{Name: d.Name, Flavor: d.Flavor, Route: d.Route}
 		for _, p := range sp.profiles {
@@ -102,54 +103,11 @@ func (sp *settingsPage) cloudDetailFields(r cloudRow) []form.Field {
 				break
 			}
 		}
-		hint := "Signed-in identity; credentials and routing use the Profile ID below"
+		hint := "Credentials are saved separately for this account"
 		if account.AccountEmail == "" && account.AccountDisplayName == "" && (account.Route == "subscription" || account.Route == "chatgpt") {
 			hint = "Sign in again to identify this account; existing credentials are unchanged"
 		}
-		out = append(out, form.NewReadOnly("cloud-account", il("Account"), account.AccountDisplayNameLabel(), hint), form.NewReadOnly("cloud-name", il("Profile ID"), d.Name, "Internal identifier; not your username or email"))
-	}
-	// flavor/backend: editable only for the custom "other" row; read-only otherwise.
-	if r.ID == "other" {
-		out = append(out,
-			form.NewSelect("cloud-flavor", il("flavor"), []form.Option{
-				{Label: "chat_completions", Value: "chat_completions"},
-				{Label: "messages", Value: "messages"},
-			}, d.Flavor),
-			form.NewSelect("cloud-backend", il("backend"), []form.Option{
-				{Label: "default", Value: ""},
-				{Label: "openai", Value: "openai"},
-				{Label: "gemini", Value: "gemini"},
-				{Label: "groq", Value: "groq"},
-			}, d.Backend),
-		)
-	} else {
-		out = append(out, form.NewReadOnly("cloud-flavor", il("flavor"), d.Flavor, ""))
-		if d.Flavor == "chat_completions" {
-			be := d.Backend
-			if be == "" {
-				be = "default"
-			}
-			out = append(out, form.NewReadOnly("cloud-backend", il("backend"), be, ""))
-		}
-	}
-	if d.Route == "subscription" {
-		out = append(out, form.NewReadOnly("cloud-route", il("auth"), "subscription", "OAuth sign-in; API key/base URL not used"))
-	} else {
-		out = append(out, form.NewText("cloud-base-url", il("base-url"), d.BaseURL, "https://…"))
-	}
-	out = append(out, sp.cloudChoiceFields(r)...)
-	state := sp.catalogState()
-	if state.Message != "" {
-		out = append(out, form.NewReadOnly("cloud-catalog-state", il("Model catalog"), state.Message, "Existing choices are preserved until Save"))
-	}
-	if state.Action != 0 {
-		out = append(out, form.NewButton("cloud-catalog-action", il(state.ActionLabel), true))
-	}
-	if r.Preset != nil && r.Preset.ID == "mistral" {
-		out = append(out, sp.mistralProviderCatalogFields()...)
-	}
-	if sp.cloudModelsError != "" {
-		out = append(out, form.NewReadOnly("cloud-model-discovery-error", il("Model catalog"), sp.cloudModelsError, "Existing model IDs are retained; access has not been confirmed"))
+		out = append(out, form.NewReadOnly("cloud-account", il("Account"), account.AccountDisplayNameLabel(), hint))
 	}
 	// ChatGPT subscription sign-in: the responses flavor can authenticate with
 	// a ChatGPT Plus/Pro subscription via device-code OAuth instead of an API
@@ -166,12 +124,68 @@ func (sp *settingsPage) cloudDetailFields(r cloudRow) []form.Field {
 	if sp.shouldShowClaudeSignIn(r, d) {
 		out = append(out, form.NewButton("cloud-signin-claude", il("sign in with Claude (subscription)"), true))
 	}
+	if d.Route == "subscription" {
+		out = append(out, form.NewReadOnly("cloud-route", il("Authentication"), "Subscription sign-in", ""))
+	}
 	if d.Route != "subscription" {
-		out = append(out, form.NewMasked("cloud-key", il("api-key"), sp.draftHasKey(r)))
+		out = append(out, form.NewMasked("cloud-key", il("API key"), sp.draftHasKey(r)))
+	}
+	out = append(out, sp.cloudChoiceFields(r)...)
+	state := sp.catalogState()
+	if state.Message != "" {
+		out = append(out, form.NewReadOnly("cloud-catalog-state", il("Model catalog"), state.Message, "Existing choices are preserved until Save"))
+	}
+	if state.Action != 0 {
+		out = append(out, form.NewButton("cloud-catalog-action", il(state.ActionLabel), true))
+	}
+	if r.Preset != nil && r.Preset.ID == "mistral" {
+		out = append(out, sp.mistralProviderCatalogFields()...)
+	}
+	if sp.cloudModelsError != "" {
+		out = append(out, form.NewReadOnly("cloud-model-discovery-error", il("Model catalog"), sp.cloudModelsError, "Existing model IDs are retained; access has not been confirmed"))
 	}
 	out = append(out, form.NewButton("cloud-save", il("save"), true), form.NewButton("cloud-discard", il("discard"), true))
 	if !sp.cloudDraftNew {
 		out = append(out, form.NewButton("cloud-add-account", il("Add another account"), true), form.NewButton("cloud-delete", il("delete"), true))
+	}
+
+	label := "Advanced…"
+	if sp.cloudAdvanced {
+		label = "Hide advanced settings"
+	}
+	out = append(out, form.NewButton("cloud-advanced", il(label), true))
+	if sp.cloudAdvanced {
+		if !sp.cloudDraftNew {
+			out = append(out, form.NewReadOnly("cloud-name", il("Profile ID"), d.Name, "Internal identifier"))
+		}
+		// flavor/backend: editable only for the custom "other" row; read-only otherwise.
+		if r.ID == "other" {
+			out = append(out,
+				form.NewSelect("cloud-flavor", il("flavor"), []form.Option{
+					{Label: "chat_completions", Value: "chat_completions"},
+					{Label: "messages", Value: "messages"},
+				}, d.Flavor),
+				form.NewSelect("cloud-backend", il("backend"), []form.Option{
+					{Label: "default", Value: ""},
+					{Label: "openai", Value: "openai"},
+					{Label: "gemini", Value: "gemini"},
+					{Label: "groq", Value: "groq"},
+				}, d.Backend),
+			)
+		} else {
+			out = append(out, form.NewReadOnly("cloud-flavor", il("flavor"), d.Flavor, ""))
+			if d.Flavor == "chat_completions" {
+				be := d.Backend
+				if be == "" {
+					be = "default"
+				}
+				out = append(out, form.NewReadOnly("cloud-backend", il("backend"), be, ""))
+			}
+		}
+		if d.Route != "subscription" {
+			out = append(out, form.NewText("cloud-base-url", il("base-url"), d.BaseURL, "https://…"))
+		}
+
 	}
 	return out
 }

@@ -85,6 +85,7 @@ func TestCloudSectionNoDetailWhenNothingSelected(t *testing.T) {
 func TestCloudSectionShowsDetailForSelectedProfile(t *testing.T) {
 	sp := cloudSamplePage()
 	sp.selectCloudRow("profile:work-openai")
+	sp.cloudAdvanced = true
 	sec := sp.buildCloudSection()
 	var keys []string
 	for _, f := range sec.Fields {
@@ -212,6 +213,7 @@ func TestCloudSectionDirectAnthropicProfileDoesNotShowSubscriptionSignIn(t *test
 	})
 
 	sp.selectCloudRow("profile:anthropic")
+	sp.cloudAdvanced = true
 	sec := sp.buildCloudSection()
 	keys := map[string]bool{}
 	for _, f := range sec.Fields {
