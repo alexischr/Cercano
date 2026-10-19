@@ -9,12 +9,13 @@ import (
 
 func TestHostCompletionEnvelopeNotRenderedOnResume(t *testing.T) {
 	c := newTestChatView(100, 30)
+	c.setTaskVisibility(true, true) // Resumed dev-mode conversations must stay readable.
 	c.SetEntries(resumeEntries([]agentclient.PersistedTurn{
 		{Role: "system", Content: "<host:task-completions>\n[]\n</host:task-completions>\nDelegated tasks have finished."},
 		{Role: "assistant", Content: "The work is complete."},
 	}, 0))
 	text := ansi.Strip(chatLayoutContent(c))
-	if strings.Contains(text, "host:task-completions") {
+	if strings.Contains(text, "host:task-completions") || strings.Contains(text, "Delegated tasks have finished") {
 		t.Fatal("internal completion envelope leaked into transcript")
 	}
 	if !strings.Contains(text, "The work is complete.") {
@@ -72,7 +73,7 @@ func TestHostMetadataVisibilityDoesNotSuppressUserText(t *testing.T) {
 	}
 	c.setTaskVisibility(true, true)
 	c.SetEntries(resumeEntries([]agentclient.PersistedTurn{{Role: "system", Content: marker}}, 0))
-	if !strings.Contains(ansi.Strip(chatLayoutContent(c)), "host:task-completions") {
-		t.Fatal("debug metadata suppressed")
+	if strings.Contains(ansi.Strip(chatLayoutContent(c)), "host:task-completions") {
+		t.Fatal("debug mode leaked host metadata")
 	}
 }

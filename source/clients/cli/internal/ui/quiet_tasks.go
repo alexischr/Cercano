@@ -3,11 +3,14 @@ package ui
 // Visibility is presentation only: retain raw entries and full tool results.
 // In particular, a failed poll and an explicit stop remain actionable.
 func (c *chatView) entryVisible(e *Entry) bool {
-	if c.showBookkeeping {
-		return true
-	}
+	// Host continuation envelopes are orchestration input, not chat prose.
+	// Dev mode exposes diagnostic tool activity, but must not expose these
+	// envelopes (including their instructions) when history is restored.
 	if e.Bookkeeping {
 		return false
+	}
+	if c.showBookkeeping {
+		return true
 	}
 	if c.quietTaskActivity && e.TaskActivity {
 		return false
