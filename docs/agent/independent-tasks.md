@@ -36,12 +36,16 @@ The progress transport reads durable storage in bounded pages, with a 200 ms tai
 ## Quiet main-chat presentation
 
 Normal main chat hides routine `task_list`, `task_inspect`, and `task_wait`
-activity. Tool failures and explicit `task_stop` activity remain visible. Child
-tabs retain their tool evidence, and development/debug mode shows polling details.
-Persisted host completion and autonomous-continuation envelopes are retained as
-metadata, not rendered as ordinary chat prose outside debug mode. Actual assistant
-follow-ups, permission prompts, and actionable autonomy pause notices remain visible;
-continuation counts, run IDs, and no-progress-reset bookkeeping are debug-only.
+activity — their successful/in-progress rows and "running <task tool>" progress
+notes — in every presentation mode, development mode included. Tool failures,
+`task_wait` rows interrupted by a canceled foreground turn (debug mode only),
+and explicit `task_stop` activity remain visible. Retained poll evidence stays
+in the entry data, child tabs, and inspection paths; hiding is presentation
+only. Child tabs retain their tool evidence. Persisted host completion and
+autonomous-continuation envelopes are retained as metadata, not rendered as
+ordinary chat prose outside debug mode. Actual assistant follow-ups, permission
+prompts, and actionable autonomy pause notices remain visible; continuation
+counts, run IDs, and no-progress-reset bookkeeping are debug-only.
 
 Inspection is still read-only: merely listing or retrieving a result does not
 acknowledge its completion notification. There is not yet a durable signal that

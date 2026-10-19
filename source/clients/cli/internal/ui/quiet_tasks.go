@@ -9,17 +9,31 @@ func (c *chatView) entryVisible(e *Entry) bool {
 	if e.Bookkeeping {
 		return false
 	}
-	if c.showBookkeeping {
-		return true
-	}
-	if c.quietTaskActivity && e.TaskActivity {
-		return false
-	}
-	if c.quietTaskActivity && e.Tool != nil && e.Tool.Status != ToolStatusError {
-		switch e.Tool.ToolName {
-		case "task_list", "task_inspect", "task_wait":
+	if c.quietTaskActivity {
+		// The main chat's ordinary presentation — dev mode included — hides
+		// routine polling noise:
+		//   - successful/in-progress task_list/task_inspect/task_wait rows
+		//     (their retained results are still in the entry data and on the
+		//     child tab / inspection paths), and
+		//   - "running <task tool>" progress notes.
+		if e.Tool == nil {
+			if e.TaskActivity {
+				return false
+			}
+		} else if e.Tool.Status != ToolStatusError && routineTaskTool(e.Tool.ToolName) {
 			return false
 		}
+	}
+	if c.showBookkeeping {
+		// Dev mode keeps every other detail: genuine task failures and
+		// task_wait rows interrupted by a canceled foreground turn (they are
+		// marked TaskActivity but carry error status, so they fall through).
+		return true
+	}
+	// Quiet mode additionally hides interrupted routine rows (synthetic
+	// cancellations, not real task errors) via their TaskActivity mark.
+	if c.quietTaskActivity && e.TaskActivity {
+		return false
 	}
 	return true
 }

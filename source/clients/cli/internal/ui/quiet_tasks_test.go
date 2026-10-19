@@ -46,8 +46,11 @@ func TestRoutineTaskActivityVisibility(t *testing.T) {
 			}
 			c.setTaskVisibility(true, true)
 			c.rebuild()
-			if !strings.Contains(ansi.Strip(chatLayoutContent(c)), name) {
-				t.Fatal("debug lost poll")
+			// Dev mode is still the main chat's ordinary presentation: routine
+			// successful polls and their running-progress notes stay hidden
+			// there too (interrupted/stale rows and genuine failures remain).
+			if strings.Contains(ansi.Strip(chatLayoutContent(c)), name) {
+				t.Fatal("debug leaked routine poll")
 			}
 			c.setTaskVisibility(false, true)
 			c.Apply(toolEntryExecCompleteMsg{id: "poll", isError: true, summary: "poll failed"})
@@ -61,6 +64,39 @@ func TestRoutineTaskActivityVisibility(t *testing.T) {
 				t.Fatal("child evidence hidden")
 			}
 		})
+	}
+}
+
+// Reproduces the reported noise: a dev-mode main-chat turn whose assistant
+// prose announces a retry check, then polls (task_inspect success, "running
+// task_inspect" progress note, task_wait). The dev-mode presentation override
+// must not leak the routine poll rows or their running progress into the
+// transcript; the assistant prose and retained evidence must survive.
+func TestDevModeMainChatHidesRoutinePollNoise(t *testing.T) {
+	c := newTestChatView(100, 30)
+	c.setTaskVisibility(true, true) // /d dev mode, ordinary main chat
+	c.Apply(chatAssistantDeltaMsg{token: "I'll check the retry's status and retained results."})
+	c.Apply(chatProgressMsg{note: "running task_inspect"})
+	c.Apply(toolEntryStartMsg{id: "i", name: "task_inspect"})
+	c.Apply(toolEntryExecCompleteMsg{id: "i", summary: "retained evidence"})
+	c.Apply(toolEntryStartMsg{id: "w", name: "task_wait"})
+	c.Apply(toolEntryExecCompleteMsg{id: "w", summary: "completed"})
+	c.rebuild()
+
+	text := ansi.Strip(chatLayoutContent(c))
+	if !strings.Contains(text, "I'll check the retry's status and retained results.") {
+		t.Fatal("meaningful assistant prose must stay visible")
+	}
+	for _, noise := range []string{"task_inspect", "running task_inspect", "task_wait", "retained evidence"} {
+		if strings.Contains(text, noise) {
+			t.Fatalf("routine poll noise leaked into dev-mode main chat: %q", noise)
+		}
+	}
+	// Presentation-only hiding: raw entries and results are retained.
+	for _, id := range []string{"i", "w"} {
+		if c.findToolEntry(id) == nil {
+			t.Fatalf("raw tool evidence for %q dropped", id)
+		}
 	}
 }
 
