@@ -14,7 +14,9 @@ Verification: both package race suites and vet pass locally on macOS. Builds pas
 
 Linux Inspect now reads bounded stat/status records and the kernel executable link through an anchored /proc directory, repeating identity observations before returning. Linux start ticks have their own Identity field, distinct from macOS wall-clock start seconds/microseconds. Missing proc data remains uncertainty, never manufactured ESRCH proof. Listener inspection still returns an explicit unsupported error.
 
-Portable parser/lifetime tests and existing macOS race suites pass. Linux vet and test compilation, plus Windows builds, pass. Linux-only tests check the actual current process and invalid/absent PIDs but have not been executed: this host is macOS and docker, podman and limactl were not found on PATH. Native Linux execution is required before treating this slice as verified.
+Portable parser/lifetime tests and existing macOS race suites pass. Linux vet and test compilation, plus Windows builds, pass. Following the user's push authorization, native CI run 39187460069 at 7e867a5d8e50561dd81e51ad7af4973376ec1bdd completed successfully on ubuntu-24.04, windows-latest and macos-15. The Linux-only identity fixtures now have native execution evidence; they check the actual current process and invalid/absent PIDs. This clears the identity-slice verification blocker, not the still-unsupported Linux listener check or end-to-end health gate.
+
+Run: https://github.com/cercano-ai/Cercano/actions/runs/39187460069
 
 ## Remaining boundary
 
