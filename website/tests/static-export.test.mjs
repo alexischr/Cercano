@@ -14,6 +14,7 @@ test("exports the landing page beneath the Cercano project path", async () => {
 
 test("exports every public demonstration and disables Jekyll processing", async () => {
   await access(new URL("../out/.nojekyll", import.meta.url));
+  await access(new URL("../out/icon.svg", import.meta.url));
 
   for (const name of ["delegation", "metrics", "terminal-ui", "sessions"]) {
     const [video, poster] = await Promise.all([
