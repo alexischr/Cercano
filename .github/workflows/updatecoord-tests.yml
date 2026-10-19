@@ -118,6 +118,13 @@ jobs:
       - name: TUI installed-update event transport
         working-directory: source/server
         run: go test -count=1 -timeout=2m -run 'TestTUIUpdate|TestEventHub' ./internal/server ./pkg/agentclient
+      - name: Native health RPC fixture
+        working-directory: source/server
+        run: go test -count=1 -timeout=2m -run 'TestGetAgentHealth|TestHealth' ./internal/server ./pkg/agentclient
+      - name: Native health RPC race checks
+        if: runner.os != 'Windows'
+        working-directory: source/server
+        run: go test -race -count=1 -timeout=2m -run 'TestGetAgentHealth|TestHealth' ./internal/server ./pkg/agentclient
       - name: TUI restart and local handoff fixtures
         working-directory: source/clients/cli
         run: go test -count=1 -timeout=2m -run 'TestTUI|TestState|TestRestart|TestOwnedProcessHandoff|TestUnsupportedOldClient|TestInherited' ./internal/tuirestart ./internal/ui ./internal/slash
