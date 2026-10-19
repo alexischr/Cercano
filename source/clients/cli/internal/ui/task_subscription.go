@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"cercano/source/server/pkg/agentclient"
 	tea "charm.land/bubbletea/v2"
@@ -77,9 +78,18 @@ func (m *Model) applyTaskSubscription(msg taskSubscriptionMsg) tea.Cmd {
 			fresh = true
 			// A fresh subscription replays durable progress from zero. Replace any
 			// transcript restored through the legacy path instead of appending it twice.
+			// The durable replay re-applies the kickoff card from the dispatch_start
+			// record below, so keep the card instead of dropping it to a raw prompt:
+			// without it the tab loses its formatted front matter (route/model/tier/
+			// tools) every time a subscription is (re)established.
 			tab.view = newChatView(m.styles, m.palette, m.root, m.home, tab.view.Width(), tab.view.Height())
-			tab.startup = nil
-			tab.view.AppendEntry(&Entry{Role: RoleUser, Content: task.Task})
+			kind, title := "Sub-agent", tab.title
+			if tab.startup != nil {
+				kind, title = tab.startup.Kind, tab.startup.Title
+			}
+			startup := &subAgentStartEntry{Kind: kind, Title: title, Task: strings.TrimSpace(task.Task)}
+			tab.startup = startup
+			tab.view.AppendEntry(&Entry{SubAgentStart: startup})
 			m.taskProgressSequences[task.TaskId] = 0
 		}
 		previous := tab.taskStatus
@@ -142,9 +152,75 @@ func (m *Model) applyTaskSubscription(msg taskSubscriptionMsg) tea.Cmd {
 			if json.Unmarshal([]byte(progress.PayloadJson), &note) == nil && note.Text != "" {
 				tab.view.AppendEntry(&Entry{Role: RoleSystem, Content: note.Text})
 			}
+		case "dispatch_start":
+			applyTaskDispatchStartCard(tab, progress.ChildId, progress.PayloadJson)
 		}
 		tab.applyTaskLifecycle(tab.taskID, tab.taskStatus)
 		tab.view.rebuild()
 	}
 	return msg.next
+}
+
+// applyTaskDispatchStartCard restores the task child tab's formatted kickoff
+// card from the durable dispatch_start record replayed by SubscribeTasks. The
+// live dispatch path populates the card from its ephemeral "started" stream
+// event; that event is not part of the durable replay, so the same metadata
+// (route/provider/model/tier/granted tools, plus the task prompt) is rebuilt
+// from the Recorder's DispatchStartEvent JSON.
+//
+// The update is idempotent: non-empty durable values only fill empty card
+// fields, so a redelivered record updates the existing card in place instead
+// of duplicating the header, and a task with no dispatch_start record at all
+// (accepted but not yet started) keeps an unpopulated card — no metadata is
+// fabricated.
+func applyTaskDispatchStartCard(tab *chatTab, childID, payload string) {
+	if tab == nil {
+		return
+	}
+	var start struct {
+		Task         string   `json:"task"`
+		Provider     string   `json:"provider"`
+		Model        string   `json:"model"`
+		Tier         string   `json:"tier"`
+		IsCloud      bool     `json:"is_cloud"`
+		GrantedTools []string `json:"granted_tools"`
+	}
+	if json.Unmarshal([]byte(payload), &start) != nil {
+		return
+	}
+	if tab.startup == nil {
+		if strings.HasPrefix(tab.id, "activity:") {
+			// Activity tabs render a plain system header line, not a card.
+			return
+		}
+		// Progress replayed before any card existed: prepend one so the
+		// kickoff stays at the top of the transcript.
+		tab.startup = &subAgentStartEntry{Kind: "Sub-agent", Title: tab.title, Task: strings.TrimSpace(start.Task)}
+		view := tab.view
+		view.SetEntriesSlice(append([]*Entry{{SubAgentStart: tab.startup}}, view.Entries()...))
+	} else if tab.startup.Task == "" {
+		tab.startup.Task = strings.TrimSpace(start.Task)
+	}
+	card := tab.startup
+	if v := strings.TrimSpace(start.Provider); v != "" {
+		card.Provider = v
+	}
+	if v := strings.TrimSpace(start.Model); v != "" {
+		card.Model = v
+	}
+	if v := strings.TrimSpace(start.Tier); v != "" {
+		card.Tier = v
+	}
+	// is_cloud is authoritative in the persisted record; false means the
+	// dispatch ran on the local route.
+	card.Route = "open"
+	if start.IsCloud {
+		card.Route = "cloud"
+	}
+	if len(card.Tools) == 0 && len(start.GrantedTools) > 0 {
+		card.Tools = append([]string(nil), start.GrantedTools...)
+	}
+	if card.ConvID == "" {
+		card.ConvID = childID
+	}
 }
