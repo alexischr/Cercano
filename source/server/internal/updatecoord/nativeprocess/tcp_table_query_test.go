@@ -146,12 +146,12 @@ func TestBoundedTCPTableQueryRejectsBadSizes(t *testing.T) {
 			script:  []fakeCall{sizingCall(0)},
 			wantErr: errTCPTable,
 		},
-		"too short, header only": {
-			script:  []fakeCall{sizingCall(tcpTableHeaderSize)},
+		"too short, incomplete header": {
+			script:  []fakeCall{sizingCall(tcpTableHeaderSize - 1)},
 			wantErr: errTCPTable,
 		},
 		"too short, partial row": {
-			script:  []fakeCall{sizingCall(tcpTableHeaderSize + tcp4RowSize - 1)},
+			script:  []fakeCall{sizingCall(tcpTableHeaderSize + tcp4RowSize - 1), {status: 0, size: uint32(tcpTableHeaderSize + tcp4RowSize - 1), payload: []byte{1, 0, 0, 0}}},
 			wantErr: errTCPTable,
 		},
 		"oversize": {
@@ -190,7 +190,7 @@ func TestBoundedTCPTableQueryRejectsBadSizes(t *testing.T) {
 		"success reports fewer bytes than header and one row": {
 			script: []fakeCall{
 				sizingCall(tcpTableHeaderSize + tcp4RowSize),
-				fakeCall{status: 0, size: uint32(tcpTableHeaderSize)},
+				fakeCall{status: 0, size: uint32(tcpTableHeaderSize), payload: []byte{1, 0, 0, 0}},
 			},
 			wantErr: errTCPTable,
 		},

@@ -50,3 +50,13 @@ Native CI run [39318042928](https://github.com/cercano-ai/Cercano/actions/runs/3
 The Windows fixture previously compared a kernel-reported short executable path with an expanded long pathname. The correction compares pinned file identity rather than spelling; the alias regression resolves the long form first so an already-short executable pathname does not itself cause a skip. Production identity inspection was not changed by this fixture correction. Windows creation time retains raw unsigned FILETIME representation rather than converted Unix nanoseconds.
 
 These results do not establish exclusive listener ownership, candidate health, descendant exit, or completed update integration. No live agent was stopped or installation modified.
+
+## Windows listener slice — implementation under verification
+
+The approved scope is bounded GetExtendedTcpTable owner-PID listener observation with same-user process-lifetime checks, no elevation, and no health/activation wiring.
+
+The interrupted delegation left an unverified implementation and premature verification notes. Those notes are superseded here. Review found incorrect row sizes and an incorrect table-class constant. Microsoft documents OWNER_PID_LISTENER as enum value 3; the OWNER_PID row layouts are 24 bytes for IPv4 and 56 bytes for IPv6. The portable parser correction is committed as `131eff034e4c`; its host race suite passed again during integration review. Buffers are capped at 16 MiB and unused port DWORD padding is ignored.
+
+The native adapter is checkpointed as `c162c598bdd4`, using table class 3, a portable injectable bounded query driver, and two order-independent target-PID snapshots; unrelated process traffic does not invalidate the comparison. The native fixture correction is checkpointed as `8318f8010a47`: ephemeral owned listeners, foreign-owner/port checks, independent IPv4 wildcard coverage, IPv6 availability-specific skips, and bounded helper cleanup. An additional host regression reproduced rejection of a four-byte empty count table; the driver now accepts that table while checking nonempty counts against returned bytes.
+
+Combined verification during this integration turn passed: host `go test -race -count=1` and `go vet` for nativeprocess and brewrestart; Windows AMD64 package vet and full test-binary compilation. These are not native Windows execution. Native CI is still required before claiming completed Windows listener verification. Process/listener observations do not establish exclusivity, health, descendant exit, or activation completion. No live agent or installation was changed.

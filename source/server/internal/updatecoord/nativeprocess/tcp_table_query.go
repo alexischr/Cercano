@@ -1,6 +1,7 @@
 package nativeprocess
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 )
@@ -50,11 +51,14 @@ type tcpTableQueryFunc func(buf []byte) (status uint32, size uint32, err error)
 // into that buffer must either succeed or report growth (retry), and any
 // other status, any seam error, a zero/too-short/oversize size, or a
 // success that reports more bytes than the buffer holds or fewer than the
-// header plus one row is an error, never an empty result that would read
+// count header is an error, never an empty result that would read
 // as absence. rowSize is the family's MIB row size (24 or 56 bytes), used
-// only for the minimum-size sanity checks.
+// to check the reported count against returned bytes.
 func boundedTCPTableQuery(query tcpTableQueryFunc, rowSize int) ([]byte, error) {
-	minimum := tcpTableHeaderSize + rowSize
+	minimum := tcpTableHeaderSize
+	if query == nil || (rowSize != tcp4RowSize && rowSize != tcp6RowSize) {
+		return nil, errTCPTable
+	}
 	for attempt := 0; attempt < tcpTableQueryAttempts; attempt++ {
 		// Sizing call: a null table pointer with a zero size reports the
 		// required byte count and the insufficient-buffer status.
@@ -69,7 +73,7 @@ func boundedTCPTableQuery(query tcpTableQueryFunc, rowSize int) ([]byte, error) 
 			return nil, fmt.Errorf("TCP owner table size query reported zero bytes: %w", errTCPTable)
 		}
 		if uint64(size) < uint64(minimum) {
-			return nil, fmt.Errorf("TCP owner table size query reported %d bytes, below the %d-byte header and one row: %w", size, minimum, errTCPTable)
+			return nil, fmt.Errorf("TCP owner table size query reported %d bytes, below the %d-byte header: %w", size, minimum, errTCPTable)
 		}
 		if uint64(size) > maxTCPTable {
 			return nil, fmt.Errorf("TCP owner table exceeds the %d-byte bound: %w", maxTCPTable, errTCPTable)
@@ -84,7 +88,11 @@ func boundedTCPTableQuery(query tcpTableQueryFunc, rowSize int) ([]byte, error) 
 				return nil, fmt.Errorf("TCP owner table read reported %d bytes, more than the %d-byte buffer: %w", written, len(buf), errTCPTable)
 			}
 			if uint64(written) < uint64(minimum) {
-				return nil, fmt.Errorf("TCP owner table read reported %d bytes, below the %d-byte header and one row: %w", written, minimum, errTCPTable)
+				return nil, fmt.Errorf("TCP owner table read reported %d bytes, below the %d-byte header: %w", written, minimum, errTCPTable)
+			}
+			count := binary.LittleEndian.Uint32(buf[:tcpTableHeaderSize])
+			if uint64(count) > uint64(written-tcpTableHeaderSize)/uint64(rowSize) {
+				return nil, fmt.Errorf("TCP owner table row count exceeds returned bytes: %w", errTCPTable)
 			}
 			return buf[:written], nil
 		}
