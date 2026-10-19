@@ -32,3 +32,18 @@ A child finishing while the main agent is busy leaves a durable pending notifica
 Task status, child progress, restart reconciliation, and host completion handling have regression coverage. Host-generated main-chat replies now arrive through the normal conversation attachment, separately from child progress. Event cursors prevent duplicate replay, and saved-turn identities prevent a completed reply from duplicating restored history. Worker-main completion, canceled observers, concurrent stop/completion, ownership isolation, and consumer guidance have also been checked with deterministic integration and race-enabled tests.
 
 The progress transport reads durable storage in bounded pages, with a 200 ms tail interval. It uses transport backpressure rather than an unbounded event queue. Lifecycle scanning is proportional to the chat's retained task history.
+
+## Quiet main-chat presentation
+
+Normal main chat hides routine `task_list`, `task_inspect`, and `task_wait`
+activity. Tool failures and explicit `task_stop` activity remain visible. Child
+tabs retain their tool evidence, and development/debug mode shows polling details.
+Persisted host completion and autonomous-continuation envelopes are retained as
+metadata, not rendered as ordinary chat prose outside debug mode. Actual assistant
+follow-ups, permission prompts, and actionable autonomy pause notices remain visible;
+continuation counts, run IDs, and no-progress-reset bookkeeping are debug-only.
+
+Inspection is still read-only: merely listing or retrieving a result does not
+acknowledge its completion notification. There is not yet a durable signal that
+proves a retrieved result was reported to the user, so automatic follow-ups are
+not suppressed based on polling alone.

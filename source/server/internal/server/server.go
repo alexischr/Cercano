@@ -4007,7 +4007,7 @@ func (s *Server) streamConversationTurn(req *proto.ProcessRequestRequest, stream
 		}
 		ledgerAdvanced := autonomyLedgerContentChanged(prevRun, havePrevRun, gate.run)
 		if workMonitor.HasWork() {
-			if !ledgerAdvanced && turn >= 1 {
+			if req.GetDebugMode() && !ledgerAdvanced && turn >= 1 {
 				// The ledger stayed quiet but the turn did real tool work —
 				// surface that the no-progress bound was reset by work.
 				if err := stream.Send(&proto.StreamProcessResponse{
@@ -4028,12 +4028,14 @@ func (s *Server) streamConversationTurn(req *proto.ProcessRequestRequest, stream
 
 		// Announce the host-driven continuation with a structured progress event
 		// so clients can display a distinct "continuing autonomously" marker.
-		if err := stream.Send(&proto.StreamProcessResponse{
-			Payload: &proto.StreamProcessResponse_Progress{
-				Progress: &proto.ProgressUpdate{Message: continuationAnnouncement(gate, turn+1)},
-			},
-		}); err != nil {
-			return err
+		if req.GetDebugMode() {
+			if err := stream.Send(&proto.StreamProcessResponse{
+				Payload: &proto.StreamProcessResponse_Progress{
+					Progress: &proto.ProgressUpdate{Message: continuationAnnouncement(gate, turn+1)},
+				},
+			}); err != nil {
+				return err
+			}
 		}
 		input = gate.input
 		inputRole = string(llm.RoleSystem) // host-generated continuation, not a human turn

@@ -113,8 +113,8 @@ func TestStreamToolLoop_AutonomousContinuation_ChainsTurnsWhileRunning(t *testin
 			announced = true
 		}
 	}
-	if !announced {
-		t.Errorf("no continuation announcement in progress notes: %v", notes)
+	if announced {
+		t.Errorf("normal mode leaked continuation announcement: %v", notes)
 	}
 	// Verify no unwanted generic "autonomous continuation ended — waiting for human input" message
 	var foundGenericMessage bool
@@ -337,7 +337,7 @@ func TestStreamToolLoop_AutonomousContinuation_ProductiveWorkThenCompletion(t *t
 
 	stream := &fakeStream{ctx: context.Background()}
 	if err := srv.streamProcessRequestWithToolLoop(
-		&proto.ProcessRequestRequest{Input: "begin", ConversationId: "conv-work"}, stream); err != nil {
+		&proto.ProcessRequestRequest{Input: "begin", ConversationId: "conv-work", DebugMode: true}, stream); err != nil {
 		t.Fatalf("streamProcessRequestWithToolLoop: %v", err)
 	}
 
@@ -895,7 +895,7 @@ type blockerReporter struct {
 
 func (b *blockerReporter) Name() string                      { return "report_autonomous_blocker" }
 func (b *blockerReporter) Description() string               { return "reports an autonomous blocker for tests" }
-func (b *blockerReporter) Permission() agenttools.Permission  { return agenttools.PermR }
+func (b *blockerReporter) Permission() agenttools.Permission { return agenttools.PermR }
 func (b *blockerReporter) Schema() json.RawMessage           { return json.RawMessage(`{"type":"object"}`) }
 func (b *blockerReporter) Execute(ctx context.Context, args json.RawMessage) (*agenttools.Result, error) {
 	run, err := b.store.GetActiveAutonomyRun(ctx, b.conv)
@@ -922,7 +922,7 @@ type streamCanceler struct {
 
 func (s *streamCanceler) Name() string                      { return "cancel_stream" }
 func (s *streamCanceler) Description() string               { return "cancels the stream for tests" }
-func (s *streamCanceler) Permission() agenttools.Permission  { return agenttools.PermR }
+func (s *streamCanceler) Permission() agenttools.Permission { return agenttools.PermR }
 func (s *streamCanceler) Schema() json.RawMessage           { return json.RawMessage(`{"type":"object"}`) }
 func (s *streamCanceler) Execute(ctx context.Context, args json.RawMessage) (*agenttools.Result, error) {
 	s.cancel()
@@ -939,7 +939,7 @@ type turnSuperseder struct {
 
 func (u *turnSuperseder) Name() string                      { return "supersede_turn" }
 func (u *turnSuperseder) Description() string               { return "supersedes the current turn for tests" }
-func (u *turnSuperseder) Permission() agenttools.Permission  { return agenttools.PermR }
+func (u *turnSuperseder) Permission() agenttools.Permission { return agenttools.PermR }
 func (u *turnSuperseder) Schema() json.RawMessage           { return json.RawMessage(`{"type":"object"}`) }
 func (u *turnSuperseder) Execute(ctx context.Context, args json.RawMessage) (*agenttools.Result, error) {
 	_, _, release := u.srv.beginTurn(context.Background(), u.conv)

@@ -42,9 +42,11 @@ const (
 
 // Entry is one item in the scrollback. Stored raw; re-wrapped on every render.
 type Entry struct {
-	Role      Role
-	Content   string // grows live for streaming assistant turns
-	Streaming bool   // true while tokens are flowing in
+	TaskActivity bool // routine host task polling progress
+	Bookkeeping  bool // host-authored metadata; retained for debug, not ordinary prose
+	Role         Role
+	Content      string // grows live for streaming assistant turns
+	Streaming    bool   // true while tokens are flowing in
 
 	// SubAgentStart, when non-nil, renders the synthetic launch metadata for a
 	// delegated child tab as a measured card. Role/Content are ignored; the card
@@ -3597,6 +3599,7 @@ func (m *Model) refreshViewport() {
 	}
 	m.chatDirty = false // any full rebuild flushes pending coalesced repaints
 	m.syncMainTurnStatus()
+	m.activeChat().setTaskVisibility(m.workDirOverride != "", m.activeChat() == m.mainChat())
 	m.activeChat().rebuild()
 	m.updateConversationSearch()
 }
@@ -3885,7 +3888,7 @@ func resumeEntries(turns []agentclient.PersistedTurn, frozenThrough int64) []*En
 		case "assistant":
 			role = RoleAssistant
 		}
-		entries = append(entries, &Entry{Role: role, Content: t.Content})
+		entries = append(entries, &Entry{Role: role, Content: t.Content, Bookkeeping: t.Role == "system" && (strings.HasPrefix(t.Content, "<host:task-completions>\n") || strings.HasPrefix(t.Content, "<host:autonomous-continuation"))})
 	}
 	// All turns were frozen — no live tail. The divider belongs at the end so
 	// the user's next prompt lands clearly below the freeze line.

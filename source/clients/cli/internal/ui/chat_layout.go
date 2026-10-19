@@ -195,12 +195,16 @@ func (c *chatView) rebuildTranscriptLayout(entries []*Entry) transcriptLayout {
 
 	first := true
 	for i := 0; i < len(entries); {
+		if !c.entryVisible(entries[i]) {
+			i++
+			continue
+		}
 		if !first {
 			appendSeparator()
 		}
 		if entries[i].Tool != nil {
 			j := i + 1
-			for j < len(entries) && entries[j].Tool != nil {
+			for j < len(entries) && entries[j].Tool != nil && c.entryVisible(entries[j]) {
 				j++
 			}
 			_, lines, toolRows := c.renderToolGroupCachedLines(entries[i:j], i)

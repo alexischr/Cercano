@@ -40,11 +40,13 @@ type turnStatus struct {
 // surface, and all entry rendering. Model delegates to it for everything that
 // was previously handled via m.viewport, m.viewportPlainLines, and m.md.
 type chatView struct {
-	toolClock func() time.Time // nil uses the real clock; deterministic tool-lifecycle fixtures can inject one.
-	styles    theme.Styles
-	palette   theme.Palette
-	md        *render.Markdown
-	search    *conversationSearch
+	showBookkeeping   bool
+	quietTaskActivity bool
+	toolClock         func() time.Time // nil uses the real clock; deterministic tool-lifecycle fixtures can inject one.
+	styles            theme.Styles
+	palette           theme.Palette
+	md                *render.Markdown
+	search            *conversationSearch
 
 	// entries is the authoritative slice of scrollback entries. All host
 	// append/read operations go through the mutation methods below.
@@ -427,7 +429,7 @@ func (c *chatView) dropLastEntry() {
 func (c *chatView) toolEntryIndices() []int {
 	var out []int
 	for i, e := range c.entries {
-		if e.Tool != nil {
+		if e.Tool != nil && c.entryVisible(e) {
 			out = append(out, i)
 		}
 	}
@@ -595,6 +597,12 @@ func (c *chatView) Apply(msg tea.Msg) tea.Cmd {
 		e.Status = ""
 
 	case chatProgressMsg:
+		// These are exact host tool-execution notices, not assistant prose.
+		// Retain them for debug without leaking routine polling into chat.
+		if name, ok := strings.CutPrefix(m.note, "running "); ok && routineTaskTool(name) {
+			c.AppendEntry(&Entry{Role: RoleSystem, Content: m.note, TaskActivity: true})
+			break
+		}
 		// Warnings/notices (notably cloud retry/failover narration) must be
 		// durable transcript entries. If they live only in the streaming status
 		// field, the first token clears them and users miss important routing
@@ -913,11 +921,11 @@ func (c *chatView) focusedGroupRange() (int, int) {
 		return -1, -1
 	}
 	start := c.focusedToolIdx
-	for start > 0 && c.entries[start-1].Tool != nil {
+	for start > 0 && c.entries[start-1].Tool != nil && c.entryVisible(c.entries[start-1]) {
 		start--
 	}
 	end := c.focusedToolIdx
-	for end+1 < len(c.entries) && c.entries[end+1].Tool != nil {
+	for end+1 < len(c.entries) && c.entries[end+1].Tool != nil && c.entryVisible(c.entries[end+1]) {
 		end++
 	}
 	return start, end
