@@ -1670,6 +1670,15 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 			// Enter again on the now-empty prompt promotes the staged message into
 			// a steering turn by canceling the current stream and submitting it.
 			if m.streaming && !isSlash {
+				// Blocked solely on a task_wait poll: the delegated child keeps
+				// running independently of the foreground turn, so Enter with
+				// text cancels only the foreground wait and submits on the
+				// first press instead of queueing behind a pending poll.
+				if m.waitBlocked() {
+					m.cancelCurrentStreamSilently()
+					m.relayout()
+					return m.submit(text, images)
+				}
 				m.mainChat().Enqueue(text, images)
 				m.relayout()
 				return m, nil
@@ -3041,6 +3050,27 @@ func (m *Model) setInputValue(s string) {
 	m.input.SetValue(s)
 	m.input.CursorEnd()
 	m.relayout()
+}
+
+// waitBlocked reports whether the foreground turn is blocked solely on
+// delegated-task polling: at least one chat view (main or child pane) holds an
+// in-flight task_wait and no view holds any other in-flight tool. The polling
+// child keeps running independently of the foreground turn, so steering in
+// this state cancels only the wait and can submit on the first Enter.
+func (m Model) waitBlocked() bool {
+	if m.chatTabs.tabs == nil {
+		return false
+	}
+	blocked := false
+	for id, tab := range m.chatTabs.tabs {
+		if m.chatTabs.closed[id] {
+			continue
+		}
+		if tab.view.waitBlockedOnly() {
+			blocked = true
+		}
+	}
+	return blocked
 }
 
 // cancelCurrentStream aborts an in-flight prompt: cancel the StreamChat context

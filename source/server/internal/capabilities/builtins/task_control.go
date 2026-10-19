@@ -2,8 +2,10 @@ package builtins
 
 import (
 	"cercano/source/server/internal/capabilities"
+	"cercano/source/server/internal/conversation"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -85,8 +87,30 @@ func (c taskControl) Execute(ctx context.Context, call *capabilities.Call) (*cap
 				return nil, fmt.Errorf("task_wait: timeout_seconds must be 1–300")
 			}
 			waitCtx, cancel := context.WithTimeout(ctx, time.Duration(args.Timeout)*time.Second)
-			defer cancel()
 			value, err = call.Svc.Tasks.Wait(waitCtx, call.ConversationID, args.ID)
+			// waitCtx.Err() must be read before cancel(): cancel overwrites
+			// the deadline state with context.Canceled.
+			waitExpired := waitCtx.Err() == context.DeadlineExceeded
+			cancel()
+			if err != nil && waitExpired && errors.Is(err, context.DeadlineExceeded) {
+				// A wait deadline is a normal bounded-wait outcome, not a task
+				// error: the tool contract says timeout stops waiting, not
+				// execution. Report the current task status instead of failing
+				// so quiet UIs do not leak a timeout error row. Only the wait
+				// deadline qualifies — owner cancellation and arbitrary
+				// errors still propagate untouched below.
+				value, err = call.Svc.Tasks.Inspect(ctx, call.ConversationID, args.ID)
+				if err == nil {
+					if rec, ok := value.(conversation.TaskRecord); ok && !rec.Terminal() {
+						note := fmt.Sprintf("\n(wait stopped after %ds: task still %s; the task keeps running independently — wait again or inspect for the outcome)", args.Timeout, rec.Status)
+						data, mErr := json.Marshal(value)
+						if mErr != nil {
+							return nil, mErr
+						}
+						return capabilities.NewTextResult(string(data) + note), nil
+					}
+				}
+			}
 		default:
 			return nil, fmt.Errorf("unknown task operation %q", c.op)
 		}

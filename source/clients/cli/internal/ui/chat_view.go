@@ -436,6 +436,25 @@ func (c *chatView) toolEntryIndices() []int {
 	return out
 }
 
+// waitBlockedOnly reports whether this view's foreground turn is blocked
+// solely on delegated-task polling: at least one tool row in flight and every
+// in-flight tool a task_wait poll (the delegated child keeps running on its
+// own). Steering here cancels only the foreground wait, so it can submit on
+// the first Enter with text instead of queueing behind a pending poll.
+func (c *chatView) waitBlockedOnly() bool {
+	seen := false
+	for _, e := range c.entries {
+		if e.Tool == nil || e.Tool.Status != ToolStatusInProgress {
+			continue
+		}
+		if e.Tool.ToolName != "task_wait" {
+			return false
+		}
+		seen = true
+	}
+	return seen
+}
+
 // hasInProgressTool reports whether any tool entry is currently in flight
 // (status == InProgress). Used by the animation tick loop to decide whether
 // to keep firing — without this, the spinner on the active tool line would
@@ -452,6 +471,13 @@ func (c *chatView) resolveStaleInProgressTools() {
 			e.Tool.Status = ToolStatusError
 			if e.Tool.ResultSummary == "" {
 				e.Tool.ResultSummary = "interrupted"
+			}
+			// A routine task row left in-progress at teardown means the
+			// foreground turn was canceled while polling — not a genuine task
+			// error. Mark it as task activity so quiet mode keeps hiding it
+			// (real task errors stay visible); full debug still shows it.
+			if routineTaskTool(e.Tool.ToolName) {
+				e.TaskActivity = true
 			}
 			changed = true
 		}

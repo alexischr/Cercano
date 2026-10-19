@@ -24,6 +24,60 @@ func TestTaskControlsRequireTrustedScope(t *testing.T) {
 		})
 	}
 }
+// A wait deadline is a normal bounded-wait outcome, not a task error: the
+// capability must return the task's current status as a normal result so quiet
+// UI does not leak a timeout error row, while owner cancellation stays an error.
+func TestTaskWaitDeadlineReportsStatusNotError(t *testing.T) {
+	ctx := context.Background()
+	store, err := conversation.Open(filepath.Join(t.TempDir(), "tasks.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	release := make(chan struct{})
+	m, err := taskrun.New(store.(conversation.TaskStore), func(ctx context.Context, s dispatch.Spec) (dispatch.Result, error) {
+		select {
+		case <-release:
+			return dispatch.Result{Text: "done"}, nil
+		case <-ctx.Done():
+			return dispatch.Result{}, ctx.Err()
+		}
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer close(release)
+	defer func() {
+		c, cancel := context.WithTimeout(ctx, time.Second)
+		defer cancel()
+		if err := m.Close(c); err != nil {
+			t.Error(err)
+		}
+	}()
+	accepted, err := m.Launch(ctx, dispatch.Spec{ConversationID: "owner", Task: "fixture"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	args, _ := json.Marshal(map[string]any{"task_id": accepted.ID, "conversation_id": "owner", "timeout_seconds": 1})
+	res, err := TaskControl("wait").Execute(ctx, &capabilities.Call{ConversationID: "owner", Args: args, Svc: capabilities.Services{Tasks: m}})
+	if err != nil {
+		t.Fatalf("wait deadline must not be an error: %v", err)
+	}
+	text := ""
+	if res != nil {
+		text = res.Text
+	}
+	if !strings.Contains(text, `"status":"running"`) && !strings.Contains(text, `"status":"accepted"`) {
+		t.Fatalf("wait timeout should return current task status, got %q", text)
+	}
+	if !strings.Contains(text, "wait stopped") {
+		t.Fatalf("wait timeout result should note the bounded wait ended, got %q", text)
+	}
+	if strings.Contains(text, `"error"`) {
+		t.Fatalf("wait timeout must not fabricate a task error, got %q", text)
+	}
+}
+
 func TestTaskControlsChatIsolationAndCancellation(t *testing.T) {
 	ctx := context.Background()
 	store, err := conversation.Open(filepath.Join(t.TempDir(), "tasks.db"))
