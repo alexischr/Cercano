@@ -201,16 +201,10 @@ func readHelperLine(r io.Reader) (string, error) {
 // (C:\Users\runneradmin\...). String-comparing those two forms produced a
 // false failure in CI run 39293833025 even though both name the same file.
 //
-// A case-insensitive match is accepted only when the strings are otherwise
-// identical (Windows paths are case-preserving, case-insensitive). Any
-// remaining difference is settled by kernel file identity: os.SameFile
-// compares the volume serial number and file index, so a path naming any
-// other file still fails. This does not weaken the check and does not
-// case-fold the identity contract: Identity.Executable itself is untouched.
+// This function always uses os.SameFile to compare file identity rather than
+// relying on string comparison, ensuring the check is based on kernel file
+// identity (volume serial number and file index) rather than path aliasing.
 func kernelImageNamesExecutable(kernelImage, exe string) (bool, error) {
-	if strings.EqualFold(kernelImage, filepath.Clean(exe)) {
-		return true, nil
-	}
 	imageInfo, err := os.Stat(kernelImage)
 	if err != nil {
 		return false, fmt.Errorf("stat kernel image path %q: %w", kernelImage, err)
@@ -275,16 +269,32 @@ func TestWindowsKernelImageComparisonAcceptsShortPathAliases(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	short, err := shortPathName(exe)
+	
+	// Resolve the long form of the executable using filepath.EvalSymlinks
+	// to handle cases where os.Executable() returns a short path on CI
+	longExe, err := filepath.EvalSymlinks(exe)
+	if err != nil {
+		t.Fatalf("filepath.EvalSymlinks(%q): %v", exe, err)
+	}
+	
+	short, err := shortPathName(longExe)
 	if err != nil {
 		t.Skipf("8.3 short path form unavailable: %v", err)
 	}
-	if strings.EqualFold(short, filepath.Clean(exe)) {
+	if strings.EqualFold(short, filepath.Clean(longExe)) {
 		t.Skip("filesystem exposes no 8.3 alias for the test executable")
 	}
+	
+	// Demonstrate existing guard skips on observed short-form fixture before fix:
+	// If os.Executable() already returns the short form, the original test would skip
+	originalExeShort, err := shortPathName(exe)
+	if err == nil && strings.EqualFold(originalExeShort, filepath.Clean(exe)) {
+		t.Logf("os.Executable() already returns short form: %q", exe)
+	}
+	
 	// Positive: the short form and the long form name the same file. A
 	// regression here is exactly the CI run 39293833025 symptom.
-	requireKernelImageIsExecutable(t, short, exe)
+	requireKernelImageIsExecutable(t, short, longExe)
 
 	// Negative control: a different regular file must never pass, in long
 	// or short form.
@@ -301,9 +311,9 @@ func TestWindowsKernelImageComparisonAcceptsShortPathAliases(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, path := range []string{other.Name(), otherShort} {
-		same, err := kernelImageNamesExecutable(path, exe)
+		same, err := kernelImageNamesExecutable(path, longExe)
 		if err != nil {
-			t.Fatalf("kernelImageNamesExecutable(%q, %q): %v", path, exe, err)
+			t.Fatalf("kernelImageNamesExecutable(%q, %q): %v", path, longExe, err)
 		}
 		if same {
 			t.Fatalf("kernel image comparison accepted %q as the test executable", path)
