@@ -51,7 +51,7 @@ The Windows fixture previously compared a kernel-reported short executable path 
 
 These results do not establish exclusive listener ownership, candidate health, descendant exit, or completed update integration. No live agent was stopped or installation modified.
 
-## Windows listener slice — implementation under verification
+## Windows listener slice — implementation and native verification
 
 The approved scope is bounded GetExtendedTcpTable owner-PID listener observation with same-user process-lifetime checks, no elevation, and no health/activation wiring.
 
@@ -60,3 +60,7 @@ The interrupted delegation left an unverified implementation and premature verif
 The native adapter is checkpointed as `c162c598bdd4`, using table class 3, a portable injectable bounded query driver, and two order-independent target-PID snapshots; unrelated process traffic does not invalidate the comparison. The native fixture correction is checkpointed as `8318f8010a47`: ephemeral owned listeners, foreign-owner/port checks, independent IPv4 wildcard coverage, IPv6 availability-specific skips, and bounded helper cleanup. An additional host regression reproduced rejection of a four-byte empty count table; the driver now accepts that table while checking nonempty counts against returned bytes.
 
 Combined verification during this integration turn passed: host `go test -race -count=1` and `go vet` for nativeprocess and brewrestart; Windows AMD64 package vet and full test-binary compilation. These are not native Windows execution. Native CI is still required before claiming completed Windows listener verification. Process/listener observations do not establish exclusivity, health, descendant exit, or activation completion. No live agent or installation was changed.
+
+Native verification now supersedes the pending gate above: run [39360914629](https://github.com/cercano-ai/Cercano/actions/runs/39360914629), at `b003a0a90d0a05148e1e2411badc00bd559439c2`, completed successfully on Windows, macOS and Ubuntu. This includes the native updater fixtures, health RPC fixtures and full CLI suite; race checks remain Unix-only. The preceding run passed Windows and Ubuntu but exposed an unrelated macOS safe-stop cancellation fixture timing assumption. Commit `b003a0a90d0a` synchronizes that fixture with actual handler completion and adds a deterministic observation test: an idempotent accepted response does not join the original stop callback. Production shutdown semantics are unchanged.
+
+This clears the Windows listener native verification gate only. Exact candidate lifetime binding, competing endpoint handling, health/reconnect integration and descendant completion remain separate requirements. No live process or installed selection was changed.
