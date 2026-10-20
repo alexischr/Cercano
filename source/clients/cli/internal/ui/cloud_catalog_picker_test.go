@@ -101,3 +101,21 @@ func TestCatalogCredentialFocusDoesNotSave(t *testing.T) {
 		t.Fatal("credential action did not focus masked editor")
 	}
 }
+
+func TestCatalogRefreshCompletionNotification(t *testing.T) {
+	for _, problem := range []string{"", "Discovery unavailable"} {
+		p := cloudSamplePage()
+		p.selectCloudRow("profile:work-openai")
+		c := overlay.NewCatalog("Choose a model", "", false)
+		p.catalogPicker = &c
+		p.catalogBusy = true
+		p.applyCatalogResult(cloudCatalogResultMsg{page: p, generation: p.catalogGeneration, scope: p.catalogScope(), err: problem, models: []agentclient.CloudModelInfo{{ID: "actual"}}})
+		want := "Models refreshed."
+		if problem != "" {
+			want = "Refresh failed. See the discovery error above."
+		}
+		if p.catalogBusy || p.catalogPicker.State.Notification != want {
+			t.Fatalf("refresh result not visible: %+v", p.catalogPicker.State)
+		}
+	}
+}

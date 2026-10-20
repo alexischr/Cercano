@@ -182,6 +182,21 @@ func (sp *settingsPage) applyCatalogResult(msg cloudCatalogResultMsg) {
 		}
 	}
 	sp.updateCatalogPicker()
+	if sp.catalogPicker != nil {
+		notice := "Models refreshed."
+		if msg.err != "" {
+			notice = "Refresh failed. See the discovery error above."
+		}
+		if msg.err == "" && msg.browse && msg.catalog != nil {
+			for _, status := range msg.catalog.CatalogAccountStatus {
+				if status.Error != "" {
+					notice = "Refresh completed with account errors."
+					break
+				}
+			}
+		}
+		sp.catalogPicker.State.Notification = notice
+	}
 	sp.reloadCatalogForm()
 }
 func catalogCapability(v agentclient.CatalogCapability) string {

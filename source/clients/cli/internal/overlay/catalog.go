@@ -41,10 +41,11 @@ type CatalogEntry struct {
 	Action            CatalogAction
 }
 type CatalogState struct {
-	Message     string
-	ActionLabel string
-	Action      CatalogAction
-	Busy        bool
+	Message      string
+	Notification string // Persistent result of the most recent discovery request.
+	ActionLabel  string
+	Action       CatalogAction
+	Busy         bool
 }
 
 // Catalog is presentation-only. Hosts own discovery, credentials and mutations.
@@ -589,7 +590,14 @@ func (c *Catalog) View(width, height int, p theme.Palette) string {
 	for len(lines) < h-footerRows {
 		lines = append(lines, "")
 	}
-	lines = append(lines, muted.Render(strings.Repeat("─", w)), catalogClip(c.notice, w))
+	notification := c.State.Notification
+	if c.notice != "" {
+		notification = c.notice
+	}
+	if c.State.Busy {
+		notification = "Refreshing available models…"
+	}
+	lines = append(lines, muted.Render(strings.Repeat("─", w)), catalogClip(catalogText(notification), w))
 	type button struct {
 		label  string
 		focus  int
@@ -599,7 +607,11 @@ func (c *Catalog) View(width, height int, p theme.Palette) string {
 	if c.hasCustom() {
 		buttons = append(buttons, button{"Custom ID…", 4, CatalogCustom})
 	}
-	buttons = append(buttons, button{"Refresh", 5, CatalogRefresh}, button{"Cancel", 6, CatalogCancel})
+	refreshLabel := "Refresh"
+	if c.State.Busy {
+		refreshLabel = "Refreshing…"
+	}
+	buttons = append(buttons, button{refreshLabel, 5, CatalogRefresh}, button{"Cancel", 6, CatalogCancel})
 	if !c.Browse {
 		buttons = append(buttons, button{"Use", 7, CatalogSelect})
 	}
@@ -625,7 +637,7 @@ func (c *Catalog) View(width, height int, p theme.Palette) string {
 		}
 		footer += style.Render(label) + " "
 		if b.focus == 4 && w >= 60 {
-			remaining := len("[ Refresh ] [ Cancel ]")
+			remaining := ansi.StringWidth("[ " + refreshLabel + " ] [ Cancel ]")
 			if !c.Browse {
 				remaining += len(" [ Use ]")
 			}
