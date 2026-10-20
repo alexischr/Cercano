@@ -280,6 +280,16 @@
       "models": []
     },
     {
+      "id": "mistral",
+      "label": "mistral",
+      "provider": "openai",
+      "endpoint": "https://api.mistral.ai/v1",
+      "placement": "external",
+      "authentication": "api_key",
+      "status": "untested",
+      "models": []
+    },
+    {
       "id": "cerebras",
       "label": "cerebras",
       "provider": "openai",

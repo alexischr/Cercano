@@ -107,6 +107,10 @@ func (m *mockAgentClient) SubscribeEvents(ctx context.Context, in *proto.Subscri
 	return nil, nil
 }
 
+func (m *mockAgentClient) SubscribeTasks(ctx context.Context, in *proto.SubscribeTasksRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[proto.TaskSubscriptionEvent], error) {
+	return nil, nil
+}
+
 func (m *mockAgentClient) UpdateConfig(ctx context.Context, in *proto.UpdateConfigRequest, opts ...grpc.CallOption) (*proto.UpdateConfigResponse, error) {
 	m.lastConfigReq = in
 	if m.configResp != nil {
