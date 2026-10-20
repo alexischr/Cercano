@@ -411,7 +411,9 @@ func (sp *settingsPage) updateCatalogKey(msg tea.KeyPressMsg) tea.Cmd {
 		if sp.catalogField == "cloud-image" {
 			field = "cloud-custom-image"
 		}
+		revealCloudCustomEntry(sp.catalogField)
 		sp.catalogPicker = nil
+		sp.form.Reload()
 		sp.focusCloudField(field)
 		return nil
 	case overlay.CatalogSelect, overlay.CatalogInherit, overlay.CatalogNone:

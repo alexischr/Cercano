@@ -18,6 +18,31 @@ type cloudDraft struct {
 	Provider, Region, AWSProfile                 string
 }
 
+// cloudCustomEntry tracks which editor fields got their "Enter custom model ID…"
+// text input revealed via the catalog picker. The inputs stay hidden until the
+// picker's custom action is chosen so the editor never demands free-form model
+// IDs up front.
+var cloudCustomEntry map[string]bool
+
+func (sp *settingsPage) resetCloudCustomEntry() {
+	cloudCustomEntry = nil
+}
+
+// shouldShowCloudCustomEntry reports whether the picker's "custom model ID"
+// action has revealed the free-form text field for this choice slot.
+func shouldShowCloudCustomEntry(field string) bool {
+	return cloudCustomEntry[field]
+}
+
+// revealCloudCustomEntry records that the picker's custom action was chosen for
+// a choice slot, so subsequent form snapshots keep its text field visible.
+func revealCloudCustomEntry(field string) {
+	if cloudCustomEntry == nil {
+		cloudCustomEntry = make(map[string]bool)
+	}
+	cloudCustomEntry[field] = true
+}
+
 // selectCloudRow expands a list row's detail editor and seeds the draft from the
 // matching configured profile (edit) or preset template (create). Also clears
 // the cloud-model catalog cache so the next detail-fields build fetches a
@@ -35,6 +60,7 @@ func (sp *settingsPage) selectCloudRow(rowID string) {
 	sp.cloudModelsFetched = false
 	sp.cloudModelsError = ""
 	sp.cloudProviderCatalog = nil
+	sp.resetCloudCustomEntry()
 	switch {
 	case rowID == "other":
 		sp.cloudDraft.Flavor = "chat_completions"
@@ -144,10 +170,11 @@ func (sp *settingsPage) cloudDetailFields(r cloudRow) []form.Field {
 	if sp.cloudModelsError != "" {
 		out = append(out, form.NewReadOnly("cloud-model-discovery-error", il("Model catalog"), sp.cloudModelsError, "Existing model IDs are retained; access has not been confirmed"))
 	}
+	// Save/Discard first, then the Advanced block, and only then the
+	// account-management actions — add/delete restructure the list, so they
+	// sit apart from the per-draft verbs to keep destructive actions away
+	// from Save.
 	out = append(out, form.NewButton("cloud-save", il("save"), true), form.NewButton("cloud-discard", il("discard"), true))
-	if !sp.cloudDraftNew {
-		out = append(out, form.NewButton("cloud-add-account", il("Add another account"), true), form.NewButton("cloud-delete", il("delete"), true))
-	}
 
 	label := "Advanced…"
 	if sp.cloudAdvanced {
@@ -186,6 +213,9 @@ func (sp *settingsPage) cloudDetailFields(r cloudRow) []form.Field {
 			out = append(out, form.NewText("cloud-base-url", il("base-url"), d.BaseURL, "https://…"))
 		}
 
+	}
+	if !sp.cloudDraftNew {
+		out = append(out, form.NewButton("cloud-add-account", il("add account"), true), form.NewButton("cloud-delete", il("delete account"), true))
 	}
 	return out
 }
@@ -231,6 +261,7 @@ func (sp *settingsPage) addCloudAccount() {
 	sp.cloudModelsFetched = false
 	sp.cloudModelsError = ""
 	sp.cloudProviderCatalog = nil
+	sp.resetCloudCustomEntry()
 }
 
 // draftHasKey reports whether the row's profile already has a stored key (drives

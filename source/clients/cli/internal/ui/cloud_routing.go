@@ -9,26 +9,37 @@ import (
 func (sp *settingsPage) cloudChoiceFields(row cloudRow) []form.Field {
 	choices := sp.cloudDraft.Choices.Clone()
 	var fields []form.Field
+	var missing []string
 	for _, quality := range []string{"economy", "standard", "premium"} {
 		current := choices.TierOverrides[quality]
 		inherited := sp.cloudDraft.Effective[quality]
-		if inherited == "" {
-			inherited = "recommendation unavailable"
-		}
-		label := "inherit: " + inherited
-		if current != "" {
-			label = "reset to inherited recommendation"
-		}
-		if current != "" {
+		var label string
+		switch {
+		case current != "":
 			label = current
+		case inherited != "":
+			label = "inherit " + inherited
+		default:
+			label = "inherit"
+			missing = append(missing, quality)
 		}
-		fields = append(fields, form.NewButton("cloud-pick-cloud-quality-"+quality, "  "+quality+"  "+sp.catalogChoiceLabel(label)+"  ›", true), form.NewText("cloud-custom-"+quality, "  custom "+quality+" ID", current, "empty restores inheritance"))
+		fields = append(fields, form.NewButton("cloud-pick-cloud-quality-"+quality, "  "+quality+"  "+sp.catalogChoiceLabel(label)+"  ›", true))
+		if shouldShowCloudCustomEntry("cloud-quality-"+quality) {
+			fields = append(fields, form.NewText("cloud-custom-"+quality, "  custom "+quality+" ID", current, "empty restores inheritance"))
+		}
 	}
 	image := choices.ImageModel
 	if image == "" {
 		image = "none"
 	}
-	fields = append(fields, form.NewButton("cloud-pick-cloud-image", "  image model  "+sp.catalogChoiceLabel(image)+"  ›", true), form.NewText("cloud-custom-image", "  custom image ID", choices.ImageModel, "requires confirmed image capability"))
+	fields = append(fields, form.NewButton("cloud-pick-cloud-image", "  image model  "+sp.catalogChoiceLabel(image)+"  ›", true))
+	if shouldShowCloudCustomEntry("cloud-image") {
+		fields = append(fields, form.NewText("cloud-custom-image", "  custom image ID", choices.ImageModel, "requires confirmed image capability"))
+	}
+	// One consolidated warning instead of repeating the sentence per tier.
+	if len(missing) > 0 {
+		fields = append(fields, form.NewReadOnly("cloud-recommendation-missing", "  choices  missing recommendations", "no provider recommendation for "+strings.Join(missing, ", "), "choose from the picker or enter a custom ID"))
+	}
 	return fields
 }
 func (sp *settingsPage) applyCloudChoice(field, value string) bool {
