@@ -452,7 +452,7 @@ Wires the previously planned open-model path end to end:
 
 ### Recommended-first entry
 
-Setup opens with **Review recommended setup** and **Customize setup**. Review uses discovered resources and preserves existing choices; an existing active cloud account can reach the preview without signing in again or downloading local models when the recommended mode is cloud-only. Existing configured modes take precedence. If an account is needed, setup asks for a connection before previewing the result.
+Setup opens with four selectable templates: **Cloud**, **Cloud + local helpers**, **Local + cloud fallback**, and **Local only**. The current or resource-recommended template is marked. Selecting a template uses discovered resources and preserves existing model choices; an existing active cloud account can reach the preview without signing in again or downloading local models when the selected mode is cloud-only. If an account is needed, setup asks for a connection before previewing the result.
 
 Customization retains the cloud/local strategy and individual model screens. The recommended path skips optional model editing, not consent: only **Use recommended setup** applies the preview. Press Esc from the preview to customize. Assignments remain editable in `/config`, and local models can be managed later through `/m` or `/setup`. Resumed runs use the existing saved steps; the shortcut itself is not a new persisted configuration setting.
 
@@ -469,3 +469,9 @@ The setup introduction lists the three task tiers as bullets with bold tier name
 ChatGPT (`openai-responses`) and Anthropic subscription (`anthropic-subscription`) connections use the shared OAuth sign-in actions, not the wizard's legacy API-key fallback. Returning from or cancelling the provider editor returns to the cloud step and refreshes connected accounts; it does not accept routing or advance setup automatically. Completed account connections retain the existing cancellation contract.
 
 Regression coverage includes subscription catalog aliases, shared-picker cancellation, OAuth action dispatch without an API-key field for subscription accounts, refreshed accounts on return, and rendered tier bullets. Automated checks do not constitute a live browser/OAuth login test.
+
+### Compact setup review
+
+Setup headings are bold and task-tier bullets are indented. The final screen is titled **Review your setup**, not “done”: no settings have been applied yet. Its overview shows the selected template, cloud-use boundary, account and task models, grouped local model assignments, and download/readiness information. Shared local artifacts are shown once even if different slots use their ID and display-name aliases.
+
+**View details** exposes the complete assignment/change preview and technical diagnostics. **Customize local models** and **Customize cloud account** open the existing editing paths; **Use this setup** is the explicit apply action. Browsing templates/details and opening customization do not write server configuration. Runtime validation remains deferred and is not implied by the compact presentation.

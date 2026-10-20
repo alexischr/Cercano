@@ -9,7 +9,7 @@ import (
 func TestWizardAccountSelectionStaysPendingUntilConfirmation(t *testing.T) {
 	stub, client := newScenario(t)
 	wp := scenarioWizard(t, client)
-	pressRows(t, wp, "recommended")
+	pressRows(t, wp, wp.recommendedLocus())
 	pressRows(t, wp, "change_account")
 	pressRows(t, wp, "account:team-external")
 	if wp.state.Step != wizard.StepDone {
@@ -45,7 +45,7 @@ func TestWizardAccountSelectionStaysPendingUntilConfirmation(t *testing.T) {
 func TestWizardPendingAccountCancelDoesNotActivate(t *testing.T) {
 	stub, client := newScenario(t)
 	wp := scenarioWizard(t, client)
-	for _, key := range []string{"recommended", "change_account", "account:team-external"} {
+	for _, key := range []string{wp.recommendedLocus(), "change_account", "account:team-external"} {
 		pressRows(t, wp, key)
 	}
 	wp.abandon()
@@ -65,7 +65,7 @@ func TestWizardPendingAccountCancelDoesNotActivate(t *testing.T) {
 func TestWizardRemovedPendingAccountFailsBeforeWrites(t *testing.T) {
 	stub, client := newScenario(t)
 	wp := scenarioWizard(t, client)
-	for _, key := range []string{"recommended", "change_account", "account:team-external"} {
+	for _, key := range []string{wp.recommendedLocus(), "change_account", "account:team-external"} {
 		pressRows(t, wp, key)
 	}
 	stub.mu.Lock()
@@ -85,7 +85,7 @@ func TestWizardRemovedPendingAccountFailsBeforeWrites(t *testing.T) {
 func TestWizardAccountSwitchDropsOnlyPreviousCloudPicks(t *testing.T) {
 	_, client := newScenario(t)
 	wp := scenarioWizard(t, client)
-	pressRows(t, wp, "recommended")
+	pressRows(t, wp, wp.recommendedLocus())
 	wp.state.TierPicks = map[string]string{"everyday.cloud": "old-account-model", "llama_server.everyday": "keep-local"}
 	wp.state.CloudPicksEdited = map[string]bool{"everyday.cloud": true}
 	pressRows(t, wp, "change_account")

@@ -27,7 +27,7 @@ func TestWizardPreviewDisclosesBeforeApply(t *testing.T) {
 			if mode == "cloud_only" && strings.Contains(text, "download in the background") {
 				t.Fatalf("cloud-only implies download: %s", text)
 			}
-			if wp.rows()[0].Label != "Use recommended setup" {
+			if wp.rows()[0].Label != "Use this setup" {
 				t.Fatal("missing explicit apply action")
 			}
 		})

@@ -14,7 +14,7 @@ func TestWizardRecommendedEntryPreviewsExistingAccount(t *testing.T) {
 	wp.curActiveProfile = "saved"
 	wp.curProfiles = []agentclient.CloudProfileInfo{{Name: "saved", Provider: "anthropic"}}
 	rows := wp.rows()
-	if len(rows) != 2 || rows[0].Key != "recommended" || rows[1].Key != "customize" {
+	if len(rows) != 4 || rows[0].Key != "cloud_only" {
 		t.Fatalf("entry should offer recommendation and customization, got %+v", rows)
 	}
 	applied := false
@@ -33,6 +33,7 @@ func TestWizardRecommendedLocalPreviewAllowsCustomization(t *testing.T) {
 	wp.back()
 	wp.curConfig = &agentclient.Config{LocusMode: "open_only", ModelTiers: map[string]string{"everyday": "explicit-model"}}
 	wp.state.TierPicks = map[string]string{"llama_server.everyday": "explicit-model"}
+	wp.cursor = wp.defaultCursor()
 	wp.selectRow()
 	if wp.state.Step != wizard.StepDone {
 		t.Fatalf("want preview, got %s: %s", wp.state.Step, wp.status)
@@ -67,17 +68,15 @@ func TestWizardRecommendedFreshUserConnectsBeforePreview(t *testing.T) {
 	}
 }
 
-func TestWizardCustomizeEntryBackReturnsToRecommendation(t *testing.T) {
+func TestWizardBackReturnsToTemplateSelection(t *testing.T) {
 	wp := newTestWizardPage(t)
-	if wp.back() {
-		t.Fatal("back from mode customization should not close setup")
-	}
-	if rows := wp.rows(); rows[0].Key != "recommended" {
-		t.Fatalf("wrong entry: %+v", rows)
-	}
-	wp.cursor = 1
-	wp.selectRow()
+	wp.back()
 	if rows := wp.rows(); len(rows) != 4 {
-		t.Fatalf("custom modes unavailable: %+v", rows)
+		t.Fatalf("missing templates: %+v", rows)
+	}
+	wp.cursor = wp.defaultCursor()
+	wp.selectRow()
+	if wp.back() || wp.state.Step != wizard.StepLocus {
+		t.Fatal("back should return to templates")
 	}
 }

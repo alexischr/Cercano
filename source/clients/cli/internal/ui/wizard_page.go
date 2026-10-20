@@ -32,6 +32,7 @@ type wizardRow struct {
 // as a content page. The wizard package owns step sequencing, validation,
 // and resume persistence; this type owns rendering and key handling only.
 type wizardPage struct {
+	showDetails   bool
 	width, height int
 	palette       theme.Palette
 	styles        theme.Styles
@@ -334,17 +335,11 @@ func (wp *wizardPage) SetSize(w, h int) { wp.width, wp.height = w, h }
 func (wp *wizardPage) rows() []wizardRow {
 	switch wp.state.Step {
 	case wizard.StepLocus:
-		if !wp.customizingLocus {
-			return []wizardRow{
-				{Key: "recommended", Label: "Review recommended setup", Annotation: strings.ReplaceAll(wp.recommendedLocus(), "_", " ") + " — review before applying"},
-				{Key: "customize", Label: "Customize setup", Annotation: "choose cloud/local use and model assignments"},
-			}
-		}
 		rows := []wizardRow{
-			{Key: "cloud_primary", Label: "cloud primary", Annotation: "highest-quality frontier model in the cloud; open co-processor for background work."},
-			{Key: "open_only", Label: "open only", Annotation: "fast and fully private — work never leaves this machine."},
-			{Key: "open_primary", Label: "open primary", Annotation: "main model on this machine, cloud fallback — a cost saver."},
-			{Key: "cloud_only", Label: "cloud only", Annotation: "everything on the hosted API — skips Cercano's local co-processor. No local download."},
+			{Key: "cloud_only", Label: "Cloud", Annotation: "all work in the cloud; no local model downloads"},
+			{Key: "cloud_primary", Label: "Cloud + local helpers", Annotation: "cloud for main work; local models for background tasks"},
+			{Key: "open_primary", Label: "Local + cloud fallback", Annotation: "main work runs locally; cloud fallback is permitted"},
+			{Key: "open_only", Label: "Local only", Annotation: "all work stays on this machine; no cloud fallback"},
 		}
 		rec := wp.recommendedLocus()
 		for i := range rows {
@@ -399,7 +394,15 @@ func (wp *wizardPage) rows() []wizardRow {
 		rows = append(rows, wizardRow{Key: "continue", Label: "continue", Annotation: "accept these models"})
 		return rows
 	case wizard.StepDone:
-		rows := []wizardRow{{Key: "finish", Label: "Use recommended setup", Annotation: "apply the previewed settings and close"}}
+		rows := []wizardRow{{Key: "finish", Label: "Use this setup", Annotation: "apply the previewed settings and close"}}
+		label := "View details"
+		if wp.showDetails {
+			label = "Hide details"
+		}
+		rows = append(rows, wizardRow{Key: "details", Label: label, Annotation: "all assignments, changes, and readiness checks"})
+		if wizard.ModeUsesOpen(wp.state.LocusMode) {
+			rows = append(rows, wizardRow{Key: "edit_models", Label: "Customize local models"})
+		}
 		if wizard.ModeUsesCloud(wp.state.LocusMode) && len(wp.curProfiles) > 1 {
 			rows = append(rows, wizardRow{Key: "change_account", Label: "Customize cloud account", Annotation: "choose the default account before applying"})
 		}
@@ -699,9 +702,12 @@ func (wp *wizardPage) selectRow() (tea.Cmd, bool) {
 			wp.cursor = wp.defaultCursor()
 			return nil, false
 		}
-		if row.Key == "recommended" {
+		if row.Key == "recommended" || !wp.customizingLocus {
 			wp.quickSetup = true
-			wp.state.LocusMode = wp.recommendedLocus()
+			wp.state.LocusMode = row.Key
+			if row.Key == "recommended" {
+				wp.state.LocusMode = wp.recommendedLocus()
+			}
 			wp.advance()
 			if wp.state.Step == wizard.StepCloud {
 				if p := wp.existingActiveProfile(); p != nil {
@@ -725,6 +731,17 @@ func (wp *wizardPage) selectRow() (tea.Cmd, bool) {
 		}
 		wp.openTierPicker(row.Key)
 	case wizard.StepDone:
+		if row.Key == "details" {
+			wp.showDetails = !wp.showDetails
+			return nil, false
+		}
+		if row.Key == "edit_models" {
+			wp.quickSetup = false
+			wp.state.Step = wizard.StepOpen
+			wp.cursor = 0
+			wp.persist()
+			return nil, false
+		}
 		if row.Key == "change_account" {
 			wp.state.Step = wizard.StepCloud
 			wp.authPick = false
@@ -815,7 +832,7 @@ func (wp *wizardPage) stepIndex() (int, int) {
 func (wp *wizardPage) stepTitle() string {
 	switch wp.state.Step {
 	case wizard.StepLocus:
-		return "how to run Cercano"
+		return "choose a setup template"
 	case wizard.StepCloud:
 		if wp.authPick {
 			return "sign in to " + wp.state.CloudProvider
@@ -824,7 +841,7 @@ func (wp *wizardPage) stepTitle() string {
 	case wizard.StepOpen:
 		return "open models"
 	case wizard.StepDone:
-		return "done"
+		return "review your setup"
 	}
 	return ""
 }
@@ -832,7 +849,7 @@ func (wp *wizardPage) stepTitle() string {
 func (wp *wizardPage) stepDesc() string {
 	switch wp.state.Step {
 	case wizard.StepLocus:
-		return "Welcome to Cercano. Cercano delegates work across three task tiers:\n\n* **Deep reasoning** - Hard problems and complex decisions.\n* **Everyday development** - Main chat and day-to-day coding.\n* **Lightweight tasks** - Quick helpers and background work.\n\nOne account or one suitable local model can serve all three. Start with the recommended option; assignments remain editable."
+		return "Welcome to Cercano. Cercano delegates work across three task tiers:\n\n* **Deep reasoning** - Hard problems and complex decisions.\n* **Everyday development** - Main chat and day-to-day coding.\n* **Lightweight tasks** - Quick helpers and background work.\n\nOne account or one suitable local model can serve all three. Choose a template below. You can customize its accounts and models before applying it."
 	case wizard.StepCloud:
 		if wp.authPick {
 			return "How do you want to authenticate? Connected accounts remain if you cancel setup; manage or remove them in /config."
@@ -848,7 +865,10 @@ func (wp *wizardPage) stepDesc() string {
 		b.WriteString("Accept them, or select any to change it \u2014 easy to change later. Downloads run in the background \u2014 track them with /m.")
 		return b.String()
 	case wizard.StepDone:
-		return wp.summary()
+		if wp.showDetails {
+			return wp.summary()
+		}
+		return wp.compactSummary()
 	}
 	return ""
 }
@@ -1179,7 +1199,7 @@ func (wp *wizardPage) View() string {
 	}
 	if wp.keyEntry {
 		var b strings.Builder
-		b.WriteString(wp.styles.Bright.Render("Setup — api key for " + wp.state.CloudProvider))
+		b.WriteString(wp.styles.Bright.Bold(true).Render("Setup — api key for " + wp.state.CloudProvider))
 		b.WriteString("\n\n")
 		b.WriteString(wp.styles.Primary.Render("Paste your API key. Input is hidden; the key is stored agent-side, never in wizard state."))
 		b.WriteString("\n\n")
@@ -1194,7 +1214,7 @@ func (wp *wizardPage) View() string {
 	var b strings.Builder
 	idx, total := wp.stepIndex()
 	header := fmt.Sprintf("Setup — %s (step %d of %d)", wp.stepTitle(), idx, total)
-	b.WriteString(wp.styles.Bright.Render(header))
+	b.WriteString(wp.styles.Bright.Bold(true).Render(header))
 	b.WriteString("\n\n")
 	if d := wp.stepDesc(); d != "" {
 		// Wrap each line to the page width so long prose (the open-step blurb,
@@ -1208,7 +1228,7 @@ func (wp *wizardPage) View() string {
 			if rest, ok := strings.CutPrefix(line, "* **"); ok {
 				name, description, found := strings.Cut(rest, "** - ")
 				if found {
-					rendered := wp.styles.Primary.Render("* ") + wp.styles.Bright.Bold(true).Render(name) + wp.styles.Primary.Render(" - "+description)
+					rendered := wp.styles.Primary.Render("  * ") + wp.styles.Bright.Bold(true).Render(name) + wp.styles.Primary.Render(" - "+description)
 					if wp.width > 0 {
 						rendered = ansi.Wrap(rendered, wp.width, "")
 					}

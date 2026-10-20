@@ -404,7 +404,7 @@ func TestWizardScenarioCloudOnlyOneAccountFullAccept(t *testing.T) {
 	if got := wp.recommendedLocus(); got != "cloud_only" {
 		t.Fatalf("resource discovery should recommend cloud_only for an account-holding user, got %q", got)
 	}
-	if closed := pressRows(t, wp, "recommended"); closed {
+	if closed := pressRows(t, wp, wp.recommendedLocus()); closed {
 		t.Fatal("recommendation must stop at preview")
 	}
 	if stub.writeCount() != 0 {
@@ -540,25 +540,17 @@ func TestWizardScenarioExistingUserRerunPreservesUnrelatedConfig(t *testing.T) {
 	if got := wp.recommendedLocus(); got != "cloud_only" {
 		t.Fatalf("rerun should recommend the standing mode cloud_only, got %q", got)
 	}
-	pressRows(t, wp, "customize")
 	if closed := pressRows(t, wp, "cloud_primary"); closed {
 		t.Fatal("locus selection closed the page")
 	}
-	if wp.state.Step != wizard.StepCloud {
-		t.Fatalf("cloud_primary: want cloud step, got %s", wp.state.Step)
+	if wp.state.Step != wizard.StepDone || wp.state.AuthMethod != "existing" {
+		t.Fatalf("template should reuse account and preview: %+v", wp.state)
 	}
-	if !strings.Contains(wp.stepDesc(), "Connected accounts remain if you cancel setup") {
-		t.Fatalf("cloud step must disclose the account-persistence contract:\n%s", wp.stepDesc())
-	}
-	if closed := pressRows(t, wp, "use_existing"); closed {
-		t.Fatal("existing-account reuse closed the page")
-	}
-	if wp.state.AuthMethod != "existing" {
-		t.Fatalf("want existing-account reuse, got %q", wp.state.AuthMethod)
-	}
+	pressRows(t, wp, "edit_models")
 	if wp.state.Step != wizard.StepOpen {
-		t.Fatalf("cloud_primary: want open step, got %s", wp.state.Step)
+		t.Fatal("model customization did not open")
 	}
+
 	if got := wp.state.TierPicks["llama_server.everyday"]; got != "my-custom-pick" {
 		t.Fatalf("rerun autofill lost the explicit assignment: %q", got)
 	}
@@ -610,10 +602,10 @@ func TestWizardScenarioCancelPersistsAccountsClearsOnlyResume(t *testing.T) {
 	stub.locusMode = "cloud_primary"
 	stub.mu.Unlock()
 	wp := scenarioWizard(t, client)
-	pressRows(t, wp, "customize")
 	if closed := pressRows(t, wp, "cloud_primary"); closed {
 		t.Fatal("locus selection closed the page")
 	}
+	pressRows(t, wp, "change_account")
 	// The account-persistence contract is disclosed on the cloud step, where
 	// account decisions happen — verify it before leaving that step.
 	if !strings.Contains(wp.stepDesc(), "Connected accounts remain if you cancel setup") {
@@ -622,6 +614,7 @@ func TestWizardScenarioCancelPersistsAccountsClearsOnlyResume(t *testing.T) {
 	if closed := pressRows(t, wp, "use_existing"); closed {
 		t.Fatal("existing-account reuse closed the page")
 	}
+	pressRows(t, wp, "edit_models")
 	if wp.state.Step != wizard.StepOpen {
 		t.Fatalf("want open step, got %s", wp.state.Step)
 	}
@@ -740,7 +733,7 @@ func TestWizardScenarioRecommendedRerunAllModes(t *testing.T) {
 			stub.modelTiers["unrelated.key"] = "untouched"
 			stub.mu.Unlock()
 			wp := scenarioWizard(t, client)
-			if pressRows(t, wp, "recommended") {
+			if pressRows(t, wp, wp.recommendedLocus()) {
 				t.Fatal("closed before confirmation")
 			}
 			if wp.state.Step != wizard.StepDone {

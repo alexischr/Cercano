@@ -28,8 +28,8 @@ func newTestWizardPage(t *testing.T) *wizardPage {
 	// the providers the assertions expect.
 	wp.providers = wizardTestProviders()
 	// Existing navigation tests exercise the optional customization path.
-	wp.cursor = 1
-	wp.selectRow()
+	wp.customizingLocus = true
+	wp.cursor = wp.defaultCursor()
 	return wp
 }
 

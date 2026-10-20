@@ -140,7 +140,11 @@ func TestWizardFinishLeavesResumeStateOnFail(t *testing.T) {
 	wp := newTestWizardPage(t)
 	// Walk to open_only via the UI so the persisted state matches a real
 	// user flow.
-	press(t, wp, tea.KeyDown) // cursor: cloud_primary → open_only
+	for i, row := range wp.rows() {
+		if row.Key == "open_only" {
+			wp.cursor = i
+		}
+	}
 	press(t, wp, tea.KeyEnter)
 	if wp.state.Step != wizard.StepOpen {
 		t.Fatalf("locus open_only should land on the open step, got %s", wp.state.Step)
