@@ -226,31 +226,39 @@ func (f *Form) View(width int, palette theme.Palette, styles theme.Styles) strin
 	if panelW < 24 {
 		panelW = 24
 	}
-	labelW := 0
-	for _, sec := range f.Sections {
-		fields := sec.Fields
-		if len(sec.Groups) > 0 {
-			fields = nil
-			for _, grp := range sec.Groups {
-				fields = append(fields, grp.Fields...)
-			}
-		}
-		for _, fld := range fields {
-			if f.CompactActions {
-				if _, button := fld.(*ButtonField); button {
-					continue
+	labelWidth := func(sections []Section) int {
+		widest := 0
+		for _, sec := range sections {
+			fields := sec.Fields
+			if len(sec.Groups) > 0 {
+				fields = nil
+				for _, grp := range sec.Groups {
+					fields = append(fields, grp.Fields...)
 				}
 			}
-			if lw := lipgloss.Width(fld.Label()); lw > labelW {
-				labelW = lw
+			for _, fld := range fields {
+				if f.CompactActions {
+					switch fld.(type) {
+					case *ButtonField, *HeadingField:
+						continue
+					}
+				}
+				widest = max(widest, lipgloss.Width(fld.Label()))
 			}
 		}
+		return widest
 	}
+	labelW := labelWidth(f.Sections)
 
 	f.hits = nil
 	var out strings.Builder
 	idx := 0
 	for _, sec := range f.Sections {
+		// Compact panels are separate editors; unrelated labels must not push
+		// their value columns to the right.
+		if f.CompactActions {
+			labelW = labelWidth([]Section{sec})
+		}
 		var body strings.Builder
 		title := styles.Accent.Render("─ " + sec.Title + " ")
 		// Title line, then an underline rule, then a blank line — written as
