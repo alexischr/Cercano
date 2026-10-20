@@ -189,7 +189,14 @@ func (m ModelProfiles) ResolveCloudModelForTier(prof CloudProfile, tier Tier) st
 		vendor = vendorForRoute(baseVendor, prof.Route)
 	}
 	if tier == TierVision {
-		return prof.ImageModel
+		if prof.ImageModel != "" {
+			return prof.ImageModel
+		}
+		// Vision defaults are independent of the text quality tiers.
+		if vendor == "mistral" {
+			return "mistral-large-4"
+		}
+		return ""
 	}
 	if ct, ok := CostTierForCapability(tier); ok {
 		if override := prof.TierOverrides[ct]; override != "" {
