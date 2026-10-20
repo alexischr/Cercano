@@ -293,3 +293,35 @@ func TestCycleOldGraphCannotAdvanceRebuiltSelection(t *testing.T) {
 		t.Fatal("old graph moved current selection", got)
 	}
 }
+
+func TestPrimaryActivationSurvivesMissingBackupProfiles(t *testing.T) {
+	c, probes, build := cycleFixture(t)
+	// Saved routing can outlive deleted/migrated accounts. Preserve the order
+	// of the remaining backups without preventing a valid primary from loading.
+	c.SetPrimaryBackups([]string{"deleted-before", "b", "deleted-after"})
+	p, err := BuildPrimary(c, build, nil)
+	if err != nil {
+		t.Fatalf("valid primary could not activate: %v", err)
+	}
+	if _, err := p.Chat(t.Context(), inference.Call{Tier: string(config.TierEveryday)}); err != nil {
+		t.Fatal(err)
+	}
+	if probes["a"].count() != 1 {
+		t.Fatal("primary was not used")
+	}
+	probes["a"].set(quotaError())
+	if _, err := p.Chat(t.Context(), inference.Call{Tier: string(config.TierEveryday)}); err != nil {
+		t.Fatalf("remaining backup unavailable: %v", err)
+	}
+	if probes["b"].count() != 1 {
+		t.Fatal("remaining backup was not used")
+	}
+}
+
+func TestPrimaryActivationStillRejectsMissingPreferredProfile(t *testing.T) {
+	c, _, build := cycleFixture(t)
+	c.ActiveCloudProfile = "deleted-primary"
+	if _, err := BuildPrimary(c, build, nil); err == nil {
+		t.Fatal("missing preferred profile was accepted")
+	}
+}

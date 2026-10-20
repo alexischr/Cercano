@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -106,5 +107,73 @@ func TestChatGPTLoginKeepsBakedDefaultWhenCatalogFails(t *testing.T) {
 	}
 	if len(p.TierOverrides) != 0 {
 		t.Errorf("catalog failure wrote tier overrides: %v", p.TierOverrides)
+	}
+}
+
+func TestChatGPTLoginActivatesWithStaleBackupReferences(t *testing.T) {
+	s, router := newTestServer()
+	c := s.cfgSvc.Get()
+	c.SetPrimaryBackups([]string{"deleted-chatgpt-2", "deleted-claude"})
+	s.cfgSvc.Set(c)
+	flow := chatgptLoginFixture(t, s, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"models":[]}`))
+	})
+	stream := &chatgptLoginTestStream{ctx: t.Context()}
+	if err := s.runChatGPTLogin(&proto.StartChatGPTLoginRequest{ProfileName: "chatgpt", SetActive: true}, stream, false, flow); err != nil {
+		t.Fatal(err)
+	}
+	last := stream.events[len(stream.events)-1]
+	if !last.Done || !last.Ok {
+		t.Fatalf("browser-approved login failed activation: %+v", last)
+	}
+	if s.cfgSvc.Get().ActiveCloudProfile != "chatgpt" || router.last == nil {
+		t.Fatal("signed-in provider was not activated")
+	}
+}
+
+func TestChatGPTLoginWithoutSetupMakesMainProviderAvailable(t *testing.T) {
+	for _, reauthenticate := range []bool{false, true} {
+		t.Run(fmt.Sprint("reauth=", reauthenticate), func(t *testing.T) {
+			s, _ := newTestServer()
+			c := config.Defaults()
+			c.LocusMode = "cloud_primary"
+			if reauthenticate {
+				c.CloudProfiles = []config.CloudProfile{{Name: "chatgpt", Flavor: "responses", Route: "chatgpt"}}
+				c.ActiveCloudProfile = "chatgpt"
+			}
+			s.cfgSvc.Set(c)
+			s.providerSvc.InstallAbsentCloud("setup was interrupted")
+			flow := chatgptLoginFixture(t, s, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`{"models":[]}`)) })
+			stream := &chatgptLoginTestStream{ctx: t.Context()}
+			// No set_active flag: clients outside the wizard must work too.
+			if err := s.runChatGPTLogin(&proto.StartChatGPTLoginRequest{ProfileName: "chatgpt"}, stream, reauthenticate, flow); err != nil {
+				t.Fatal(err)
+			}
+			last := stream.events[len(stream.events)-1]
+			if !last.Ok {
+				t.Fatalf("login failed: %+v", last)
+			}
+			provider, cloud, _, err := s.providerSvc.Main()
+			if err != nil || provider == nil || !cloud {
+				t.Fatalf("prompt unavailable after login: cloud=%v err=%v", cloud, err)
+			}
+		})
+	}
+}
+
+func TestSavingFirstCloudKeyWithoutSetupMakesMainProviderAvailable(t *testing.T) {
+	s, _ := newTestServer()
+	c := config.Defaults()
+	c.LocusMode = "cloud_primary"
+	c.CloudProfiles = []config.CloudProfile{{Name: "first", Flavor: "responses"}}
+	s.cfgSvc.Set(c)
+	s.providerSvc.InstallAbsentCloud("setup was interrupted")
+	result, err := s.SetCloudProfileKey(t.Context(), &proto.SetCloudProfileKeyRequest{Name: "first", ApiKey: "fixture"})
+	if err != nil || !result.Ok {
+		t.Fatalf("save: result=%+v err=%v", result, err)
+	}
+	provider, cloud, _, err := s.providerSvc.Main()
+	if err != nil || provider == nil || !cloud {
+		t.Fatalf("prompt unavailable after key save: cloud=%v err=%v", cloud, err)
 	}
 }

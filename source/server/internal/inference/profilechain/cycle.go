@@ -65,7 +65,13 @@ func BuildPrimary(c config.Config, build Builder, state *CycleState, events ...f
 		seen[name] = true
 		profile, ok := c.Profile(name)
 		if !ok {
-			return nil, fmt.Errorf("primary references missing profile %q", name)
+			if name == c.ActiveCloudProfile {
+				return nil, fmt.Errorf("primary references missing profile %q", name)
+			}
+			// Stale backup references must not prevent a valid preferred
+			// account from activating (including after subscription login).
+			// Keep resolving the remaining configured accounts in order.
+			continue
 		}
 		modelFor := func(t string) string {
 			if t == "" {

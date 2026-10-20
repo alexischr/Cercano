@@ -47,7 +47,7 @@ func (s *Server) runChatGPTLogin(req *proto.StartChatGPTLoginRequest, stream pro
 	np := config.CloudProfile{Name: profile, Flavor: cloudfactory.FlavorResponses, Route: cloudfactory.RouteChatGPT, Model: model, ModelPinned: strings.TrimSpace(req.GetModel()) != ""}
 	login, err := s.cfgSvc.BeginCloudLogin(ctx, np, req.GetSetActive(), reauthenticate, req.GetCreateOnly())
 	if err != nil {
-		return sendChatGPTLoginResult(stream, false, profile, "", loginFailure(err))
+		return sendChatGPTLoginResult(stream, false, profile, "", loginStageFailure("ChatGPT", "profile setup", err))
 	}
 	defer login.Close()
 	ctx = login.Context()
@@ -55,7 +55,7 @@ func (s *Server) runChatGPTLogin(req *proto.StartChatGPTLoginRequest, stream pro
 	// Start the device authorization and show the user the code + URL.
 	pending, err := flow.Start(ctx)
 	if err != nil {
-		return sendChatGPTLoginResult(stream, false, "", "", loginFailure(err))
+		return sendChatGPTLoginResult(stream, false, "", "", loginStageFailure("ChatGPT", "authorization start", err))
 	}
 	if err := stream.Send(&proto.StartChatGPTLoginEvent{
 		VerificationUrl: pending.VerificationURL,
@@ -67,18 +67,26 @@ func (s *Server) runChatGPTLogin(req *proto.StartChatGPTLoginRequest, stream pro
 	// Block until the user approves in their browser (or ctx cancels).
 	ts, err := pending.Poll(ctx)
 	if err != nil {
-		return sendChatGPTLoginResult(stream, false, "", "", loginFailure(err))
+		return sendChatGPTLoginResult(stream, false, "", "", loginStageFailure("ChatGPT", "authorization completion", err))
 	}
 
 	encoded, err := ts.Encode()
 	if err != nil {
-		return sendChatGPTLoginResult(stream, false, profile, "", loginFailure(err))
+		return sendChatGPTLoginResult(stream, false, profile, "", loginStageFailure("ChatGPT", "credential encoding", err))
 	}
 	result, err := login.Commit(encoded, ts.Identity)
 	if err != nil {
-		return sendChatGPTLoginResult(stream, false, profile, "", loginFailure(err))
+		return sendChatGPTLoginResult(stream, false, profile, "", loginStageFailure("ChatGPT", "credential saving", err))
 	}
 	if result.Reauthenticated {
+		// Credentials may be restored after reset or a failed startup build.
+		// Rebind referenced accounts without changing their routing settings.
+		if result.Active && s.providerSvc != nil && s.providerSvc.Cloud() == nil {
+			if err := s.rebuildCloud(); err != nil {
+				s.persistConfig()
+				return sendChatGPTLoginResult(stream, false, profile, ts.AccountID, loginStageFailure("ChatGPT", "provider activation", err))
+			}
+		}
 		s.persistConfig()
 		return sendChatGPTLoginResult(stream, true, profile, ts.AccountID, "")
 	}
@@ -92,7 +100,7 @@ func (s *Server) runChatGPTLogin(req *proto.StartChatGPTLoginRequest, stream pro
 	if isActive {
 		if err := s.rebuildCloud(); err != nil {
 			s.persistConfig()
-			return sendChatGPTLoginResult(stream, false, profile, ts.AccountID, loginFailure(err))
+			return sendChatGPTLoginResult(stream, false, profile, ts.AccountID, loginStageFailure("ChatGPT", "provider activation", err))
 		}
 		s.broadcastConfigChanged("cloud_model", np.Model)
 	}

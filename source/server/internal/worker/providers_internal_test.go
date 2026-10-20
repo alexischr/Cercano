@@ -49,3 +49,26 @@ func TestBuildWorkerProviders_SelectsActiveProfileByName(t *testing.T) {
 			"(the index-0 bug picks %q)", f.names[0], "bravo", "alpha")
 	}
 }
+
+func TestWorkerSnapshotKeepsPrimaryWithDeletedBackupAccounts(t *testing.T) {
+	cfg := pkgcfg.Defaults()
+	cfg.LocusMode = "cloud_primary"
+	cfg.CloudProfiles = []pkgcfg.CloudProfile{{Name: "signed-in", Flavor: "responses", Route: "chatgpt"}}
+	cfg.ActiveCloudProfile = "signed-in"
+	cfg.SetPrimaryBackups([]string{"deleted-chatgpt", "deleted-claude"})
+	got := ConfigFromSnapshot(SnapshotConfig(cfg, "", nil))
+	if got.ActiveCloudProfile != "signed-in" {
+		t.Fatal("worker discarded signed-in Primary because a backup was deleted")
+	}
+	r, err := buildWorkerProviders(t.Context(), got, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, cloud, _, err := r.Main()
+	if err != nil || provider == nil || !cloud {
+		t.Fatalf("worker cannot route prompt: cloud=%v err=%v", cloud, err)
+	}
+	if len(cfg.PrimaryBackups()) != 2 {
+		t.Fatal("snapshot modified source configuration")
+	}
+}

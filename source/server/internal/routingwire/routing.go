@@ -72,6 +72,20 @@ func ApplyAssignments(c *config.Config, p *proto.RoutingAssignments) {
 	}
 }
 func Snapshot(c config.Config) *proto.RoutingSnapshot {
+	// Match host provider construction: deleted backup accounts are absent
+	// candidates, not grounds for discarding the valid preferred account.
+	// Normalize a private copy so serialization never mutates saved routing.
+	c = c.Clone()
+	backups := []string{}
+	for _, name := range c.PrimaryBackups() {
+		if _, exists := c.Profile(name); exists {
+			backups = append(backups, name)
+		}
+	}
+	c.SetPrimaryBackups(backups)
+	if _, exists := c.Profile(c.SecondaryBackupCloudProfile); !exists {
+		c.SecondaryBackupCloudProfile = ""
+	}
 	out := &proto.RoutingSnapshot{Assignments: Assignments(c)}
 	for _, p := range c.ReferencedProfiles() {
 		out.Profiles = append(out.Profiles, Profile(p, c.ModelProfiles))

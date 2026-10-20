@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net"
 	"strings"
 
 	"cercano/source/server/internal/anthropicauth"
@@ -79,5 +81,26 @@ func loginFailure(err error) string {
 	if errors.As(err, &endpoint) {
 		return endpoint.Error()
 	}
+	var network net.Error
+	if errors.As(err, &network) {
+		if network.Timeout() {
+			return "network request timed out; check the connection and try again"
+		}
+		return "could not reach the authentication service; check the connection and try again"
+	}
+	var syntax *json.SyntaxError
+	var shape *json.UnmarshalTypeError
+	if errors.As(err, &syntax) || errors.As(err, &shape) {
+		return "authentication service returned an unexpected response"
+	}
 	return "login failed; check the profile and try again"
+}
+
+// stage and provider are fixed caller-owned labels, never OAuth response text.
+// Keep the failure boundary visible without exposing codes, tokens or URLs.
+func loginStageFailure(provider, stage string, err error) string {
+	if stage == "provider activation" {
+		return provider + " sign-in credentials were saved, but provider activation failed: " + loginFailure(err)
+	}
+	return provider + " " + stage + ": " + loginFailure(err)
 }

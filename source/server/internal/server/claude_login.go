@@ -49,7 +49,7 @@ func (s *Server) runClaudeLogin(req *proto.StartClaudeLoginRequest, stream proto
 	np := config.CloudProfile{Name: profile, Flavor: cloudfactory.FlavorMessages, Route: cloudfactory.RouteSubscription, Model: model, ModelPinned: modelPinned}
 	login, err := s.cfgSvc.BeginCloudLogin(ctx, np, shouldActivateClaudeLogin(req.GetSetActive(), canonicalProfile), reauthenticate, req.GetCreateOnly())
 	if err != nil {
-		return sendClaudeLoginResult(stream, false, profile, loginFailure(err))
+		return sendClaudeLoginResult(stream, false, profile, loginStageFailure("Claude", "profile setup", err))
 	}
 	defer login.Close()
 	ctx = login.Context()
@@ -57,13 +57,13 @@ func (s *Server) runClaudeLogin(req *proto.StartClaudeLoginRequest, stream proto
 	// Start the loopback authorize and show the user the URL to open.
 	pending, err := flow.Start(ctx)
 	if err != nil {
-		return sendClaudeLoginResult(stream, false, "", loginFailure(err))
+		return sendClaudeLoginResult(stream, false, "", loginStageFailure("Claude", "authorization start", err))
 	}
 	// Own the listener immediately, including failure before Wait is reached.
 	defer pending.Close()
 	loginID, pasted, release, err := s.registerClaudeLogin(ctx)
 	if err != nil {
-		return sendClaudeLoginResult(stream, false, "", loginFailure(err))
+		return sendClaudeLoginResult(stream, false, "", loginStageFailure("Claude", "authorization start", err))
 	}
 	defer release()
 	if err := stream.Send(&proto.StartClaudeLoginEvent{
@@ -79,18 +79,26 @@ func (s *Server) runClaudeLogin(req *proto.StartClaudeLoginRequest, stream proto
 	// a token set — or redeems a code pasted through SubmitClaudeLoginCode.
 	ts, err := pending.Wait(ctx, pasted)
 	if err != nil {
-		return sendClaudeLoginResult(stream, false, "", loginFailure(err))
+		return sendClaudeLoginResult(stream, false, "", loginStageFailure("Claude", "authorization completion", err))
 	}
 
 	encoded, err := ts.Encode()
 	if err != nil {
-		return sendClaudeLoginResult(stream, false, profile, loginFailure(err))
+		return sendClaudeLoginResult(stream, false, profile, loginStageFailure("Claude", "credential encoding", err))
 	}
 	result, err := login.Commit(encoded, ts.Identity)
 	if err != nil {
-		return sendClaudeLoginResult(stream, false, profile, loginFailure(err))
+		return sendClaudeLoginResult(stream, false, profile, loginStageFailure("Claude", "credential saving", err))
 	}
 	if result.Reauthenticated {
+		// Credentials may be restored after reset or a failed startup build.
+		// Rebind referenced accounts without changing their routing settings.
+		if result.Active && s.providerSvc != nil && s.providerSvc.Cloud() == nil {
+			if err := s.rebuildCloud(); err != nil {
+				s.persistConfig()
+				return sendClaudeLoginResult(stream, false, profile, loginStageFailure("Claude", "provider activation", err))
+			}
+		}
 		s.persistConfig()
 		return sendClaudeLoginResult(stream, true, profile, "")
 	}
@@ -100,7 +108,7 @@ func (s *Server) runClaudeLogin(req *proto.StartClaudeLoginRequest, stream proto
 	if isActive {
 		if err := s.rebuildCloud(); err != nil {
 			s.persistConfig()
-			return sendClaudeLoginResult(stream, false, profile, loginFailure(err))
+			return sendClaudeLoginResult(stream, false, profile, loginStageFailure("Claude", "provider activation", err))
 		}
 		s.broadcastConfigChanged("active_cloud_profile", profile)
 		s.broadcastConfigChanged("cloud_model", np.Model)

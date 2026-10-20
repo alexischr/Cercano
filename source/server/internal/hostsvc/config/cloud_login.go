@@ -80,7 +80,8 @@ func (l *CloudLogin) Commit(encoded string, identity ...accountidentity.Identity
 	if !replaced {
 		s.current.CloudProfiles = append(s.current.CloudProfiles, l.proposed.Clone())
 	}
-	if l.activate && !l.reauthenticate {
+	_, hasPrimary := profileByName(s.current.CloudProfiles, s.current.ActiveCloudProfile)
+	if (l.activate || !hasPrimary) && !l.reauthenticate {
 		s.setActiveProfileLocked(l.proposed.Name)
 	}
 	return CloudLoginResult{Reauthenticated: l.reauthenticate, Profile: l.proposed.Clone(), Active: s.current.ActiveCloudProfile == l.proposed.Name}, nil

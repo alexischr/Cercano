@@ -1009,6 +1009,13 @@ func (s *Server) SetCloudProfileKey(ctx context.Context, req *proto.SetCloudProf
 		return &proto.SetCloudProfileKeyResponse{Ok: false, Error: err.Error()}, nil
 	}
 	releaseCatalog()
+	// Setup is optional: saving the first account's key also establishes
+	// Primary when no valid selection exists yet.
+	c := s.cfgSvc.Get()
+	if _, ok := c.Profile(c.ActiveCloudProfile); !ok {
+		s.cfgSvc.SetActiveProfile(req.GetName())
+		s.persistConfig()
+	}
 	// If the key belongs to the active profile, rebuild so it takes effect now.
 	if s.cfgSvc.Get().ReferencesProfile(req.GetName()) {
 		_ = s.rebuildCloud()
