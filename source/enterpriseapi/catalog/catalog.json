@@ -287,7 +287,29 @@
       "placement": "external",
       "authentication": "api_key",
       "status": "untested",
-      "models": []
+      "models": [
+        {
+          "id": "mistral-small-latest",
+          "label": "mistral-small-latest",
+          "qualities": [
+            "economy"
+          ]
+        },
+        {
+          "id": "mistral-large-4",
+          "label": "mistral-large-4",
+          "qualities": [
+            "standard"
+          ]
+        },
+        {
+          "id": "zai-glm-5-3",
+          "label": "zai-glm-5-3",
+          "qualities": [
+            "premium"
+          ]
+        }
+      ]
     },
     {
       "id": "cerebras",
