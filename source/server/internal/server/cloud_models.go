@@ -2,6 +2,7 @@ package server
 
 import (
 	"cercano/source/server/internal/catalog"
+	"cercano/source/server/internal/llm/responses"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -33,6 +34,11 @@ func (s *Server) ListCloudProfileModels(ctx context.Context, req *proto.ListClou
 	}
 	if isMistralProfile(p) {
 		return s.listMistralProfileModels(ctx, name), nil
+	}
+	// ChatGPT subscription profiles carry no base_url by design — the route
+	// pins the codex backend — so they must branch before the base_url check.
+	if p.Route == responses.RouteChatGPT {
+		return s.listChatGPTModels(ctx, name), nil
 	}
 	endpoint, _ := url.Parse(p.BaseURL)
 	if p.Provider == "deepinfra" || (endpoint != nil && strings.EqualFold(endpoint.Hostname(), "api.deepinfra.com")) {
@@ -85,9 +91,10 @@ func (s *Server) ListCloudProfileModels(ctx context.Context, req *proto.ListClou
 	}
 	httpReq.Header.Set("anthropic-version", "2023-06-01")
 
-	// Auth: carry the profile's API key from the keychain. Subscription
-	// profiles have an empty base_url and are short-circuited above onto the
-	// curated fallback list, so they never reach this fetch.
+	// Auth: carry the profile's API key from the keychain. ChatGPT
+	// subscription profiles branch off above; a Claude subscription profile
+	// has an empty base_url and stops at the check above, which the client
+	// answers with its curated fallback list.
 	if st := s.cfgSvc.Secrets(); st != nil {
 		if key, err := st.Get(name); err == nil && key != "" {
 			httpReq.Header.Set("x-api-key", key)
