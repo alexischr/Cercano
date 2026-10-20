@@ -209,3 +209,7 @@ No Velopack integration, silent package-manager ownership takeover, automatic ro
 No promise of machine-wide Windows self-updates or first-milestone direct-install macOS self-updates. Supporting APT does not imply support for every Linux package manager or distribution.
 
 Spec/plan approval does not authorize exporting signing keys, changing GitHub secrets or repository protections, publishing package repositories, changing existing release tags, enrolling the developer's installation, or releasing new production artifacts. Those operations require explicit approval at their implementation gates. Existing workflows and published releases remain undisturbed during the prototype and testing phases.
+
+### Approved exact-candidate lifetime binding
+
+The user approved a candidate-specific launch wrapper with the minimum launch-package support needed to bind native process lifetime evidence to the exact owned child safely across exit and reaping. Preserve generic helper launch behavior. Uncertain or already-exited candidates must not receive usable identity authority; a post-start inspection failure must retain owned-process completion access. This approval does not authorize health-success decisions, signaling processes, selection changes, or treating completion as descendant or health proof.
