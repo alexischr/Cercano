@@ -98,8 +98,8 @@ func TestServerTaskManager_InitializeOnceAndReconcile(t *testing.T) {
 }
 
 // TestServerTaskManager_ShutdownInterruptsAndRejectsLaunch verifies the
-// shutdown contract: an in-flight execution is interrupted (not awaited to
-// completion), the manager is closed, and launch is rejected after shutdown.
+// shutdown contract: an in-flight execution is canceled and drained, the
+// manager is closed, and launch is rejected after shutdown.
 func TestServerTaskManager_ShutdownInterruptsAndRejectsLaunch(t *testing.T) {
 	s, _ := newTestServer()
 	ts := openServerTaskStore(t)
@@ -111,11 +111,17 @@ func TestServerTaskManager_ShutdownInterruptsAndRejectsLaunch(t *testing.T) {
 	// closeTaskManager path is exercised.
 	release := make(chan struct{})
 	defer close(release) // unblock even on failure paths
+	started := make(chan struct{})
 	var executed atomic.Int32
 	m, err := taskrun.New(ts, func(ctx context.Context, spec dispatch.Spec) (dispatch.Result, error) {
 		executed.Add(1)
-		<-release
-		return dispatch.Result{}, ctx.Err()
+		close(started) // signal executor entry
+		select {
+		case <-ctx.Done():
+			return dispatch.Result{}, ctx.Err()
+		case <-release:
+			return dispatch.Result{}, nil
+		}
 	}, nil)
 	if err != nil {
 		t.Fatalf("taskrun.New: %v", err)
@@ -129,7 +135,14 @@ func TestServerTaskManager_ShutdownInterruptsAndRejectsLaunch(t *testing.T) {
 		t.Fatalf("Launch: %v", err)
 	}
 
-	// Server shutdown must close the manager without waiting on the executor.
+	// Wait for executor to start before shutdown to ensure cancellation is tested
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("Executor did not start within timeout")
+	}
+
+	// Server shutdown must cancel the executor and wait for it to terminate.
 	done := make(chan struct{})
 	go func() { s.Shutdown(); close(done) }()
 	select {
