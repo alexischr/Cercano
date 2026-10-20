@@ -159,7 +159,7 @@ func TestCloudChoiceLabelsCompactAndSingleMissingRecommendationWarning(t *testin
 	warnings := 0
 	for _, sec := range sp.form.Sections {
 		for _, f := range sec.Fields {
-			if f.Label() == "  choices  missing recommendations" {
+			if f.Label() == "  Recommendations" {
 				warnings++
 				if got := f.Display(); got != "no provider recommendation for economy, standard" {
 					t.Fatalf("consolidated warning display = %q", got)
@@ -196,8 +196,8 @@ func TestCloudAccountActionsSeparatedFromSaveDiscard(t *testing.T) {
 		t.Fatalf("expected all four action fields, got save=%d advanced=%d add=%d delete=%d",
 			saveIdx, advIdx, addIdx, delIdx)
 	}
-	if !(saveIdx < advIdx && advIdx < addIdx && addIdx < delIdx) {
-		t.Fatalf("action order should be save < advanced < add account < delete account, got %d < %d < %d < %d",
+	if !(advIdx < saveIdx && saveIdx < addIdx && addIdx < delIdx) {
+		t.Fatalf("action order should be advanced < save < add account < delete account, got %d < %d < %d < %d",
 			saveIdx, advIdx, addIdx, delIdx)
 	}
 	save, _ := cleanupFieldAt(sp, "cloud-save")

@@ -24,7 +24,7 @@ func (sp *settingsPage) cloudChoiceFields(row cloudRow) []form.Field {
 			missing = append(missing, quality)
 		}
 		fields = append(fields, form.NewButton("cloud-pick-cloud-quality-"+quality, "  "+quality+"  "+sp.catalogChoiceLabel(label)+"  ›", true))
-		if shouldShowCloudCustomEntry("cloud-quality-"+quality) {
+		if shouldShowCloudCustomEntry("cloud-quality-" + quality) {
 			fields = append(fields, form.NewText("cloud-custom-"+quality, "  custom "+quality+" ID", current, "empty restores inheritance"))
 		}
 	}
@@ -38,7 +38,7 @@ func (sp *settingsPage) cloudChoiceFields(row cloudRow) []form.Field {
 	}
 	// One consolidated warning instead of repeating the sentence per tier.
 	if len(missing) > 0 {
-		fields = append(fields, form.NewReadOnly("cloud-recommendation-missing", "  choices  missing recommendations", "no provider recommendation for "+strings.Join(missing, ", "), "choose from the picker or enter a custom ID"))
+		fields = append(fields, form.NewReadOnly("cloud-recommendation-missing", "  Recommendations", "no provider recommendation for "+strings.Join(missing, ", "), "choose from the picker or enter a custom ID"))
 	}
 	return fields
 }

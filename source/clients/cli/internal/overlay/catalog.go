@@ -51,6 +51,8 @@ type CatalogState struct {
 type Catalog struct {
 	Title, Scope                string
 	Browse                      bool
+	Providers                   bool
+	hits                        []catalogHit
 	Entries                     []CatalogEntry
 	State                       CatalogState
 	input                       textinput.Model
@@ -160,6 +162,16 @@ func (c *Catalog) Update(msg tea.Msg) (tea.Cmd, CatalogOutcome) {
 	if size, ok := msg.(tea.WindowSizeMsg); ok {
 		c.Resize(size.Width, size.Height)
 		return nil, CatalogOutcome{}
+	}
+	if mouse, ok := msg.(tea.MouseClickMsg); ok {
+		return c.click(mouse.X, mouse.Y)
+	}
+	if wheel, ok := msg.(tea.MouseWheelMsg); ok {
+		code := tea.KeyDown
+		if wheel.Button == tea.MouseWheelUp {
+			code = tea.KeyUp
+		}
+		return c.Update(tea.KeyPressMsg{Code: code})
 	}
 	key, ok := msg.(tea.KeyPressMsg)
 	if !ok {
@@ -346,9 +358,13 @@ func (c Catalog) details(w int) []string {
 	}
 	return wrapped
 }
-func (c Catalog) View(width, height int, p theme.Palette) string {
+func (c *Catalog) View(width, height int, p theme.Palette) string {
+	c.hits = nil
+	if c.Providers {
+		return c.providerView(width, height, p)
+	}
 	if width < 30 || height < 10 {
-		return catalogClip("Enlarge terminal · Esc Cancel", width)
+		return catalogClip("Enlarge terminal", width)
 	}
 	// Width includes border and padding. Every internal line is bounded explicitly.
 	w := width - 4
@@ -369,12 +385,12 @@ func (c Catalog) View(width, height int, p theme.Palette) string {
 		if account == "" {
 			account = "All accounts"
 		}
-		filter = account + " · ←→ Change account"
+		filter = account
 	}
 	if c.focus == 1 {
 		filter = "› " + filter
 	}
-	lines = append(lines, muted.Render(catalogClip(filter+" · Tab to filters, Enter to toggle", w)))
+	lines = append(lines, muted.Render(catalogClip(filter, w)))
 	status := catalogText(c.State.Message)
 	if c.State.Busy && status == "" {
 		status = "Loading available models…"
@@ -386,14 +402,16 @@ func (c Catalog) View(width, height int, p theme.Palette) string {
 	if c.State.Action == CatalogCredentials {
 		content := []string{lines[0], lines[1], "", accent.Render("Available models")}
 		content = append(content, strings.Split(ansi.Hardwrap(status, w, true), "\n")...)
-		content = append(content, "", accent.Render("Enter "+catalogText(c.State.ActionLabel)), "", "Your current selection stays unchanged.")
+		c.hits = append(c.hits, catalogHit{y: len(content) + 2, from: 2, to: width - 2, action: CatalogCredentials})
+		content = append(content, "", accent.Render("[ "+catalogText(c.State.ActionLabel)+" ]"), "", "Your current selection stays unchanged.")
 		for len(content) < h-1 {
 			content = append(content, "")
 		}
 		if len(content) > h-1 {
 			content = content[:h-1]
 		}
-		content = append(content, "Esc Cancel")
+		content = append(content, "[ Cancel ]")
+		c.hits = append(c.hits, catalogHit{y: len(content), from: 2, to: width - 2, action: CatalogCancel})
 		for i, line := range content {
 			content[i] = catalogClip(line, w)
 		}
@@ -407,7 +425,7 @@ func (c Catalog) View(width, height int, p theme.Palette) string {
 		}
 	}
 	if strings.TrimSpace(c.Query()) != "" && count == 0 {
-		lines = append(lines, catalogClip("No models match your search. Ctrl+U clears search.", w))
+		lines = append(lines, catalogClip("No models match your search.", w))
 	}
 	bodyH := max(1, h-len(lines)-2)
 	wide := width >= 100 && height >= 24
@@ -470,12 +488,15 @@ func (c Catalog) View(width, height int, p theme.Palette) string {
 		if i == c.cursor {
 			row = accent.Render(row)
 		}
+		if !c.compactDetail {
+			c.hits = append(c.hits, catalogHit{y: len(lines) + len(list) + 1, from: 2, to: 2 + listW, index: i, entry: true})
+		}
 		list = append(list, row)
 	}
 	if len(list) == 0 {
 		s := "No models available"
 		if c.Query() != "" {
-			s = "No matches — clear search with Ctrl+F, Ctrl+U"
+			s = "No matches"
 		}
 		list = []string{catalogClip(s, listW)}
 	}
@@ -506,23 +527,9 @@ func (c Catalog) View(width, height int, p theme.Palette) string {
 			lines = append(lines, details...)
 		}
 	}
-	footer := "↑↓ Navigate · Tab Focus · Enter Select · Esc Cancel"
-	if c.Browse {
-		footer = "↑↓ Navigate · Tab Focus · Enter Details · Esc Close"
-	}
-	if compact {
-		footer = "Tab Details · Enter · Esc Back/Cancel"
-	}
-	if c.compactDetail {
-		footer = "PgUp/PgDn Scroll · Esc Back"
-	}
-	if c.State.ActionLabel != "" && (c.State.Action == CatalogCredentials || len(entries) == 0) {
-		footer = "Enter " + catalogText(c.State.ActionLabel) + " · Esc Cancel"
-	}
+	footer := "[ Cancel ]   [ Refresh ]"
+	c.hits = append(c.hits, catalogHit{y: 3, from: 2, to: width - 2, search: true}, catalogHit{y: 4, from: 2, to: width - 2, filter: true}, catalogHit{y: h, from: 2, to: 12, action: CatalogCancel}, catalogHit{y: h, from: 15, to: 28, action: CatalogRefresh})
 	note := c.notice
-	if note == "" {
-		note = "Ctrl+F Search · Ctrl+R Refresh"
-	}
 	if len(lines) > h-2 {
 		lines = lines[:h-2]
 	}

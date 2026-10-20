@@ -315,3 +315,21 @@ next message, persists across resume, and has no silent fallback. Delegation,
 background routes, and global defaults stay unchanged. `/model clear` works even
 when the selected chat model is unavailable. See [session model overrides](session-model.md)
 for commands, boundaries, and implementation details.
+
+### Cloud provider setup
+
+The Cloud configuration tab lists only configured providers. **Add provider…**
+opens a filterable popover, including a custom-endpoint option. Authentication
+variants share one provider entry; existing accounts are selected inside the
+editor. Choosing a provider starts an unsaved setup draft.
+
+The editor separates **Connection**, **Model tiers**, and **Advanced settings**
+(collapsed when opening an account). Subscription providers expose sign-in;
+API-key providers expose a masked key editor. New Anthropic/OpenAI connections
+can switch authentication methods before credentials are entered. Model choices
+use the searchable catalog and discovery remains asynchronous.
+
+Cloud fields, buttons, account options, and catalog rows support mouse clicks.
+Popovers consume mouse-wheel input without scrolling the page behind them.
+Keyboard navigation remains available, without navigation-help footers. Removing
+an account requires confirmation; cancelling new setup clears its pending key.

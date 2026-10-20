@@ -141,6 +141,10 @@ func (sp *settingsPage) commitCloud(ca cloudCommitAction) (string, tea.Cmd, erro
 		sp.addCloudAccount()
 		return "new account — sign in or save credentials", nil, nil
 	case cloudCommitDiscard:
+		if sp.cloudDraftNew {
+			sp.selectCloudRow("")
+			return "cancelled setup", nil, nil
+		}
 		sp.resetCloudCustomEntry()
 		sp.selectCloudRow(sp.cloudSelected)
 		return "discarded profile draft", nil, nil

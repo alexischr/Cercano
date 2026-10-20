@@ -53,6 +53,7 @@ func (sp *settingsPage) selectCloudRow(rowID string) {
 	sp.catalogPicker = nil
 	sp.cloudSelected = rowID
 	sp.cloudAdvanced = false
+	sp.cloudDeleteConfirm = false
 	sp.cloudDirty = false
 	sp.cloudDraft = cloudDraft{Choices: (&agentclient.CloudModelChoices{}).Clone()}
 	sp.cloudDraftNew = true
@@ -99,11 +100,28 @@ func (sp *settingsPage) buildCloudSection() form.Section {
 	}
 	rows := buildCloudRowsFromProviders(sp.cloudView)
 	var fields []form.Field
+	seen := map[string]bool{}
 	for _, r := range rows {
-		fields = append(fields, form.NewRow("cloud-row:"+r.ID, r.Label, rowAnnotation(r), r.Active))
-		if r.ID == sp.cloudSelected {
-			fields = append(fields, sp.cloudDetailFields(r)...)
+		if !r.IsProfile || r.SubProfile {
+			continue
 		}
+		label := r.Label
+		if r.Preset != nil {
+			family := cloudProviderFamily(r.Preset.ID)
+			if seen[family] {
+				continue
+			}
+			seen[family] = true
+			label = cloudProviderLabel(r.Preset.ID, r.Preset.Label)
+		}
+		fields = append(fields, form.NewRow("cloud-row:"+r.ID, label, authHint(r), r.Active))
+	}
+	if len(fields) == 0 {
+		fields = append(fields, form.NewReadOnly("cloud-empty", "Providers", "No providers configured", ""))
+	}
+	fields = append(fields, form.NewButton("cloud-add-provider", "+ Add provider…", true))
+	if sp.cloudSelected != "" {
+		fields = append(fields, sp.cloudDetailFields(sp.catalogRow())...)
 	}
 	return form.Section{Title: "Cloud Providers", Fields: fields}
 }
@@ -119,6 +137,21 @@ func (sp *settingsPage) cloudDetailFields(r cloudRow) []form.Field {
 	d := sp.cloudDraft
 	il := func(s string) string { return cloudDetailIndent + s }
 	var out []form.Field
+	if r.Preset != nil && !sp.cloudDraftNew {
+		var options []form.Option
+		for _, provider := range sp.cloudView.Providers {
+			if cloudProviderFamily(provider.ID) != cloudProviderFamily(r.Preset.ID) {
+				continue
+			}
+			for _, account := range provider.Profiles {
+				options = append(options, form.Option{Label: account.AccountDisplayNameLabel(), Value: "profile:" + account.Name})
+			}
+		}
+		if len(options) > 1 {
+			out = append(out, form.NewSelect("cloud-account-select", il("Account"), options, sp.cloudSelected))
+		}
+	}
+	out = append(out, form.NewHeading("cloud-connection-heading", "Connection"))
 	if sp.cloudDraftNew {
 		out = append(out, form.NewText("cloud-name", il("Account name"), d.Name, "A unique name for this connection"))
 	} else {
@@ -153,9 +186,20 @@ func (sp *settingsPage) cloudDetailFields(r cloudRow) []form.Field {
 	if d.Route == "subscription" {
 		out = append(out, form.NewReadOnly("cloud-route", il("Authentication"), "Subscription sign-in", ""))
 	}
-	if d.Route != "subscription" {
+	if d.Route != "subscription" && d.Flavor != "responses" {
 		out = append(out, form.NewMasked("cloud-key", il("API key"), sp.draftHasKey(r)))
 	}
+	if sp.cloudDraftNew && r.Preset != nil {
+		family := cloudProviderFamily(r.Preset.ID)
+		if family == "anthropic" || family == "openai" {
+			label := "Use API key instead"
+			if d.Route != "subscription" && d.Flavor != "responses" {
+				label = "Use subscription sign-in instead"
+			}
+			out = append(out, form.NewButton("cloud-auth-switch", il(label), true))
+		}
+	}
+	out = append(out, form.NewHeading("cloud-model-heading", "Model tiers"))
 	out = append(out, sp.cloudChoiceFields(r)...)
 	state := sp.catalogState()
 	if state.Message != "" {
@@ -170,15 +214,11 @@ func (sp *settingsPage) cloudDetailFields(r cloudRow) []form.Field {
 	if sp.cloudModelsError != "" {
 		out = append(out, form.NewReadOnly("cloud-model-discovery-error", il("Model catalog"), sp.cloudModelsError, "Existing model IDs are retained; access has not been confirmed"))
 	}
-	// Save/Discard first, then the Advanced block, and only then the
-	// account-management actions — add/delete restructure the list, so they
-	// sit apart from the per-draft verbs to keep destructive actions away
-	// from Save.
-	out = append(out, form.NewButton("cloud-save", il("save"), true), form.NewButton("cloud-discard", il("discard"), true))
+	// Advanced is collapsed by default; draft actions follow the editor.
 
-	label := "Advanced…"
+	label := "▸ Advanced settings"
 	if sp.cloudAdvanced {
-		label = "Hide advanced settings"
+		label = "▾ Advanced settings"
 	}
 	out = append(out, form.NewButton("cloud-advanced", il(label), true))
 	if sp.cloudAdvanced {
@@ -214,7 +254,10 @@ func (sp *settingsPage) cloudDetailFields(r cloudRow) []form.Field {
 		}
 
 	}
-	if !sp.cloudDraftNew {
+	out = append(out, form.NewHeading("cloud-actions-heading", ""), form.NewButton("cloud-save", il("Save changes"), true), form.NewButton("cloud-discard", il("Discard"), true))
+	if sp.cloudDeleteConfirm {
+		out = append(out, form.NewReadOnly("cloud-delete-warning", il("Remove account?"), d.Name, "This removes the saved connection"), form.NewButton("cloud-delete-confirm", il("Confirm removal"), true), form.NewButton("cloud-delete-cancel", il("Keep account"), true))
+	} else if !sp.cloudDraftNew {
 		out = append(out, form.NewButton("cloud-add-account", il("add account"), true), form.NewButton("cloud-delete", il("delete account"), true))
 	}
 	return out

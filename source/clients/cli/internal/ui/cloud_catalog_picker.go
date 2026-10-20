@@ -39,6 +39,14 @@ func (sp *settingsPage) invalidateCatalog() {
 	sp.cloudProviderCatalog = nil
 }
 func (sp *settingsPage) catalogRow() cloudRow {
+	if strings.HasPrefix(sp.cloudSelected, "template:") {
+		for _, p := range sp.cloudView.Providers {
+			if "template:"+p.ID == sp.cloudSelected {
+				preset := presetFromProvider(p)
+				return cloudRow{ID: sp.cloudSelected, Label: p.Label, Preset: &preset}
+			}
+		}
+	}
 	for _, r := range buildCloudRowsFromProviders(sp.cloudView) {
 		if r.ID == sp.cloudSelected {
 			return r
@@ -52,7 +60,7 @@ func (sp *settingsPage) catalogRow() cloudRow {
 func (sp *settingsPage) catalogPrerequisite() (string, string) {
 	d := sp.cloudDraft
 	r := sp.catalogRow()
-	subscription := d.Route == "subscription" || d.Route == "chatgpt"
+	subscription := d.Route == "subscription" || d.Route == "chatgpt" || d.Flavor == "responses"
 	if subscription && sp.cloudDraftNew {
 		key := "cloud-signin"
 		if d.Route == "subscription" {
@@ -389,7 +397,7 @@ func (sp *settingsPage) focusCloudField(key string) {
 		}
 	}
 }
-func (sp *settingsPage) updateCatalogKey(msg tea.KeyPressMsg) tea.Cmd {
+func (sp *settingsPage) updateCatalogKey(msg tea.Msg) tea.Cmd {
 	sp.catalogPicker.Resize(min(sp.width, 120), min(sp.viewportHeight(), 36))
 	cmd, out := sp.catalogPicker.Update(msg)
 	switch out.Action {

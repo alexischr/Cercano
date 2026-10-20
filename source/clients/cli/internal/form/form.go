@@ -30,7 +30,10 @@ type Group struct {
 
 // Form arranges sections of fields with nav + commit routing.
 type Form struct {
-	Sections []Section
+	Sections       []Section
+	HideHelp       bool
+	CompactActions bool
+	hits           []fieldHit
 	// OnCommit fires when a field commits a new value. Optional.
 	OnCommit func(key, value string) (status string, cmd tea.Cmd, err error)
 	// OnReload returns a fresh section snapshot after a successful commit. Optional.
@@ -233,12 +236,18 @@ func (f *Form) View(width int, palette theme.Palette, styles theme.Styles) strin
 			}
 		}
 		for _, fld := range fields {
+			if f.CompactActions {
+				if _, button := fld.(*ButtonField); button {
+					continue
+				}
+			}
 			if lw := lipgloss.Width(fld.Label()); lw > labelW {
 				labelW = lw
 			}
 		}
 	}
 
+	f.hits = nil
 	var out strings.Builder
 	idx := 0
 	for _, sec := range f.Sections {
@@ -270,6 +279,28 @@ func (f *Form) View(width int, palette theme.Palette, styles theme.Styles) strin
 		}
 		focusedBodyLine := -1
 		renderField := func(fld Field) {
+			startLine := bodyLine
+			if heading, ok := fld.(*HeadingField); ok {
+				body.WriteString("\n  " + styles.Accent.Render(heading.title) + "\n")
+				bodyLine += 2
+				idx++
+				return
+			}
+			if button, ok := fld.(*ButtonField); ok && f.CompactActions {
+				rendered := button.View(idx == f.cursor, max(1, panelW-7), styles)
+				wrapped := strings.Split(ansi.Hardwrap(rendered, max(1, panelW-7), false), "\n")
+				for _, line := range wrapped {
+					body.WriteString("   " + line + "\n")
+					bodyLine++
+				}
+				base := strings.Count(out.String(), "\n") + 1
+				f.hits = append(f.hits, fieldHit{index: idx, from: base + startLine, to: base + bodyLine})
+				if idx == f.cursor {
+					focusedBodyLine = startLine
+				}
+				idx++
+				return
+			}
 			focused := idx == f.cursor
 			marker := "   "
 			if focused {
@@ -339,6 +370,12 @@ func (f *Form) View(width int, palette theme.Palette, styles theme.Styles) strin
 					bodyLine++
 				}
 			}
+			f.hits = append(f.hits, fieldHit{index: idx, from: strings.Count(out.String(), "\n") + 1 + startLine, to: strings.Count(out.String(), "\n") + 1 + bodyLine, valueX: 2 + indent, valueY: strings.Count(out.String(), "\n") + 1 + startLine + func() int {
+				if narrow {
+					return 1
+				}
+				return 0
+			}()})
 			idx++
 		}
 		if len(sec.Groups) > 0 {
@@ -378,6 +415,9 @@ func (f *Form) View(width int, palette theme.Palette, styles theme.Styles) strin
 	}
 
 	footer := styles.Muted.Render("   ↑↓ navigate  enter edit/select  esc close")
+	if f.HideHelp {
+		footer = ""
+	}
 	if f.status != "" {
 		footer += styles.BorderDim.Render("   ·   ") + styles.Accent.Render(f.status)
 	}

@@ -184,7 +184,7 @@ func (m Model) handleConfigSurfaceKey(msg tea.KeyPressMsg) (Model, tea.Cmd, bool
 		return m, nil, true
 	}
 
-	if sp, ok := m.content.(*settingsPage); ok && sp.catalogPicker != nil {
+	if sp, ok := m.content.(*settingsPage); ok && (sp.catalogPicker != nil || sp.providerPicker != nil) {
 		next, cmd := m.dropFocusForwarding(msg)
 		return next, cmd, true
 	}

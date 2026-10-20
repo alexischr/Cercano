@@ -59,16 +59,16 @@ func TestCloudSectionListsProfilesAndTemplates(t *testing.T) {
 	if !keys["cloud-row:profile:work-openai"] {
 		t.Errorf("merged openai provider row (primary work-openai) missing: %v", keys)
 	}
-	if !labels["openai — work-openai"] {
-		t.Errorf("merged provider row should identify provider and account: %v", labels)
+	if !labels["OpenAI"] {
+		t.Errorf("configured provider row should use its friendly name: %v", labels)
 	}
 	// Providers without profiles render as template rows; the trailing custom
 	// row is always present.
-	if !keys["cloud-row:template:gemini"] {
-		t.Errorf("gemini template row missing: %v", keys)
+	if keys["cloud-row:template:gemini"] {
+		t.Errorf("unconfigured gemini leaked into configured list: %v", keys)
 	}
-	if !keys["cloud-row:other"] {
-		t.Errorf("+ other row missing: %v", keys)
+	if keys["cloud-row:other"] {
+		t.Errorf("custom template leaked into configured list: %v", keys)
 	}
 }
 

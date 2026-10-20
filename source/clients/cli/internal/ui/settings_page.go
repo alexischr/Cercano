@@ -115,6 +115,8 @@ type settingsPage struct {
 	cloudModelsFetched   bool
 	cloudModelsError     string
 	cloudProviderCatalog *agentclient.RuntimeModelCatalog
+	cloudDeleteConfirm   bool
+	providerPicker       *overlay.Catalog
 	catalogPicker        *overlay.Catalog
 	catalogField         string
 	catalogGeneration    uint64
@@ -296,6 +298,10 @@ func (sp *settingsPage) applySpinnerTick() tea.Cmd {
 // handlePaste keeps terminal paste inside the active settings editor rather
 // than dropping it or letting a credential reach the conversation prompt.
 func (sp *settingsPage) handlePaste(content string) bool {
+	if sp.providerPicker != nil {
+		sp.providerPicker.Paste(content)
+		return true
+	}
 	if sp.catalogPicker != nil {
 		sp.catalogPicker.Paste(content)
 		return true
@@ -304,6 +310,9 @@ func (sp *settingsPage) handlePaste(content string) bool {
 }
 
 func (sp *settingsPage) Update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
+	if sp.providerPicker != nil {
+		return sp.updateProviderPicker(msg), false
+	}
 	if sp.catalogPicker != nil {
 		return sp.updateCatalogKey(msg), false
 	}
@@ -365,6 +374,8 @@ func (sp *settingsPage) scrollToFocus() {
 }
 
 func (sp *settingsPage) View() string {
+	sp.form.HideHelp = sp.scope == scopeCloud
+	sp.form.CompactActions = sp.scope == scopeCloud
 	lines := sp.form.Lines(sp.width, sp.palette, sp.styles)
 	sp.clampScroll()
 	body := renderScrollable(lines, sp.viewportHeight(), sp.width-2, sp.offset, sp.styles)
@@ -373,7 +384,11 @@ func (sp *settingsPage) View() string {
 		if sp.scope == scopeRouting {
 			label = "Routing"
 		}
-		return "Unsaved " + label + " edits. Discard and leave? y/n\n" + body
+		return "Unsaved " + label + " edits.\n[ Discard and leave ]   [ Keep editing ]\n" + body
+	}
+	if sp.providerPicker != nil {
+		w, h := min(sp.width, 72), min(sp.viewportHeight(), 24)
+		return composeOverlay(body, sp.providerPicker.View(w, h, sp.palette), (sp.width-w)/2, 0)
 	}
 	if sp.catalogPicker != nil {
 		w := min(sp.width, 120)
@@ -387,6 +402,49 @@ func (sp *settingsPage) View() string {
 func (sp *settingsPage) onCommit(key, value string) (string, tea.Cmd, error) {
 	if strings.HasPrefix(key, "routing-") {
 		return sp.commitRouting(key, value)
+	}
+	if key == "cloud-delete" {
+		sp.cloudDeleteConfirm = true
+		return "", nil, nil
+	}
+	if key == "cloud-delete-cancel" {
+		sp.cloudDeleteConfirm = false
+		return "", nil, nil
+	}
+	if key == "cloud-delete-confirm" {
+		sp.cloudDeleteConfirm = false
+		return sp.commitCloud(classifyCloudCommit("cloud-delete", ""))
+	}
+	if key == "cloud-auth-switch" {
+		if sp.cloudDraft.apiKeyEdited {
+			return "Save or discard the API key edit before switching authentication.", nil, nil
+		}
+		r := sp.catalogRow()
+		if r.Preset == nil {
+			return "", nil, nil
+		}
+		target := cloudProviderFamily(r.Preset.ID)
+		if sp.cloudDraft.Route != "subscription" && sp.cloudDraft.Flavor != "responses" {
+			if target == "anthropic" {
+				target = "anthropic-subscription"
+			} else {
+				target = "openai-responses"
+			}
+		}
+		sp.selectCloudRow("template:" + target)
+		sp.uniqueCloudDraftName()
+		sp.cloudDirty = true
+		return "", nil, nil
+	}
+	if key == "cloud-account-select" {
+		return sp.commitCloud(classifyCloudCommit("cloud-row:"+value, ""))
+	}
+	if key == "cloud-add-provider" {
+		if sp.hasUnsavedSettings() {
+			return "Save or discard your changes before adding a provider.", nil, nil
+		}
+		sp.openProviderPicker()
+		return "", nil, nil
 	}
 	if key == "cloud-advanced" {
 		sp.cloudAdvanced = !sp.cloudAdvanced

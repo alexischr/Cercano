@@ -5,6 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"cercano/source/clients/cli/internal/theme"
 )
@@ -16,7 +17,10 @@ type Option struct {
 }
 
 // SelectField is an enum chooser with an inline picker.
+type optionHit struct{ index, x, end, y int }
+
 type SelectField struct {
+	hits       []optionHit
 	key, label string
 	options    []Option
 	current    int // index of the committed value (-1 if none matched)
@@ -91,6 +95,7 @@ func (f *SelectField) View(focused bool, width int, s theme.Styles) string {
 		}
 		return s.Primary.Render(d)
 	}
+	f.hits = nil
 	// Options render horizontally, separated by " · ", and wrap onto further
 	// lines when they don't fit in width. The caller (Form) indents wrapped
 	// lines so they align as a right-hand column under the first option.
@@ -119,6 +124,7 @@ func (f *SelectField) View(focused bool, width int, s theme.Styles) string {
 			cur.WriteString(sep)
 			curW += sepW
 		}
+		f.hits = append(f.hits, optionHit{i, curW, curW + segW, len(lines)})
 		cur.WriteString(seg)
 		curW += segW
 	}
@@ -135,12 +141,16 @@ func (f *SelectField) ViewStacked(focused bool, width int, s theme.Styles) strin
 	if !f.open {
 		return f.View(focused, width, s)
 	}
+	f.hits = nil
 	lines := make([]string, 0, len(f.options))
 	for i, o := range f.options {
+		value := s.Muted.Render(o.Label)
 		if i == f.cursor {
-			lines = append(lines, s.Accent.Render("‹"+o.Label+"›"))
-		} else {
-			lines = append(lines, s.Muted.Render(o.Label))
+			value = s.Accent.Render("‹" + o.Label + "›")
+		}
+		for _, line := range strings.Split(ansi.Hardwrap(value, max(1, width), false), "\n") {
+			f.hits = append(f.hits, optionHit{i, 0, lipgloss.Width(line), len(lines)})
+			lines = append(lines, line)
 		}
 	}
 	return strings.Join(lines, "\n")

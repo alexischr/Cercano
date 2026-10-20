@@ -1099,6 +1099,14 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 
 	case tea.MouseWheelMsg:
 		if m.contentPageActive() {
+			if sp, ok := m.content.(*settingsPage); ok {
+				if sp.providerPicker != nil {
+					return m, sp.updateProviderPicker(msg)
+				}
+				if sp.catalogPicker != nil {
+					return m, sp.updateCatalogKey(msg)
+				}
+			}
 			if scroller, ok := m.content.(contentPageScroller); ok {
 				switch msg.Mouse().Button {
 				case tea.MouseWheelUp:
@@ -1156,6 +1164,9 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 			if mouse.Button != tea.MouseLeft {
 				return m, nil
 			}
+			if sp, ok := m.content.(*settingsPage); ok && (sp.providerPicker != nil || sp.catalogPicker != nil) {
+				return m, sp.handleClick(mouse.X, mouse.Y-m.contentTop())
+			}
 			if m.configSurface != nil && mouse.Y == m.configStripTop() {
 				if tab := configTabAtVisibleX(mouse.X, m.width, m.configSurface.active); tab >= 0 {
 					return m, m.switchConfigTab(tab)
@@ -1168,6 +1179,12 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 				return m, nil
 			}
 			m.contentScrollbarDragging = false
+			if sp, ok := m.content.(*settingsPage); ok {
+				if m.configSurface != nil {
+					m.configSurface.focused = false
+				}
+				return m, sp.handleClick(mouse.X, mouse.Y-m.contentTop())
+			}
 			if cv, ok := m.content.(*contextView); ok && mouse.Button == tea.MouseLeft {
 				if cv.handleClick(mouse.X, mouse.Y-m.contentTop()) {
 					return m, nil
