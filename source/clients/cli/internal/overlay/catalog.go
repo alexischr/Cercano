@@ -591,6 +591,9 @@ func (c *Catalog) View(width, height int, p theme.Palette) string {
 		lines = append(lines, "")
 	}
 	notification := c.State.Notification
+	if notification == "Models refreshed." {
+		notification = ""
+	}
 	if c.notice != "" {
 		notification = c.notice
 	}
@@ -608,6 +611,9 @@ func (c *Catalog) View(width, height int, p theme.Palette) string {
 		buttons = append(buttons, button{"Custom ID…", 4, CatalogCustom})
 	}
 	refreshLabel := "Refresh"
+	if c.State.Notification == "Models refreshed." {
+		refreshLabel = "Models refreshed"
+	}
 	if c.State.Busy {
 		refreshLabel = "Refreshing…"
 	}

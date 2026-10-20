@@ -21,3 +21,16 @@ func TestCatalogRefreshFeedback(t *testing.T) {
 		t.Fatal("busy refresh was activated twice")
 	}
 }
+
+func TestCatalogSuccessFeedbackIsInButton(t *testing.T) {
+	c := NewCatalog("Choose a model", "", false)
+	c.State.Notification = "Models refreshed."
+	view := ansi.Strip(c.View(100, 24, theme.Cracker()))
+	if !strings.Contains(view, "[ Models refreshed ]") || strings.Count(view, "Models refreshed") != 1 {
+		t.Fatalf("success should appear only in button: %s", view)
+	}
+	c.State.Notification = ""
+	if view = ansi.Strip(c.View(100, 24, theme.Cracker())); !strings.Contains(view, "[ Refresh ]") || strings.Contains(view, "Models refreshed") {
+		t.Fatal("button did not reset")
+	}
+}

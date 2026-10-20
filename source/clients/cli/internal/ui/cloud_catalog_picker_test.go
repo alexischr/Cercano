@@ -119,3 +119,30 @@ func TestCatalogRefreshCompletionNotification(t *testing.T) {
 		}
 	}
 }
+
+func TestCatalogSuccessFeedbackExpires(t *testing.T) {
+	p := cloudSamplePage()
+	p.selectCloudRow("profile:work-openai")
+	c := overlay.NewCatalog("Choose a model", "", false)
+	p.catalogPicker = &c
+	result := cloudCatalogResultMsg{page: p, generation: p.catalogGeneration, scope: p.catalogScope()}
+	p.applyCatalogResult(result)
+	cmd := p.catalogFeedbackTimer(result)
+	if cmd == nil {
+		t.Fatal("missing reset timer")
+	}
+	msg, ok := cmd().(cloudCatalogFeedbackExpiredMsg)
+	if !ok {
+		t.Fatal("wrong timer message")
+	}
+	p.catalogGeneration++
+	p.expireCatalogFeedback(msg)
+	if c.State.Notification == "" {
+		t.Fatal("old timer cleared newer feedback")
+	}
+	p.catalogGeneration--
+	p.expireCatalogFeedback(msg)
+	if c.State.Notification != "" {
+		t.Fatal("success feedback did not expire")
+	}
+}

@@ -1858,6 +1858,12 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 	case cloudCatalogResultMsg:
 		if sp, ok := m.content.(*settingsPage); ok && sp == msg.page {
 			sp.applyCatalogResult(msg)
+			return m, sp.catalogFeedbackTimer(msg)
+		}
+		return m, nil
+	case cloudCatalogFeedbackExpiredMsg:
+		if sp, ok := m.content.(*settingsPage); ok && sp == msg.page {
+			sp.expireCatalogFeedback(msg)
 		}
 		return m, nil
 	case settingsCommitDoneMsg:

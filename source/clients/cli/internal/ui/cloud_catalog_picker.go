@@ -22,6 +22,26 @@ type cloudCatalogResultMsg struct {
 	err        string
 }
 
+type cloudCatalogFeedbackExpiredMsg struct {
+	page       *settingsPage
+	picker     *overlay.Catalog
+	generation uint64
+}
+
+func (sp *settingsPage) catalogFeedbackTimer(result cloudCatalogResultMsg) tea.Cmd {
+	if result.generation != sp.catalogGeneration || result.scope != sp.catalogScope() || sp.catalogPicker == nil || sp.catalogPicker.State.Notification != "Models refreshed." {
+		return nil
+	}
+	msg := cloudCatalogFeedbackExpiredMsg{page: sp, picker: sp.catalogPicker, generation: sp.catalogGeneration}
+	return tea.Tick(2*time.Second, func(time.Time) tea.Msg { return msg })
+}
+
+func (sp *settingsPage) expireCatalogFeedback(msg cloudCatalogFeedbackExpiredMsg) {
+	if msg.page == sp && msg.picker == sp.catalogPicker && msg.generation == sp.catalogGeneration && !sp.catalogBusy && sp.catalogPicker != nil && sp.catalogPicker.State.Notification == "Models refreshed." {
+		sp.catalogPicker.State.Notification = ""
+	}
+}
+
 func (sp *settingsPage) catalogScope() string {
 	d := sp.cloudDraft
 	return strings.Join([]string{sp.cloudSelected, d.Name, d.Provider, d.Flavor, d.Backend, d.BaseURL, d.Route}, "\x00")
