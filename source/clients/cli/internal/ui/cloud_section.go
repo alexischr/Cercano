@@ -2,6 +2,7 @@ package ui
 
 import (
 	"cercano/source/server/pkg/agentclient"
+	"cercano/source/server/pkg/config"
 	"fmt"
 
 	"cercano/source/clients/cli/internal/form"
@@ -81,6 +82,14 @@ func (sp *settingsPage) selectCloudRow(rowID string) {
 		for _, prov := range sp.cloudView.Providers {
 			if prov.ID == id {
 				sp.cloudDraft = cloudDraft{Name: prov.ID, Flavor: prov.Flavor, Backend: prov.Backend, Route: prov.Route, BaseURL: prov.BaseURL, Choices: (&agentclient.CloudModelChoices{}).Clone()}
+				// Recommendations are baked provider defaults, not authenticated
+				// discovery results. Show them even before this account is saved.
+				profile := config.CloudProfile{Flavor: prov.Flavor, Backend: prov.Backend, Route: prov.Route, BaseURL: prov.BaseURL}
+				models := config.Defaults().ModelProfiles
+				sp.cloudDraft.Effective = map[string]string{}
+				for _, quality := range []config.CostTier{config.CostEconomy, config.CostStandard, config.CostPremium} {
+					sp.cloudDraft.Effective[string(quality)] = models.ResolveCloudModelForTier(profile, quality.CapabilityTier())
+				}
 				return
 			}
 		}
