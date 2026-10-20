@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"cercano/source/server/internal/agenttools"
 	"cercano/source/server/internal/capabilities"
 	"cercano/source/server/internal/dispatch"
 	"cercano/source/server/pkg/config"
@@ -120,6 +121,14 @@ func (dispatchCap) Execute(ctx context.Context, call *capabilities.Call) (*capab
 	data, err := json.Marshal(map[string]string{"task_id": res.ID, "child_id": res.ChildID, "status": res.Status})
 	if err != nil {
 		return nil, err
+	}
+	// Announce the accepted child on the launching turn so its tool row can
+	// link to the tab. The tool loop supplies the originating tool-call ID.
+	// This callback is not retained by the independently running task.
+	if call.EmitProgress != nil {
+		call.EmitProgress(agenttools.ProgressEvent{
+			Kind: "started", SubAgentID: res.ChildID, SubAgentParentID: convID,
+		})
 	}
 	return capabilities.NewTextResult(string(data)), nil
 }

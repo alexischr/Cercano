@@ -623,6 +623,20 @@ func (c *chatView) Apply(msg tea.Msg) tea.Cmd {
 		e.Status = ""
 
 	case chatProgressMsg:
+		// A launch already has an in-flight tool row. Do not leave a second,
+		// permanent status line behind after the independent child starts.
+		if name, ok := strings.CutPrefix(m.note, "running "); ok && (name == "dispatch" || name == "workflow") {
+			represented := false
+			for _, e := range c.entries {
+				if e.Tool != nil && e.Tool.ToolName == name && e.Tool.Status == ToolStatusInProgress {
+					represented = true
+					break
+				}
+			}
+			if represented {
+				break
+			}
+		}
 		// These are exact host tool-execution notices, not assistant prose.
 		// Retain them for debug without leaking routine polling into chat.
 		if name, ok := strings.CutPrefix(m.note, "running "); ok && routineTaskTool(name) {

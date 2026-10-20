@@ -27,6 +27,10 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 )
 
+type launchLinkSink struct{ events []runner.Event }
+
+func (s *launchLinkSink) Emit(e runner.Event) { s.events = append(s.events, e) }
+
 func TestPublicWorkerDispatchReturnsBeforeChildFinishes(t *testing.T) {
 	var calls atomic.Int32
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -94,7 +98,8 @@ func TestPublicWorkerDispatchReturnsBeforeChildFinishes(t *testing.T) {
 		}
 		return true, nil
 	}
-	if _, err := host.RunTurn(ctx, runner.Request{ConversationID: "owner", Input: "launch work", WorkDir: t.TempDir()}, nil, requester, nil); err != nil {
+	sink := &launchLinkSink{}
+	if _, err := host.RunTurn(ctx, runner.Request{ConversationID: "owner", Input: "launch work", WorkDir: t.TempDir()}, sink, requester, nil); err != nil {
 		t.Fatal(err)
 	}
 	if confirmations != 1 {
@@ -106,6 +111,18 @@ func TestPublicWorkerDispatchReturnsBeforeChildFinishes(t *testing.T) {
 	records, err := manager.List(context.Background(), "owner", 20)
 	if err != nil || len(records) != 1 {
 		t.Fatalf("records=%+v err=%v", records, err)
+	}
+	links := 0
+	for _, ev := range sink.events {
+		if ev.Kind == runner.EventSubAgent && ev.SubAgentKind == "started" {
+			links++
+			if ev.ToolUseID != "launch" || ev.SubAgentID != records[0].ChildID || ev.SubAgentParentID != "owner" {
+				t.Fatalf("wrong launch link: %+v", ev)
+			}
+		}
+	}
+	if links != 1 {
+		t.Fatalf("launch links=%d", links)
 	}
 	if records[0].Terminal() {
 		t.Fatalf("child terminated with parent turn: %+v", records[0])

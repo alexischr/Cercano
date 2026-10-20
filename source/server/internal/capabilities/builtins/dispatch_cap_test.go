@@ -1,8 +1,10 @@
 package builtins
 
 import (
+	"cercano/source/server/internal/agenttools"
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -144,5 +146,41 @@ func TestDispatchSchemaDescription(t *testing.T) {
 	// Verify the tier options are still documented
 	if !strings.Contains(string(schema), "Explicit light selects Economy, standard selects Standard, and deep selects Premium") {
 		t.Error("schema should document tier selection behavior")
+	}
+}
+
+func TestDispatchLaunchEmitsChildLinkOnlyAfterAcceptance(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		var events []agenttools.ProgressEvent
+		accepted := false
+		svc := capabilities.Services{Tasks: launchProbe{launch: func(_ context.Context, spec dispatch.Spec) (conversation.TaskRecord, error) {
+			if spec.Emit != nil {
+				t.Fatal("launch retained foreground callback")
+			}
+			if fail {
+				return conversation.TaskRecord{}, errors.New("launch failed")
+			}
+			accepted = true
+			return conversation.TaskRecord{ID: "task", ChildID: "child", Status: "accepted"}, nil
+		}}}
+		_, err := Dispatch().Execute(t.Context(), &capabilities.Call{Args: json.RawMessage(`{"task":"work"}`), ConversationID: "owner", Svc: svc, EmitProgress: func(e agenttools.ProgressEvent) {
+			if !accepted {
+				t.Error("event before acceptance")
+			}
+			events = append(events, e)
+		}})
+		if fail {
+			if err == nil || len(events) != 0 {
+				t.Fatalf("failed launch emitted link: %v %v", err, events)
+			}
+			continue
+		}
+		if err != nil || len(events) != 1 {
+			t.Fatalf("accepted launch needs one link event: %v %v", err, events)
+		}
+		e := events[0]
+		if e.Kind != "started" || e.SubAgentID != "child" || e.SubAgentParentID != "owner" {
+			t.Fatalf("wrong link event: %+v", e)
+		}
 	}
 }
