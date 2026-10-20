@@ -12,8 +12,8 @@ import (
 func layoutPage() *settingsPage {
 	p := cloudSamplePage()
 	p.scope = scopeCloud
-	p.form = form.New([]form.Section{p.buildCloudSection()})
-	p.form.OnReload = func() []form.Section { return []form.Section{p.buildCloudSection()} }
+	p.form = form.New(p.buildCloudSections())
+	p.form.OnReload = p.buildCloudSections
 	p.form.OnCommit = p.onCommit
 	return p
 }
@@ -81,7 +81,8 @@ func TestCloudProviderLayoutSectionsAndRemoval(t *testing.T) {
 	p := layoutPage()
 	p.selectCloudRow("profile:work-openai")
 	p.form.Reload()
-	view := ansi.Strip(p.View())
+	// Separate bordered sections can extend below the modal viewport.
+	view := ansi.Strip(strings.Join(p.form.Lines(p.formWidth(), p.palette, p.styles), "\n"))
 	for _, label := range []string{"Connection", "Model tiers", "Advanced settings"} {
 		if !strings.Contains(view, label) {
 			t.Fatal(view)
@@ -90,6 +91,7 @@ func TestCloudProviderLayoutSectionsAndRemoval(t *testing.T) {
 	if strings.Contains(view, "base-url") {
 		t.Fatal("advanced exposed")
 	}
+	p.ScrollTo(10000)
 	layoutClick(t, p, "delete account")
 	if !p.cloudDeleteConfirm {
 		t.Fatal("removal did not ask confirmation")

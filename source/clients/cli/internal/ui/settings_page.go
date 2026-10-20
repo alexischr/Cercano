@@ -187,7 +187,7 @@ func (sp *settingsPage) snapshotSections() []form.Section {
 	case scopeGeneral:
 		return append(buildSettingsSections(sp.cfg, sp.mode, sp.accentToken), sp.devToolsSection())
 	case scopeCloud:
-		return []form.Section{sp.buildCloudSection()}
+		return sp.buildCloudSections()
 	case scopeRouting:
 		return sp.buildRoutingSections()
 	case scopeUI:

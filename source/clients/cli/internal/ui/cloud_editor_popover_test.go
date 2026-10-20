@@ -83,3 +83,18 @@ func TestCloudEditorPopoverBoundsAndNestedPicker(t *testing.T) {
 		}
 	}
 }
+
+func TestCloudEditorUsesSeparateSectionBlocks(t *testing.T) {
+	p := layoutPage()
+	p.selectCloudRow("profile:work-openai")
+	p.form.Reload()
+	want := []string{"Edit provider", "Connection", "Model tiers", "Advanced settings", "Actions"}
+	if len(p.form.Sections) != len(want) {
+		t.Fatalf("editor sections = %d; want %d separate bordered blocks", len(p.form.Sections), len(want))
+	}
+	for i, title := range want {
+		if p.form.Sections[i].Title != title {
+			t.Fatalf("section %d = %q; want %q", i, p.form.Sections[i].Title, title)
+		}
+	}
+}

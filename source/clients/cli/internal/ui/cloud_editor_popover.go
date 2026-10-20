@@ -39,3 +39,37 @@ func (sp *settingsPage) closeCloudEditor() {
 func (sp *settingsPage) cloudEditorActive() bool {
 	return sp.cloudEditorOpen && sp.cloudSelected != "" && sp.scope == scopeCloud
 }
+
+// Use the same bordered Section renderer as configuration pages. Keep one
+// form so keyboard navigation, scrolling and mouse hit-testing stay shared.
+func (sp *settingsPage) buildCloudSections() []form.Section {
+	section := sp.buildCloudSection()
+	if !sp.cloudEditorActive() {
+		return []form.Section{section}
+	}
+	sections := []form.Section{{Title: section.Title}}
+	for _, field := range section.Fields {
+		title := ""
+		heading := true
+		switch field.Key() {
+		case "cloud-connection-heading":
+			title = "Connection"
+		case "cloud-model-heading":
+			title = "Model tiers"
+		case "cloud-actions-heading":
+			title = "Actions"
+		case "cloud-advanced":
+			title = "Advanced settings"
+			heading = false
+		}
+		if title != "" {
+			sections = append(sections, form.Section{Title: title})
+			if heading {
+				continue
+			}
+		}
+		last := len(sections) - 1
+		sections[last].Fields = append(sections[last].Fields, field)
+	}
+	return sections
+}
