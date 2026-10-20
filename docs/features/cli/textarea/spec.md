@@ -25,7 +25,8 @@ for extracting the proven behavior into a focused upstream Bubbles proposal/PR.
   - amber prompt text and muted placeholder
   - no cursor-line highlight or end-of-buffer glyph
   - dynamic height grows from 1 to 6 rows, then scrolls internally
-  - `Enter` submits and `Shift+Enter` inserts a newline
+  - `Enter` submits; `Shift+Enter` and `Option+Enter`/`Alt+Enter` insert a
+    newline
 - Add native-feeling prompt text selection:
   - mouse drag selection
   - keyboard selection extension
@@ -259,6 +260,31 @@ Mapping:
 | `Ctrl+C` | copy prompt selection when active; otherwise existing clear/quit |
 | `Cmd+Z` | undo |
 | `Cmd+Shift+Z` | redo |
+| `Enter` | submit the message |
+| `Shift+Enter` | insert a newline at the cursor |
+| `Option+Enter` / `Alt+Enter` | insert a newline at the cursor (same as `Shift+Enter`) |
+
+The newline chords are matched structurally (Enter key code plus a Shift or
+Alt modifier), not by the chord's display string: when the terminal reports
+associated text, the event's `Text` is `"\n"` and `String()` returns `"\n"`
+instead of the chord name. `Option+Enter` is detected with the same
+`promptAltMod` helper the word-jump bindings use, so it also covers encodings
+that only surface the modifier in the string representation.
+
+### Newline chord terminal limitations
+
+- Terminals with the Kitty keyboard protocol (Kitty, Ghostty, iTerm2 ≥ 3.5,
+  WezTerm) report `Shift+Enter`, `Option+Enter`, and `Alt+Enter` as distinct
+  modifier+Enter events; all three insert newlines.
+- Terminals without it encode `Option+Enter`/`Alt+Enter` as `ESC CR`, which
+  the input decoder resolves to a single Alt+Enter key event (it is not
+  confused with a bare `Esc`).
+- macOS Terminal.app default settings send the composed special character
+  for `Option+Enter` instead of a key event; enable "Use Option as Meta Key"
+  (or use a Kitty-protocol terminal) to get newline behavior there. A plain
+  `Enter` in that configuration still submits as usual.
+- Multi-line input always remains available regardless of terminal via
+  bracketed paste.
 
 The root model should stop stealing `Shift+Up` and `Shift+Down` for chat
 scrollback while the prompt owns focus, because those are selection gestures.
@@ -289,7 +315,7 @@ Undo groups:
 
 - paste: one group
 - selection replacement: one group
-- `Shift+Enter` newline: one group
+- `Shift+Enter` / `Option+Enter` / `Alt+Enter` newline: one group
 - typing: coalesced while contiguous and uninterrupted
 - backspace: coalesced while adjacent and same direction
 - delete: coalesced while adjacent and same direction
@@ -416,6 +442,9 @@ fragile fork.
 
 - prompt still submits on `Enter`
 - `Shift+Enter` inserts newline and grows height
+- `Option+Enter` / `Alt+Enter` inserts newline and grows height (structurally
+  detected as Enter+Alt, matching both the `ESC CR` legacy encoding and the
+  Kitty `CSI 13;3u` enhanced encoding)
 - root `Ctrl+C` copies prompt selection before clear/quit
 - root `Ctrl+C` still clears non-empty prompt when no prompt selection exists
 - prompt height changes still resize chat viewport correctly
@@ -443,6 +472,8 @@ Verify:
 - wheel outside prompt scrolls chat buffer
 - `Enter` submits
 - `Shift+Enter` inserts newline
+- `Option+Enter` inserts newline (macOS Terminal.app: enable
+  "Use Option as Meta Key" or use a Kitty-protocol terminal)
 - macOS navigation works:
   - `Option+Left/Right`
   - `Cmd+Left/Right`

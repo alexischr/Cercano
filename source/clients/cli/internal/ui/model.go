@@ -1631,12 +1631,16 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 			return m, cmd
 		}
 		unmodifiedArrow := msg.Key().Mod == 0
-		// Shift+Enter composes a hard newline instead of submitting. Detect it
-		// structurally (Enter code + Shift modifier) rather than by the chord
-		// string: on terminals that report associated text (we enable Kitty
-		// ReportAssociatedText), the event carries Text "\n" and msg.String()
-		// returns "\n" instead of "shift+enter", so a string-only match misses.
-		if ek := msg.Key(); ek.Code == tea.KeyEnter && ek.Mod.Contains(tea.ModShift) {
+		// Shift+Enter and Alt/Option+Enter compose a hard newline instead of
+		// submitting. Detect them structurally (Enter code + Shift or Alt
+		// modifier) rather than by the chord string: on terminals that report
+		// associated text (we enable Kitty ReportAssociatedText), the event
+		// carries Text "\n" and msg.String() returns "\n" instead of
+		// "shift+enter", so a string-only match misses. Legacy terminals encode
+		// Option+Enter as ESC CR and Kitty terminals as CSI 13;3u; both decode
+		// to KeyEnter+ModAlt, which promptAltMod recognizes (plus its
+		// string-repr fallback for exotic encodings).
+		if ek := msg.Key(); ek.Code == tea.KeyEnter && (ek.Mod.Contains(tea.ModShift) || promptAltMod(msg)) {
 			m.input.InsertString("\n")
 			m.relayout()
 			return m, nil

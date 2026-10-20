@@ -66,6 +66,68 @@ func TestPrompt_ShiftEnterInsertsNewline(t *testing.T) {
 	}
 }
 
+func TestPrompt_AltEnterInsertsNewline(t *testing.T) {
+	// Alt/Option+Enter must compose a hard newline like Shift+Enter. A
+	// macOS terminal (Terminal.app, iTerm2 without the Kitty protocol) sends
+	// ESC CR for Option+Enter, which the key decoder maps structurally to
+	// KeyEnter+ModAlt; Kitty-capable terminals report CSI 13;3u, which
+	// decodes to the same KeyPress. Like Shift+Enter, an associated-text
+	// payload can shadow the chord string, so match structurally.
+	forms := []struct {
+		name string
+		msg  tea.KeyPressMsg
+	}{
+		{"chord", tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModAlt}},
+		{"associated text", tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModAlt, Text: "\n"}},
+	}
+	for _, f := range forms {
+		t.Run(f.name, func(t *testing.T) {
+			m := New(nil, false)
+			m.width = 80
+			m.height = 24
+			m.relayout()
+
+			next, _ := m.Update(f.msg)
+			got := next.(Model)
+
+			if got.input.Value() != "\n" {
+				t.Fatalf("alt+enter (%s) value = %q, want a single newline", f.name, got.input.Value())
+			}
+			if h := got.input.Height(); h != 2 {
+				t.Fatalf("height after alt+enter (%s) = %d, want 2", f.name, h)
+			}
+		})
+	}
+}
+
+func TestPrompt_EnterStillSubmits(t *testing.T) {
+	// Plain Enter (including the associated-text form a Kitty terminal
+	// reports for the bare key) must keep submitting, not compose.
+	forms := []struct {
+		name string
+		msg  tea.KeyPressMsg
+	}{
+		{"chord", tea.KeyPressMsg{Code: tea.KeyEnter}},
+		{"associated text", tea.KeyPressMsg{Code: tea.KeyEnter, Text: "\n"}},
+	}
+	for _, f := range forms {
+		t.Run(f.name, func(t *testing.T) {
+			m := New(nil, false)
+			m.width = 80
+			m.height = 24
+			m.input.SetValue("hello")
+			m.relayout()
+
+			next, _ := m.Update(f.msg)
+			got := next.(Model)
+
+			if got.input.Value() != "" {
+				t.Fatalf("enter (%s) left draft %q, want submitted (cleared)", f.name, got.input.Value())
+			}
+		})
+	}
+}
+
 func TestPrompt_WrapsAndCapsHeight(t *testing.T) {
 	p := newTestPromptInput(8) // 2 prompt cols + 6 text cols
 	p.SetValue("abcdefghijkl")
