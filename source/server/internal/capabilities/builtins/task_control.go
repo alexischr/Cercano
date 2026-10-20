@@ -29,7 +29,7 @@ func (c taskControl) Description() string {
 	case "list":
 		return "List this chat's independent tasks, newest first. Does not list tasks owned by other chats."
 	case "inspect":
-		return "Inspect this chat's task status and saved result, including errors and partial output."
+		return "Inspect this chat's task status, saved result, and bounded recent execution evidence. Inspect before reporting progress; distinguish child-authored claims from recorded tool outcomes. Missing results do not prove execution, and silence does not prove a stall."
 	case "wait":
 		return "Wait up to timeout_seconds (default 30, maximum 300) for this chat's task. Timeout or cancellation stops waiting, not execution."
 	default:

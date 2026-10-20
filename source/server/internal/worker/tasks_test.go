@@ -101,8 +101,11 @@ func TestWorkerTaskBridgeOwnershipAndLifetime(t *testing.T) {
 	if err != nil || len(records) != 1 {
 		t.Fatalf("list %v %v", records, err)
 	}
-	if _, err := proxy.Inspect(ctx, "owner", accepted.ID); err != nil {
-		t.Fatal(err)
+	if err := store.EnsureConversation(ctx, accepted.ChildID, "", "fixture"); err != nil { t.Fatal(err) }
+	if err := store.(conversation.DispatchEventStore).AppendDispatchEvent(ctx, conversation.DispatchEvent{ConversationID: accepted.ChildID, Seq: 1, Kind: "tool_call", Timestamp: time.Now(), PayloadJSON: `{"tool_name":"Read","tool_use_id":"read-one"}`}); err != nil { t.Fatal(err) }
+	inspected, err := proxy.Inspect(ctx, "owner", accepted.ID)
+	if err != nil || inspected.Evidence == nil || len(inspected.Evidence.Recent) != 1 || inspected.Evidence.Recent[0].Tool != "Read" || inspected.Terminal() {
+		t.Fatalf("worker lost running evidence: %+v %v", inspected, err)
 	}
 	response := handleTaskControl(ctx, manager, "foreign", &proto.TaskControlRequest{Operation: "inspect", TaskId: accepted.ID})
 	if !response.NotFound || len(response.ResultJson) > 0 {
@@ -128,6 +131,10 @@ func TestWorkerTaskBridgeOwnershipAndLifetime(t *testing.T) {
 	record, err = manager.Wait(waitCtx, "owner", accepted.ID)
 	if err != nil || record.Status != "completed" {
 		t.Fatalf("final %+v %v", record, err)
+	}
+	inspected, err = manager.Inspect(context.Background(), "owner", accepted.ID)
+	if err != nil || inspected.Evidence == nil || inspected.Status != record.Status || string(inspected.ResultJSON) != string(record.ResultJSON) || inspected.NotificationPending != record.NotificationPending {
+		t.Fatalf("terminal inspection changed outcome: %+v %v", inspected, err)
 	}
 }
 

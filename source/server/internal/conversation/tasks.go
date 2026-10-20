@@ -29,18 +29,19 @@ type TaskStore interface {
 // tab visibility. ResultJSON contains the complete dispatch result, including
 // partial output on failure. Interrupted work must never be replayed implicitly.
 type TaskRecord struct {
-	ID                  string          `json:"id"`
-	ParentID            string          `json:"parent_id"`
-	Status              string          `json:"status"`
-	Task                string          `json:"task"`
-	WorkDir             string          `json:"work_dir"`
-	ChildID             string          `json:"child_id,omitempty"`
-	ResultJSON          json.RawMessage `json:"result,omitempty"`
-	Error               string          `json:"error,omitempty"`
-	CreatedAt           time.Time       `json:"created_at"`
-	UpdatedAt           time.Time       `json:"updated_at"`
-	NotificationPending bool            `json:"notification_pending"`
-	WakeClaimed         bool            `json:"wake_claimed"`
+	Evidence            *TaskExecutionEvidence `json:"evidence,omitempty"` // inspection-only; not persisted
+	ID                  string                 `json:"id"`
+	ParentID            string                 `json:"parent_id"`
+	Status              string                 `json:"status"`
+	Task                string                 `json:"task"`
+	WorkDir             string                 `json:"work_dir"`
+	ChildID             string                 `json:"child_id,omitempty"`
+	ResultJSON          json.RawMessage        `json:"result,omitempty"`
+	Error               string                 `json:"error,omitempty"`
+	CreatedAt           time.Time              `json:"created_at"`
+	UpdatedAt           time.Time              `json:"updated_at"`
+	NotificationPending bool                   `json:"notification_pending"`
+	WakeClaimed         bool                   `json:"wake_claimed"`
 }
 
 func (t TaskRecord) Terminal() bool {

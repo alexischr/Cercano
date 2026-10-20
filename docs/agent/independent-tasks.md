@@ -23,6 +23,18 @@ Existing routing, budgets, approved tool grants, and policy checks still apply. 
 
 ## Progress and completion
 
+Before reporting a child's progress, use `task_inspect`. Its optional `evidence`
+field summarizes the latest 32 recorded events: last recorded activity, recent
+model/tool requests and outcomes, and up to 1,024 characters of recent
+child-authored text. Child text is an unverified claim, not proof of successful
+execution. A request without a recorded result does not prove it is still
+executing, and silence does not prove a stall. `window_limited` indicates omitted
+older events, oversized payloads, or malformed payloads. No evidence is returned
+when no events are available; lifecycle and saved-result fields remain intact.
+The evidence summary excludes raw prompts, reasoning blocks, tool arguments,
+and tool-result bodies. Inspection neither acknowledges completion nor changes
+task state.
+
 The CLI uses a dedicated, chat-scoped `SubscribeTasks` stream, independent of the main turn. It receives authoritative lifecycle snapshots and durable progress records. Reconnect cursors avoid duplicate records, and stale events from a previously selected chat cannot update the new chat. Progress is currently published at persisted model-response and tool-event boundaries, not token-by-token.
 
 A child finishing while the main agent is busy leaves a durable pending notification. The host supplies it at a safe turn boundary rather than canceling active work. When idle, the host can run a completion-handling turn without a connected CLI. Pending tool approvals remain gated and available for reconnection. Interrupted completion handling leaves the result inspectable rather than repeatedly triggering automatic retries.

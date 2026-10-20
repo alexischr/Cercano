@@ -141,7 +141,14 @@ func (m *Manager) run(ctx context.Context, t conversation.TaskRecord, spec dispa
 	}
 }
 func (m *Manager) Inspect(ctx context.Context, parent, id string) (conversation.TaskRecord, error) {
-	return m.store.GetTask(ctx, parent, id)
+	t, err := m.store.GetTask(ctx, parent, id)
+	if err != nil {
+		return t, err
+	}
+	if store, ok := m.store.(conversation.TaskEvidenceStore); ok {
+		t.Evidence, err = store.TaskEvidence(ctx, parent, id)
+	}
+	return t, err
 }
 func (m *Manager) List(ctx context.Context, parent string, limit int) ([]conversation.TaskRecord, error) {
 	return m.store.ListTasks(ctx, parent, limit)
