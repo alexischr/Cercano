@@ -72,10 +72,14 @@ func (sp *settingsPage) handleClick(x, y int) tea.Cmd {
 		w := min(sp.width, 120)
 		return sp.updateCatalogKey(tea.MouseClickMsg{X: x - (sp.width-w)/2, Y: y, Button: tea.MouseLeft})
 	}
-	if x < 0 || x >= sp.width-2 || y < 0 || y >= sp.viewportHeight() {
+	if sp.cloudEditorActive() {
+		x -= (sp.width-sp.formWidth()-2)/2 + 1
+		y--
+	}
+	if x < 0 || x >= sp.formWidth()-2 || y < 0 || y >= sp.formHeight() {
 		return nil
 	}
-	sp.form.Lines(sp.width, sp.palette, sp.styles)
+	sp.form.Lines(sp.formWidth(), sp.palette, sp.styles)
 	return sp.form.Click(x, y+sp.offset)
 }
 

@@ -51,6 +51,8 @@ func revealCloudCustomEntry(field string) {
 func (sp *settingsPage) selectCloudRow(rowID string) {
 	sp.invalidateCatalog()
 	sp.catalogPicker = nil
+	sp.cloudEditorOpen = rowID != "" && (sp.cloudEditorActive() || len(rowID) > 8 && rowID[:8] == "profile:")
+	sp.offset = 0
 	sp.cloudSelected = rowID
 	sp.cloudAdvanced = false
 	sp.cloudDeleteConfirm = false
@@ -85,8 +87,8 @@ func (sp *settingsPage) selectCloudRow(rowID string) {
 	}
 }
 
-// buildCloudSection renders the Cloud Providers list with an inline detail editor
-// under the selected row.
+// buildCloudSection supplies the configured-provider modal form when open,
+// otherwise the provider list and any new-provider setup draft.
 func (sp *settingsPage) buildCloudSection() form.Section {
 	// Save keeps the draft selected while the profile snapshot reloads. Refresh
 	// derived recommendations without reselecting (and discarding draft edits).
@@ -98,6 +100,19 @@ func (sp *settingsPage) buildCloudSection() form.Section {
 			}
 		}
 	}
+	if sp.cloudEditorActive() {
+		fields := []form.Field{form.NewButton("cloud-editor-close", "Close", true)}
+		fields = append(fields, sp.cloudDetailFields(sp.catalogRow())...)
+		return form.Section{Title: "Edit provider", Fields: fields}
+	}
+	section := sp.cloudProviderListSection()
+	if sp.cloudSelected != "" {
+		section.Fields = append(section.Fields, sp.cloudDetailFields(sp.catalogRow())...)
+	}
+	return section
+}
+
+func (sp *settingsPage) cloudProviderListSection() form.Section {
 	rows := buildCloudRowsFromProviders(sp.cloudView)
 	var fields []form.Field
 	seen := map[string]bool{}
@@ -120,9 +135,6 @@ func (sp *settingsPage) buildCloudSection() form.Section {
 		fields = append(fields, form.NewReadOnly("cloud-empty", "Providers", "No providers configured", ""))
 	}
 	fields = append(fields, form.NewButton("cloud-add-provider", "+ Add provider…", true))
-	if sp.cloudSelected != "" {
-		fields = append(fields, sp.cloudDetailFields(sp.catalogRow())...)
-	}
 	return form.Section{Title: "Cloud Providers", Fields: fields}
 }
 
@@ -131,8 +143,7 @@ func (sp *settingsPage) buildCloudSection() form.Section {
 // with the sibling provider rows below it.
 const cloudDetailIndent = "  "
 
-// cloudDetailFields are the editor fields shown beneath the selected row. Their
-// labels are indented (cloudDetailIndent) to signal they belong to the row above.
+// cloudDetailFields are shared by the provider editor popover and setup draft.
 func (sp *settingsPage) cloudDetailFields(r cloudRow) []form.Field {
 	d := sp.cloudDraft
 	il := func(s string) string { return cloudDetailIndent + s }

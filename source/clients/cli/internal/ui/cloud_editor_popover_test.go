@@ -1,0 +1,85 @@
+package ui
+
+import (
+	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
+	"strings"
+	"testing"
+)
+
+func TestConfiguredCloudEditorIsModal(t *testing.T) {
+	p := layoutPage()
+	p.selectCloudRow("profile:work-openai")
+	p.form.Reload()
+	for _, f := range p.buildCloudSection().Fields {
+		if f.Key() == "cloud-add-provider" {
+			t.Fatal("configured editor still shares the provider list form")
+		}
+	}
+	_, closed := p.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if closed || p.cloudSelected != "" {
+		t.Fatal("Escape should close the editor, not Cloud settings")
+	}
+}
+
+func TestCloudEditorPopoverMouseAndUnsavedClose(t *testing.T) {
+	p := layoutPage()
+	p.SetSize(140, 50)
+	layoutClick(t, p, "OpenAI")
+	if !p.cloudEditorActive() {
+		t.Fatal("provider click did not open editor")
+	}
+	p.View()
+	cursor := p.form.Cursor()
+	p.handleClick(0, 4)
+	if p.form.Cursor() != cursor {
+		t.Fatal("outside click reached editor")
+	}
+	layoutClick(t, p, "API key")
+	field, _ := cleanupFieldAt(p, "cloud-key")
+	if !field.Editing() {
+		t.Fatal("centered editor mouse coordinates incorrect")
+	}
+	p.handlePaste("pending-secret")
+	layoutClick(t, p, "Close")
+	if !p.settingsNavigationPrompt || !p.cloudEditorActive() {
+		t.Fatal("close discarded dirty credential")
+	}
+	p.Update(tea.KeyPressMsg{Code: 'n', Text: "n"})
+	if p.cloudDraft.apiKey != "pending-secret" {
+		t.Fatal("keep editing lost credential")
+	}
+	layoutClick(t, p, "Close")
+	_, closed := p.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
+	if closed || p.cloudEditorActive() || p.cloudDraft.apiKey != "" {
+		t.Fatal("discard should return to provider list and clear credential")
+	}
+}
+
+func TestCloudEditorPopoverBoundsAndNestedPicker(t *testing.T) {
+	for _, size := range [][2]int{{60, 24}, {100, 36}, {140, 50}} {
+		p := layoutPage()
+		p.SetSize(size[0], size[1])
+		p.selectCloudRow("profile:work-openai")
+		p.form.Reload()
+		view := p.View()
+		if len(strings.Split(view, "\n")) > p.viewportHeight() {
+			t.Fatal("popover exceeded viewport height")
+		}
+		for _, line := range strings.Split(view, "\n") {
+			if ansi.StringWidth(line) > p.width {
+				t.Fatal("popover exceeded viewport width")
+			}
+		}
+		p.openCatalog("cloud-image", false)
+		p.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+		if p.catalogPicker != nil || !p.cloudEditorActive() {
+			t.Fatal("nested picker Escape closed editor")
+		}
+		m := Model{content: p, configSurface: &configSurface{active: configTabCloud, focused: false}}
+		m, _, _ = m.handleConfigSurfaceKey(tea.KeyPressMsg{Code: tea.KeyEscape})
+		if p.cloudEditorActive() || m.configSurface.focused {
+			t.Fatal("editor Escape escaped to config tabs")
+		}
+	}
+}

@@ -333,3 +333,5 @@ Cloud fields, buttons, account options, and catalog rows support mouse clicks.
 Popovers consume mouse-wheel input without scrolling the page behind them.
 Keyboard navigation remains available, without navigation-help footers. Removing
 an account requires confirmation; cancelling new setup clears its pending key.
+
+Configured providers in `/config > Cloud` open a separate editing popover when selected. The provider list remains behind it; Close or Escape returns to that list, with confirmation before discarding unsaved changes. Model pickers open above the editor and dismiss back to it.

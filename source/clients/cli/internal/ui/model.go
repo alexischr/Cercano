@@ -1164,7 +1164,7 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 			if mouse.Button != tea.MouseLeft {
 				return m, nil
 			}
-			if sp, ok := m.content.(*settingsPage); ok && (sp.providerPicker != nil || sp.catalogPicker != nil) {
+			if sp, ok := m.content.(*settingsPage); ok && (sp.providerPicker != nil || sp.catalogPicker != nil || sp.cloudEditorActive()) {
 				return m, sp.handleClick(mouse.X, mouse.Y-m.contentTop())
 			}
 			if m.configSurface != nil && mouse.Y == m.configStripTop() {

@@ -86,7 +86,7 @@ type settingsPage struct {
 	mode string
 	// Cloud provider list + inline detail-editor state. profiles/activeProfile
 	// cache GetCloudProfiles like cfg caches GetConfig; profilesLoaded gates the
-	// fetch. cloudSelected is the expanded row's ID ("" = none); cloudDraft holds
+	// fetch. cloudSelected is the edited row's ID ("" = none); cloudDraft holds
 	// the in-progress edit; cloudDraftNew is true when creating (template/other).
 	profiles       []agentclient.CloudProfileInfo
 	activeProfile  string
@@ -95,6 +95,7 @@ type settingsPage struct {
 	// cloud section renders (one row per provider with its profiles grouped
 	// under it). Loaded alongside profiles under the same profilesLoaded gate.
 	cloudView                agentclient.CloudProvidersView
+	cloudEditorOpen          bool
 	cloudSelected            string
 	cloudAdvanced            bool
 	cloudDraft               cloudDraft
@@ -324,6 +325,10 @@ func (sp *settingsPage) Update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			sp.settingsNavigationPrompt = false
 			if target == "__close" {
 				sp.discardSettingsDrafts()
+				if sp.cloudEditorActive() {
+					sp.closeCloudEditor()
+					return nil, false
+				}
 				return nil, true
 			}
 			sp.selectCloudRow(target)
@@ -341,6 +346,10 @@ func (sp *settingsPage) Update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	if closed && sp.hasUnsavedSettings() {
 		sp.settingsPendingLeave = "__close"
 		sp.settingsNavigationPrompt = true
+		closed = false
+	}
+	if closed && sp.cloudEditorActive() {
+		sp.closeCloudEditor()
 		closed = false
 	}
 	if sp.catalogReloadPending {
@@ -362,9 +371,9 @@ const scrollFocusMargin = 2
 // scrollToFocus moves the scroll offset so the focused field stays within the
 // visible viewport (with a small margin) after keyboard navigation.
 func (sp *settingsPage) scrollToFocus() {
-	sp.form.Lines(sp.width, sp.palette, sp.styles) // refresh focusedLine
+	sp.form.Lines(sp.formWidth(), sp.palette, sp.styles) // refresh focusedLine
 	fl := sp.form.FocusedLine()
-	vh := sp.viewportHeight()
+	vh := sp.formHeight()
 	if fl < sp.offset+scrollFocusMargin {
 		sp.offset = fl - scrollFocusMargin
 	} else if fl >= sp.offset+vh-scrollFocusMargin {
@@ -376,9 +385,12 @@ func (sp *settingsPage) scrollToFocus() {
 func (sp *settingsPage) View() string {
 	sp.form.HideHelp = sp.scope == scopeCloud
 	sp.form.CompactActions = sp.scope == scopeCloud
-	lines := sp.form.Lines(sp.width, sp.palette, sp.styles)
+	lines := sp.form.Lines(sp.formWidth(), sp.palette, sp.styles)
 	sp.clampScroll()
-	body := renderScrollable(lines, sp.viewportHeight(), sp.width-2, sp.offset, sp.styles)
+	body := renderScrollable(lines, sp.formHeight(), sp.formWidth()-2, sp.offset, sp.styles)
+	if sp.cloudEditorActive() {
+		body = sp.cloudEditorView(body)
+	}
 	if sp.settingsNavigationPrompt {
 		label := "Cloud"
 		if sp.scope == scopeRouting {
@@ -400,6 +412,15 @@ func (sp *settingsPage) View() string {
 
 // onCommit routes a committed field to its sink.
 func (sp *settingsPage) onCommit(key, value string) (string, tea.Cmd, error) {
+	if key == "cloud-editor-close" {
+		if sp.hasUnsavedSettings() {
+			sp.settingsPendingLeave = "__close"
+			sp.settingsNavigationPrompt = true
+		} else {
+			sp.closeCloudEditor()
+		}
+		return "", nil, nil
+	}
 	if strings.HasPrefix(key, "routing-") {
 		return sp.commitRouting(key, value)
 	}
@@ -648,13 +669,13 @@ func (sp *settingsPage) onCommit(key, value string) (string, tea.Cmd, error) {
 func (sp *settingsPage) ScrollBy(delta int)  { sp.offset += delta; sp.clampScroll() }
 func (sp *settingsPage) ScrollTo(offset int) { sp.offset = offset; sp.clampScroll() }
 func (sp *settingsPage) ScrollState() contentPageScrollState {
-	total := len(sp.form.Lines(sp.width, sp.palette, sp.styles))
-	return contentPageScrollState{Total: total, Height: sp.viewportHeight(), Offset: sp.offset}
+	total := len(sp.form.Lines(sp.formWidth(), sp.palette, sp.styles))
+	return contentPageScrollState{Total: total, Height: sp.formHeight(), Offset: sp.offset}
 }
 
 func (sp *settingsPage) clampScroll() {
-	total := len(sp.form.Lines(sp.width, sp.palette, sp.styles))
-	max := total - sp.viewportHeight()
+	total := len(sp.form.Lines(sp.formWidth(), sp.palette, sp.styles))
+	max := total - sp.formHeight()
 	if max < 0 {
 		max = 0
 	}

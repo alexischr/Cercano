@@ -22,7 +22,7 @@ func layoutClick(t *testing.T, p *settingsPage, label string) {
 	lines := strings.Split(ansi.Strip(p.View()), "\n")
 	for y, line := range lines {
 		if strings.Contains(line, label) {
-			p.handleClick(6, y)
+			p.handleClick(ansi.StringWidth(line[:strings.Index(line, label)])+1, y)
 			return
 		}
 	}
@@ -130,6 +130,7 @@ func TestCloudProviderRootMouseAndScroll(t *testing.T) {
 		t.Fatal("modal wheel scrolled background")
 	}
 	p.catalogPicker = nil
+	p.closeCloudEditor()
 	p.offset = 0
 	p.cloudDirty = false
 	p.form.Reload()
