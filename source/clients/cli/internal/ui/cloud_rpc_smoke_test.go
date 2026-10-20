@@ -1,8 +1,10 @@
 package ui
 
 import (
+	"cercano/source/clients/cli/internal/overlay"
 	"cercano/source/server/pkg/agentclient"
 	"cercano/source/server/pkg/proto"
+	tea "charm.land/bubbletea/v2"
 	"context"
 	"google.golang.org/grpc"
 	"net"
@@ -44,36 +46,44 @@ func TestCloudSaveRPCSmokeAndErrorRetention(t *testing.T) {
 	defer client.Close()
 	page := draftTestPage()
 	page.agent = client
-	page.commitCloud(classifyCloudCommit("cloud-quality-premium", "custom"))
-	page.commitCloud(classifyCloudCommit("cloud-image", "custom-image"))
+	for _, edit := range []struct{ key, value string }{{"cloud-quality-premium", "custom"}, {"cloud-image", "custom-image"}, {"cloud-base-url", "https://example.invalid/v1"}} {
+		if _, _, err := page.onCommit(edit.key, edit.value); err != nil {
+			t.Fatal(err)
+		}
+		if page.cloudDirty {
+			t.Fatal("successful edit left dirty state")
+		}
+	}
+	page.cloudModelsFetched = true
+	page.cloudModels = []agentclient.CloudModelInfo{{ID: "picked", Metadata: &agentclient.CatalogMetadata{Chat: agentclient.CatalogCapabilitySupported, Tools: agentclient.CatalogCapabilitySupported}}}
+	page.openCatalog("cloud-quality-standard", false)
+	page.catalogPicker.State = overlay.CatalogState{}
+	page.catalogPicker.Paste("picked")
+	page.updateCatalogKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if page.cloudDirty || page.catalogPicker != nil || page.cloudDraft.Choices.TierOverrides["standard"] != "picked" {
+		t.Fatal("picker did not autosave")
+	}
 	stub.mu.Lock()
 	count := len(stub.calls)
-	stub.mu.Unlock()
-	if count != 0 {
-		t.Fatal("editing performed RPC")
-	}
-	_, _, err = page.commitCloud(classifyCloudCommit("cloud-save", ""))
-	if err != nil {
-		t.Fatal(err)
-	}
-	stub.mu.Lock()
-	count = len(stub.calls)
-	saved := stub.calls[0]
+	saved := stub.calls[count-1]
 	stub.reject = true
 	stub.mu.Unlock()
-	if count != 1 || page.cloudDirty || saved.GetModelChoices().GetImageModel() != "custom-image" || saved.GetModelChoices().GetTierOverrides()["premium"] != "custom" || saved.GetStructure() == nil {
-		t.Fatal("Save did not commit the complete draft once")
+	if count != 4 || saved.GetModelChoices().GetImageModel() != "custom-image" || saved.GetModelChoices().GetTierOverrides()["premium"] != "custom" || saved.GetStructure() == nil {
+		t.Fatal("each edit must persist the complete profile")
 	}
-	page.commitCloud(classifyCloudCommit("cloud-quality-premium", "retry-me"))
-	_, _, err = page.commitCloud(classifyCloudCommit("cloud-save", ""))
+	_, _, err = page.onCommit("cloud-quality-premium", "retry-me")
 	if err == nil || !page.cloudDirty || page.cloudDraft.Choices.TierOverrides["premium"] != "retry-me" {
-		t.Fatal("failed Save lost editable draft")
+		t.Fatal("failed autosave lost editable input")
 	}
-	page.commitCloud(classifyCloudCommit("cloud-discard", ""))
 	stub.mu.Lock()
-	count = len(stub.calls)
+	stub.reject = false
 	stub.mu.Unlock()
-	if page.cloudDirty || count != 2 {
-		t.Fatal("Discard performed another RPC or kept dirty state")
+	if _, _, err = page.onCommit("cloud-retry", ""); err != nil || page.cloudDirty {
+		t.Fatal("retry failed", err)
+	}
+	for _, f := range page.cloudDetailFields(page.catalogRow()) {
+		if f.Key() == "cloud-save" || f.Key() == "cloud-discard" {
+			t.Fatal("explicit save/discard controls remain")
+		}
 	}
 }

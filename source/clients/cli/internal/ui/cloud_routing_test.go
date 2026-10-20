@@ -18,15 +18,15 @@ func draftTestPage() *settingsPage {
 	sp.form.OnReload = func() []form.Section { return []form.Section{sp.buildCloudSection()} }
 	return sp
 }
-func TestCloudChoicesStayDraftUntilSave(t *testing.T) {
+func TestFailedCloudChoicesRetainInput(t *testing.T) {
 	sp := draftTestPage()
 	for key, value := range map[string]string{"cloud-quality-premium": "custom", "cloud-image": "new-image"} {
 		action := classifyCloudCommit(key, value)
-		if cloudCommitNeedsAgent(action, false) {
-			t.Fatal("draft edit requires server")
+		if !cloudCommitNeedsAgent(action, false) {
+			t.Fatal("edit must require server")
 		}
-		if _, cmd, err := sp.commitCloud(action); err != nil || cmd != nil {
-			t.Fatal("draft edit launched command", err)
+		if _, cmd, err := sp.commitCloud(action); err == nil || cmd != nil {
+			t.Fatal("disconnected autosave must fail", err)
 		}
 	}
 	if sp.profiles[0].Choices.TierOverrides["premium"] != "original" || sp.profiles[0].Choices.ImageModel != "image" {

@@ -79,7 +79,7 @@ func TestCatalogPrerequisiteStates(t *testing.T) {
 	}
 	p.cloudDraft.apiKeyEdited = true
 	p.cloudDraft.apiKey = "synthetic"
-	if _, field := p.catalogPrerequisite(); field != "cloud-save" {
+	if _, field := p.catalogPrerequisite(); field != "cloud-retry" {
 		t.Fatal("unsaved credential treated as stored")
 	}
 	p.cloudDraft.apiKeyEdited = false
@@ -92,7 +92,7 @@ func TestCatalogPrerequisiteStates(t *testing.T) {
 		t.Fatal("stored account blocked", text)
 	}
 	p.cloudDraft.BaseURL = "https://changed.example"
-	if _, field := p.catalogPrerequisite(); field != "cloud-save" {
+	if _, field := p.catalogPrerequisite(); field != "cloud-retry" {
 		t.Fatal("unsaved endpoint used for discovery")
 	}
 }

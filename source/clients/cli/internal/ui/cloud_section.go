@@ -222,7 +222,7 @@ func (sp *settingsPage) cloudDetailFields(r cloudRow) []form.Field {
 	out = append(out, sp.cloudChoiceFields(r)...)
 	state := sp.catalogState()
 	if state.Message != "" {
-		out = append(out, form.NewReadOnly("cloud-catalog-state", il("Model catalog"), state.Message, "Existing choices are preserved until Save"))
+		out = append(out, form.NewReadOnly("cloud-catalog-state", il("Model catalog"), state.Message, "Edits save automatically when committed"))
 	}
 	if state.Action != 0 {
 		out = append(out, form.NewButton("cloud-catalog-action", il(state.ActionLabel), true))
@@ -244,8 +244,8 @@ func (sp *settingsPage) cloudDetailFields(r cloudRow) []form.Field {
 		if !sp.cloudDraftNew {
 			out = append(out, form.NewReadOnly("cloud-name", il("Profile ID"), d.Name, "Internal identifier"))
 		}
-		// flavor/backend: editable only for the custom "other" row; read-only otherwise.
-		if r.ID == "other" {
+		// Custom connections remain editable after the first field creates the profile.
+		if r.ID == "other" || (r.IsProfile && r.Preset == nil) {
 			out = append(out,
 				form.NewSelect("cloud-flavor", il("flavor"), []form.Option{
 					{Label: "chat_completions", Value: "chat_completions"},
@@ -273,7 +273,10 @@ func (sp *settingsPage) cloudDetailFields(r cloudRow) []form.Field {
 		}
 
 	}
-	out = append(out, form.NewHeading("cloud-actions-heading", ""), form.NewButton("cloud-save", il("Save changes"), true), form.NewButton("cloud-discard", il("Discard"), true))
+	out = append(out, form.NewHeading("cloud-actions-heading", ""))
+	if sp.cloudDirty {
+		out = append(out, form.NewButton("cloud-retry", il("Retry failed edit"), true))
+	}
 	if sp.cloudDeleteConfirm {
 		out = append(out, form.NewReadOnly("cloud-delete-warning", il("Remove account?"), d.Name, "This removes the saved connection"), form.NewButton("cloud-delete-confirm", il("Confirm removal"), true), form.NewButton("cloud-delete-cancel", il("Keep account"), true))
 	} else if !sp.cloudDraftNew {

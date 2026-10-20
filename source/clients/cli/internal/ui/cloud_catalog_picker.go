@@ -89,12 +89,12 @@ func (sp *settingsPage) catalogPrerequisite() (string, string) {
 		return "Sign in to load available models.", key
 	}
 	if d.apiKeyEdited {
-		return "Save this account to load its available models.", "cloud-save"
+		return "Retry the failed edit to load available models.", "cloud-retry"
 	}
 	for _, p := range sp.profiles {
 		if p.Name == d.Name && !sp.cloudDraftNew {
 			if p.Flavor != d.Flavor || p.BaseURL != d.BaseURL || p.Backend != d.Backend || p.Route != d.Route || p.Provider != d.Provider {
-				return "Save this account to load its available models.", "cloud-save"
+				return "Retry the failed edit to load available models.", "cloud-retry"
 			}
 		}
 	}
@@ -103,15 +103,17 @@ func (sp *settingsPage) catalogPrerequisite() (string, string) {
 		return "Add an API key to load available models.", "cloud-key"
 	}
 	if sp.cloudDraftNew {
-		return "Save this account to load its available models.", "cloud-save"
+		return "Confirm the account name to create this connection.", "cloud-name"
 	}
 	return "", ""
 }
 func (sp *settingsPage) catalogState() overlay.CatalogState {
 	if msg, field := sp.catalogPrerequisite(); msg != "" {
 		label := "Add API key"
-		if field == "cloud-save" {
-			label = "Return to Save"
+		if field == "cloud-retry" {
+			label = "Retry failed edit"
+		} else if field == "cloud-name" {
+			label = "Set account name"
 		} else if strings.HasPrefix(field, "cloud-signin") {
 			label = "Sign in"
 		}
@@ -325,7 +327,7 @@ func (sp *settingsPage) pickerEntries() []overlay.CatalogEntry {
 		special.Details = []overlay.CatalogDetail{{Label: "Effect", Value: "Do not use an account-specific image override"}}
 	} else {
 		quality := strings.TrimPrefix(sp.catalogField, "cloud-quality-")
-		special.Details = []overlay.CatalogDetail{{Label: "Recommended model", Value: sp.cloudDraft.Effective[quality]}, {Label: "Effect", Value: "Follow the provider recommendation after Save"}}
+		special.Details = []overlay.CatalogDetail{{Label: "Recommended model", Value: sp.cloudDraft.Effective[quality]}, {Label: "Effect", Value: "Follow the provider recommendation"}}
 	}
 	entries := []overlay.CatalogEntry{special}
 	seen := false
@@ -482,10 +484,14 @@ func (sp *settingsPage) updateCatalogKey(msg tea.Msg) tea.Cmd {
 		if out.Action == overlay.CatalogSelect && out.Account != sp.cloudDraft.Name {
 			return nil
 		}
-		sp.applyCloudDraftEdit(sp.catalogField, out.ID)
+		status, saveCmd, err := sp.onCommit(sp.catalogField, out.ID)
 		sp.catalogPicker = nil
 		sp.form.Reload()
-		return nil
+		if err != nil {
+			status = err.Error()
+		}
+		sp.form.SetStatus(status)
+		return saveCmd
 	}
 	return cmd
 }

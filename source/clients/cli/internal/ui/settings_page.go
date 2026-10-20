@@ -429,7 +429,7 @@ func (sp *settingsPage) onCommit(key, value string) (string, tea.Cmd, error) {
 	}
 	if key == "cloud-auth-switch" {
 		if sp.cloudDraft.apiKeyEdited {
-			return "Save or discard the API key edit before switching authentication.", nil, nil
+			return "Retry the failed API key edit before switching authentication.", nil, nil
 		}
 		r := sp.catalogRow()
 		if r.Preset == nil {
@@ -446,14 +446,14 @@ func (sp *settingsPage) onCommit(key, value string) (string, tea.Cmd, error) {
 		sp.selectCloudRow("template:" + target)
 		sp.uniqueCloudDraftName()
 		sp.cloudDirty = true
-		return "", nil, nil
+		return sp.onCommit("cloud-retry", "")
 	}
 	if key == "cloud-account-select" {
 		return sp.commitCloud(classifyCloudCommit("cloud-row:"+value, ""))
 	}
 	if key == "cloud-add-provider" {
 		if sp.hasUnsavedSettings() {
-			return "Save or discard your changes before adding a provider.", nil, nil
+			return "Retry the failed edit before adding a provider.", nil, nil
 		}
 		sp.openProviderPicker()
 		return "", nil, nil
@@ -486,7 +486,7 @@ func (sp *settingsPage) onCommit(key, value string) (string, tea.Cmd, error) {
 			// server's truth instead of repainting stale state.
 			sp.profilesLoaded = false
 		}
-		if err == nil && (ca.kind == cloudCommitSelect || ca.kind == cloudCommitSave || ca.kind == cloudCommitDiscard) {
+		if err == nil && (ca.kind == cloudCommitSelect || ca.kind == cloudCommitSave || ca.kind == cloudCommitDiscard || ca.kind == cloudCommitDraftEdit || ca.kind == cloudCommitKey) {
 			return status, tea.Batch(cmd, sp.catalogKick()), nil
 		}
 		return status, cmd, err

@@ -1,6 +1,9 @@
 package ui
 
-import "testing"
+import (
+	"cercano/source/clients/cli/internal/form"
+	"testing"
+)
 
 func TestCloudAdvancedVisibilityAndDraftPreservation(t *testing.T) {
 	sp := cloudSamplePage()
@@ -18,13 +21,13 @@ func TestCloudAdvancedVisibilityAndDraftPreservation(t *testing.T) {
 			t.Fatalf("advanced field %s visible by default", key)
 		}
 	}
-	for _, key := range []string{"cloud-account", "cloud-key", "cloud-pick-cloud-quality-standard", "cloud-save", "cloud-advanced"} {
+	for _, key := range []string{"cloud-account", "cloud-key", "cloud-pick-cloud-quality-standard", "cloud-advanced"} {
 		if _, ok := keys[key]; !ok {
 			t.Fatalf("missing routine field %s", key)
 		}
 	}
-	if keys["cloud-account"] >= keys["cloud-key"] || keys["cloud-key"] >= keys["cloud-pick-cloud-quality-standard"] || keys["cloud-pick-cloud-quality-standard"] >= keys["cloud-save"] {
-		t.Fatal("expected Account -> credentials -> Models -> Save")
+	if keys["cloud-account"] >= keys["cloud-key"] || keys["cloud-key"] >= keys["cloud-pick-cloud-quality-standard"] || keys["cloud-pick-cloud-quality-standard"] >= keys["cloud-advanced"] {
+		t.Fatal("expected Account -> credentials -> Models -> Advanced")
 	}
 	sp.cloudDraft.apiKey = "pending-secret"
 	sp.cloudDraft.apiKeyEdited = true
@@ -48,5 +51,26 @@ func TestCloudAdvancedVisibilityAndDraftPreservation(t *testing.T) {
 	sp.selectCloudRow("template:gemini")
 	if sp.cloudAdvanced {
 		t.Fatal("advanced expansion leaked across accounts")
+	}
+}
+
+func TestCustomProviderAdvancedFieldsRemainEditableAfterAutosave(t *testing.T) {
+	sp := cloudSamplePage()
+	sp.selectCloudRow("other")
+	sp.cloudDraftNew = false
+	sp.cloudSelected = "profile:custom"
+	sp.cloudAdvanced = true
+	fields := sp.cloudDetailFields(cloudRow{ID: "profile:custom", IsProfile: true})
+	found := 0
+	for _, f := range fields {
+		if f.Key() == "cloud-flavor" || f.Key() == "cloud-backend" {
+			found++
+			if _, ok := f.(*form.SelectField); !ok {
+				t.Fatalf("%s became read-only after first autosave", f.Key())
+			}
+		}
+	}
+	if found != 2 {
+		t.Fatal("custom connection controls missing")
 	}
 }

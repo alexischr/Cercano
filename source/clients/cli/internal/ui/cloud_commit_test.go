@@ -81,31 +81,6 @@ func TestSelectCommitExpandsRow(t *testing.T) {
 	_ = status
 }
 
-// TestShouldApplyModelEdit pins when a committed cloud-section field edit is
-// pushed to the server immediately instead of parking in the draft. Picking a
-// model on an EXISTING profile must apply right away — the draft-only path
-// silently discarded the choice when the user left the page without pressing
-// save. New drafts still go through explicit save (they may lack name/flavor),
-// and structural fields (name, base_url, …) keep the draft+save flow.
-func TestShouldApplyModelEdit(t *testing.T) {
-	cases := []struct {
-		field    string
-		draftNew bool
-		want     bool
-	}{
-		{"cloud-model", false, false},
-		{"cloud-model", true, false},
-		{"cloud-base-url", false, false},
-		{"cloud-name", false, false},
-		{"cloud-flavor", false, false},
-	}
-	for _, c := range cases {
-		if got := shouldApplyModelEdit(c.field, c.draftNew); got != c.want {
-			t.Errorf("shouldApplyModelEdit(%q, draftNew=%v) = %v, want %v", c.field, c.draftNew, got, c.want)
-		}
-	}
-}
-
 // TestFallbackClaudeModelsIncludeCurrentGeneration pins that the offline
 // fallback catalog carries the current top-tier models, so a user without a
 // live catalog fetch can still pick them.
@@ -132,44 +107,29 @@ func TestFallbackClaudeModelsIncludeCurrentGeneration(t *testing.T) {
 // local-only ones that must never be blocked by connection state.
 func TestCloudCommitNeedsAgent(t *testing.T) {
 	rpc := []cloudCommitKind{cloudCommitSave,
-		cloudCommitDelete, cloudCommitSignIn}
+		cloudCommitDelete, cloudCommitSignIn, cloudCommitKey, cloudCommitDraftEdit}
 	for _, k := range rpc {
 		if !cloudCommitNeedsAgent(cloudCommitAction{kind: k}, false) {
 			t.Errorf("kind %d should need the agent", k)
 		}
 	}
-	local := []cloudCommitKind{cloudCommitNone, cloudCommitSelect, cloudCommitKey}
+	local := []cloudCommitKind{cloudCommitNone, cloudCommitSelect}
 	for _, k := range local {
 		if cloudCommitNeedsAgent(cloudCommitAction{kind: k}, false) {
 			t.Errorf("kind %d must stay local", k)
 		}
 	}
-	// All draft edits, including model edits on existing profiles, are local.
-	if cloudCommitNeedsAgent(cloudCommitAction{kind: cloudCommitDraftEdit, field: "cloud-name"}, false) {
-		t.Error("name draft edit must stay local")
-	}
-	if cloudCommitNeedsAgent(cloudCommitAction{kind: cloudCommitDraftEdit, field: "cloud-model"}, true) {
-		t.Error("model edit on a NEW draft must stay local")
-	}
-	if cloudCommitNeedsAgent(cloudCommitAction{kind: cloudCommitDraftEdit, field: "cloud-model"}, false) {
-		t.Error("existing-profile model edits must remain local until Save")
-	}
+
 }
 
-// TestCloudCommitNoErrorKeepsSnapshotCache pins the counterpart of the
-// error-path invalidation in onCommit: a commit that does NOT error (here a
-// local draft edit, which returns a status) must leave the snapshot cache
-// alone. The error branch itself (profilesLoaded dropped so the form's
-// error-path reload refetches truth) is exercised end-to-end by
-// TestFormCommitErrorReloadsSections plus the three-line branch in onCommit.
-func TestCloudCommitNoErrorKeepsSnapshotCache(t *testing.T) {
+func TestCloudCommitFailureRetainsInput(t *testing.T) {
 	sp := cloudSamplePage()
 	sp.profilesLoaded = true
 	_, _, err := sp.onCommit("cloud-base-url", "https://example.invalid")
-	if err != nil {
-		t.Fatalf("local draft edit should not error: %v", err)
+	if err == nil || !sp.cloudDirty || sp.cloudDraft.BaseURL != "https://example.invalid" {
+		t.Fatal("disconnected edit not retained", err)
 	}
-	if !sp.profilesLoaded {
-		t.Fatal("no-error commit must not drop the cache")
+	if sp.profilesLoaded {
+		t.Fatal("failed commit must invalidate snapshot")
 	}
 }

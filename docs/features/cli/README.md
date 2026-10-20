@@ -321,7 +321,8 @@ for commands, boundaries, and implementation details.
 The Cloud configuration tab lists only configured providers. **Add provider…**
 opens a filterable popover, including a custom-endpoint option. Authentication
 variants share one provider entry; existing accounts are selected inside the
-editor. Choosing a provider starts an unsaved setup draft.
+editor. Choosing a provider starts setup; the first committed field creates the
+connection. Subscription accounts are created through sign-in.
 
 The editor separates **Connection**, **Model tiers**, and **Advanced settings**
 (collapsed when opening an account). Subscription providers expose sign-in;
@@ -329,9 +330,14 @@ API-key providers expose a masked key editor. New Anthropic/OpenAI connections
 can switch authentication methods before credentials are entered. Model choices
 use the searchable catalog and discovery remains asynchronous.
 
+Each field saves when committed (Enter or a committing focus change), and model
+selections save immediately. Typing alone does not save. There are no Save changes
+or Discard buttons. A failed save retains the input and offers **Retry failed edit**;
+credentials are stored only after the account exists.
+
 Cloud fields, buttons, account options, and catalog rows support mouse clicks.
 Popovers consume mouse-wheel input without scrolling the page behind them.
 Keyboard navigation remains available, without navigation-help footers. Removing
-an account requires confirmation; cancelling new setup clears its pending key.
+an account requires confirmation; cancelling uncommitted setup clears its pending key.
 
-Configured providers in `/config > Cloud` open a separate editing popover when selected. The provider list remains behind it; Close or Escape returns to that list, with confirmation before discarding unsaved changes. Model pickers open above the editor and dismiss back to it.
+Configured providers in `/config > Cloud` open a separate editing popover when selected. The provider list remains behind it; Escape returns to that list without a confirmation after successful saves. If a save failed, leaving requires confirmation before discarding the retained input. Model pickers open above the editor and dismiss back to it.

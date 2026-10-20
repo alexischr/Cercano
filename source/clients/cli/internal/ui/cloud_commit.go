@@ -55,7 +55,7 @@ func classifyCloudCommit(key, value string) cloudCommitAction {
 		return cloudCommitAction{kind: cloudCommitDraftEdit, field: key, value: value}
 	case "cloud-key":
 		return cloudCommitAction{kind: cloudCommitKey, value: value}
-	case "cloud-save":
+	case "cloud-save", "cloud-retry":
 		return cloudCommitAction{kind: cloudCommitSave}
 	case "cloud-delete":
 		return cloudCommitAction{kind: cloudCommitDelete}
@@ -65,11 +65,6 @@ func classifyCloudCommit(key, value string) cloudCommitAction {
 		return cloudCommitAction{kind: cloudCommitSignInClaude}
 	}
 	return cloudCommitAction{kind: cloudCommitNone}
-}
-
-// All profile model edits remain drafts until explicit Save.
-func shouldApplyModelEdit(field string, draftNew bool) bool {
-	return false
 }
 
 // applyCloudDraftEdit writes one committed detail field into the draft.
@@ -95,17 +90,15 @@ func (sp *settingsPage) applyCloudDraftEdit(field, value string) {
 	}
 }
 
-// cloudCommitNeedsAgent reports whether executing the action reaches the
-// agent over gRPC. Row selection and all draft edits stay local. Explicit
-// profile saves, deletion and sign-in actions reach the agent. Credentials
-// remain in the draft until explicit Save.
+// cloudCommitNeedsAgent reports whether an action reaches the agent over gRPC.
+// Committed fields, including credentials, save immediately.
 func cloudCommitNeedsAgent(ca cloudCommitAction, draftNew bool) bool {
 	switch ca.kind {
 	case cloudCommitProviderCatalog, cloudCommitSave,
 		cloudCommitDelete, cloudCommitSignIn, cloudCommitSignInClaude:
 		return true
-	case cloudCommitDraftEdit:
-		return shouldApplyModelEdit(ca.field, draftNew)
+	case cloudCommitDraftEdit, cloudCommitKey:
+		return true
 	}
 	return false
 }
@@ -117,9 +110,9 @@ func (sp *settingsPage) commitCloud(ca cloudCommitAction) (string, tea.Cmd, erro
 	// Fail fast while the connection is down: these RPCs block the update
 	// loop for their full deadline and then fail anyway. The reconnect
 	// watcher already knows the agent is restarting — say so instead.
-	if cloudCommitNeedsAgent(ca, sp.cloudDraftNew) && sp.agent != nil &&
+	if ca.kind != cloudCommitDraftEdit && ca.kind != cloudCommitKey && cloudCommitNeedsAgent(ca, sp.cloudDraftNew) && sp.agent != nil &&
 		sp.agent.State() != agentclient.ConnStateConnected {
-		return "agent reconnecting — retry in a moment", nil, nil
+		return "", nil, fmt.Errorf("agent reconnecting — retry this edit in a moment")
 	}
 	if sp.cloudDraftNew && (ca.kind == cloudCommitSave || ca.kind == cloudCommitSignIn || ca.kind == cloudCommitSignInClaude) {
 		name := strings.TrimSpace(sp.cloudDraft.Name)
@@ -136,7 +129,7 @@ func (sp *settingsPage) commitCloud(ca cloudCommitAction) (string, tea.Cmd, erro
 		return "", sp.openCatalog("", true), nil
 	case cloudCommitAddAccount:
 		if sp.cloudDirty {
-			return "save or discard existing edits before adding an account", nil, nil
+			return "retry the failed edit before adding an account", nil, nil
 		}
 		sp.addCloudAccount()
 		return "new account — sign in or save credentials", nil, nil
@@ -158,11 +151,10 @@ func (sp *settingsPage) commitCloud(ca cloudCommitAction) (string, tea.Cmd, erro
 		return "", nil, nil
 	case cloudCommitDraftEdit:
 		sp.applyCloudDraftEdit(ca.field, ca.value)
-
-		return "", nil, nil
+		return sp.commitCloud(cloudCommitAction{kind: cloudCommitSave})
 	case cloudCommitSave:
 		if sp.agent == nil {
-			return "no agent", nil, nil
+			return "", nil, fmt.Errorf("no agent — retry this edit when connected")
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -199,7 +191,7 @@ func (sp *settingsPage) commitCloud(ca cloudCommitAction) (string, tea.Cmd, erro
 		return "saved " + d.Name, nil, nil
 	case cloudCommitDelete:
 		if sp.agent == nil {
-			return "no agent", nil, nil
+			return "", nil, fmt.Errorf("no agent — retry this edit when connected")
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -237,7 +229,7 @@ func (sp *settingsPage) commitCloud(ca cloudCommitAction) (string, tea.Cmd, erro
 		sp.cloudDraft.apiKey = ca.value
 		sp.cloudDraft.apiKeyEdited = true
 		sp.cloudDirty = true
-		return "key edited — Save to apply", nil, nil
+		return sp.commitCloud(cloudCommitAction{kind: cloudCommitSave})
 
 	}
 	return "", nil, nil
