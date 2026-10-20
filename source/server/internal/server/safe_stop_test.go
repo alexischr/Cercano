@@ -365,13 +365,16 @@ func TestSafeStopCancelRaceDocumentsCommitBoundary(t *testing.T) {
 	}
 
 	// Side A: canceled before the work drains — must fully release.
+	// Join the actual handler, not the client RPC: client cancellation can
+	// return before the server observes it. Releasing work at that point
+	// could let A commit, and B's idempotent response would not join A's
+	// stop callback. The wire path is exercised by B and the repeat below.
 	ctxA, cancelA := context.WithCancel(context.Background())
 	errA := make(chan error, 1)
 	go func() {
-		_, err := f.client.ShutdownAgentWhenIdle(ctxA, safeStopReq(pid))
+		_, err := f.srv.ShutdownAgentWhenIdle(ctxA, safeStopReq(pid))
 		errA <- err
 	}()
-	time.Sleep(50 * time.Millisecond)
 	cancelA()
 	if err := <-errA; status.Code(err) != codes.Canceled {
 		t.Fatalf("pre-seal cancel: %v", err)
