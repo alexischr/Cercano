@@ -398,14 +398,30 @@ func (sp *settingsPage) updateCatalogPicker() {
 }
 func (sp *settingsPage) openCatalog(field string, browse bool) tea.Cmd {
 	sp.catalogField = field
-	title := "Choose a model · " + strings.TrimPrefix(field, "cloud-quality-")
+	provider := cloudProviderLabel(sp.cloudDraft.Provider, sp.cloudDraft.Provider)
+	if row := sp.catalogRow(); row.Preset != nil {
+		provider = cloudProviderLabel(row.Preset.ID, row.Preset.Label)
+	}
+	if strings.EqualFold(provider, "deepinfra") {
+		provider = "DeepInfra"
+	}
+	if provider == "" {
+		provider = "Custom provider"
+	}
+	quality := strings.TrimPrefix(field, "cloud-quality-")
+	quality = strings.ToUpper(quality[:min(1, len(quality))]) + quality[min(1, len(quality)):]
+	title := provider + " - Choose a Model > " + quality
 	if field == "cloud-image" {
-		title = "Choose an image model"
+		title = provider + " - Choose a Model > Image"
 	}
 	if browse {
 		title = "Mistral models · Across accounts"
 	}
-	c := overlay.NewCatalog(title, sp.cloudDraft.Name, browse)
+	scope := sp.cloudDraft.Name
+	if strings.EqualFold(scope, provider) {
+		scope = ""
+	}
+	c := overlay.NewCatalog(title, scope, browse)
 	sp.catalogPicker = &c
 	sp.updateCatalogPicker()
 	if browse {

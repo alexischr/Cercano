@@ -146,3 +146,21 @@ func TestCatalogSuccessFeedbackExpires(t *testing.T) {
 		t.Fatal("success feedback did not expire")
 	}
 }
+
+func TestCatalogTitleIncludesProviderAndTier(t *testing.T) {
+	p := cloudSamplePage()
+	p.cloudDraft.Provider = "deepinfra"
+	p.cloudDraft.Name = "deepinfra"
+	p.openCatalog("cloud-quality-economy", false)
+	if got := p.catalogPicker.Title; got != "DeepInfra - Choose a Model > Economy" {
+		t.Fatalf("title = %q", got)
+	}
+	if p.catalogPicker.Scope != "" {
+		t.Fatal("duplicate provider subtitle")
+	}
+	p.cloudDraft.Name = "Work"
+	p.openCatalog("cloud-image", false)
+	if p.catalogPicker.Title != "DeepInfra - Choose a Model > Image" || p.catalogPicker.Scope != "Work" {
+		t.Fatal("image title or account subtitle incorrect")
+	}
+}
