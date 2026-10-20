@@ -665,6 +665,13 @@ func Defaults() Config {
 						Standard: CostTierModel{Model: "gpt-6-astra"},
 						Premium:  CostTierModel{Model: "gpt-6-astra"},
 					},
+					// Approved Mistral recommendations; live tool-continuation
+					// compatibility is verified, not comparative quality or pricing.
+					"mistral": {
+						Economy:  CostTierModel{Model: "mistral-small-latest"},
+						Standard: CostTierModel{Model: "mistral-large-4"},
+						Premium:  CostTierModel{Model: "zai-glm-5-3"},
+					},
 					// DeepInfra hosts many vendors' open-weight models rather
 					// than publishing its own, so these are chosen for the
 					// agent loop's actual requirement — tool calling — and
