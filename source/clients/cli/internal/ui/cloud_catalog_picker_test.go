@@ -30,7 +30,7 @@ func TestCatalogReplyPreservesActiveEditor(t *testing.T) {
 		t.Fatal("deferred refresh was not applied after editing")
 	}
 }
-func TestCatalogDraftSelectionAndCancel(t *testing.T) {
+func TestCatalogFailedSelectionAndCancel(t *testing.T) {
 	p := draftTestPage()
 	p.cloudModelsFetched = true
 	p.cloudModels = []agentclient.CloudModelInfo{{ID: "actual", DisplayName: "Readable", Metadata: &agentclient.CatalogMetadata{Chat: agentclient.CatalogCapabilitySupported, Tools: agentclient.CatalogCapabilitySupported}}}
@@ -39,7 +39,7 @@ func TestCatalogDraftSelectionAndCancel(t *testing.T) {
 	p.catalogPicker.Paste("actual")
 	p.updateCatalogKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if !p.cloudDirty || p.cloudDraft.Choices.TierOverrides["standard"] != "actual" {
-		t.Fatal("selection did not update only draft")
+		t.Fatal("failed autosave did not retain selection")
 	}
 	p.cloudDirty = false
 	p.openCatalog("cloud-quality-standard", false)

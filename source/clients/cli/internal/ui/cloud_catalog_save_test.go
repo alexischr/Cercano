@@ -60,9 +60,8 @@ func TestCatalogSaveSchedulesFreshDiscovery(t *testing.T) {
 	if p.startCatalog(false, false) != nil || stub.discoveries.Load() != 0 {
 		t.Fatal("missing saved key triggered discovery")
 	}
-	p.onCommit("cloud-key", "synthetic-token")
 	stub.reject.Store(true)
-	_, cmd, err := p.onCommit("cloud-save", form.ButtonActivate)
+	_, cmd, err := p.onCommit("cloud-key", "synthetic-token")
 	if err == nil || cmd != nil || !p.cloudDraft.apiKeyEdited {
 		t.Fatal("failed key save lost draft or scheduled discovery")
 	}

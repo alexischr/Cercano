@@ -33,7 +33,7 @@ func (s *keyDraftStub) SetCloudProfileKey(_ context.Context, r *proto.SetCloudPr
 	}
 	return &proto.SetCloudProfileKeyResponse{Ok: r.Name == "deepinfra" && r.ApiKey == "synthetic-token"}, nil
 }
-func TestCloudKeyWaitsForExplicitSave(t *testing.T) {
+func TestCloudKeyAutosavesOnCommit(t *testing.T) {
 	for _, fresh := range []bool{true, false} {
 		t.Run(map[bool]string{true: "new", false: "existing"}[fresh], func(t *testing.T) {
 			l, err := net.Listen("tcp", "127.0.0.1:0")
@@ -60,21 +60,18 @@ func TestCloudKeyWaitsForExplicitSave(t *testing.T) {
 			p.form.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 			p.handlePaste("synthetic-token")
 			p.form.Update(tea.KeyPressMsg{Code: tea.KeyTab})
-			// Neither Tab nor explicitly committing the editor with Enter may save.
+			// Typing alone is local; leaving the editor commits and persists the key.
 			if len(stub.events) != 0 {
-				t.Fatal("Tab persisted before Save")
+				t.Fatal("typing persisted an uncommitted key")
 			}
 			if field.Editing() {
 				p.form.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 			}
-			if len(stub.events) != 0 {
-				t.Fatal("leaving key editor persisted before Save")
-			}
-			if !p.cloudDirty {
-				t.Fatal("key edit did not mark draft dirty")
+			if <-stub.events != "profile" || <-stub.events != "key" || p.cloudDirty || p.cloudDraft.apiKeyEdited {
+				t.Fatal("committed key did not autosave profile then credential")
 			}
 			stub.rejectProfile.Store(true)
-			if _, _, err = p.commitCloud(classifyCloudCommit("cloud-save", "")); err == nil {
+			if _, _, err = p.commitCloud(classifyCloudCommit("cloud-key", "synthetic-token")); err == nil {
 				t.Fatal("profile failure ignored")
 			}
 			if <-stub.events != "profile" || len(stub.events) != 0 || !p.cloudDirty {
@@ -105,13 +102,7 @@ func TestCloudKeyWaitsForExplicitSave(t *testing.T) {
 			if <-stub.events != "profile" || len(stub.events) != 0 {
 				t.Fatal("saved secret retained")
 			}
-			p.commitCloud(classifyCloudCommit("cloud-key", "synthetic-token"))
-			p.commitCloud(classifyCloudCommit("cloud-discard", ""))
-			p.cloudDraft.Name = "deepinfra"
-			p.commitCloud(classifyCloudCommit("cloud-save", ""))
-			if <-stub.events != "profile" || len(stub.events) != 0 {
-				t.Fatal("discard retained secret")
-			}
+
 		})
 	}
 }

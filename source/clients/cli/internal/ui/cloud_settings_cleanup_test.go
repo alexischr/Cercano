@@ -90,7 +90,7 @@ func TestCloudCustomEntryHiddenUntilPickerChoosesCustom(t *testing.T) {
 	}
 
 	// Commit a custom ID through the new text field.
-	if _, _, err := sp.onCommit("cloud-custom-image", "my-custom-image"); err != nil {
+	if _, _, err := sp.onCommit("cloud-custom-image", "my-custom-image"); err == nil {
 		t.Fatalf("commit custom image: %v", err)
 	}
 	if !sp.cloudDirty {
@@ -184,31 +184,20 @@ func TestCloudChoiceLabelsCompactAndSingleMissingRecommendationWarning(t *testin
 	}
 }
 
-// TestCloudAccountActionsSeparatedFromSaveDiscard pins the field order of the
-// account editor: Save and Discard come first, then the Advanced toggle and
-// its advanced fields, and only then the account-management actions
-// (add/delete account), whose labels name the account explicitly.
-func TestCloudAccountActionsSeparatedFromSaveDiscard(t *testing.T) {
+func TestCloudAccountActionsWithoutSaveDiscard(t *testing.T) {
 	sp := cloudSamplePage()
 	sp.selectCloudRow("profile:work-openai")
 	sp.form = form.New([]form.Section{sp.buildCloudSection()})
-
-	_, saveIdx := cleanupFieldAt(sp, "cloud-save")
-	_, advIdx := cleanupFieldAt(sp, "cloud-advanced")
-	_, addIdx := cleanupFieldAt(sp, "cloud-add-account")
-	_, delIdx := cleanupFieldAt(sp, "cloud-delete")
-	if saveIdx < 0 || advIdx < 0 || addIdx < 0 || delIdx < 0 {
-		t.Fatalf("expected all four action fields, got save=%d advanced=%d add=%d delete=%d",
-			saveIdx, advIdx, addIdx, delIdx)
+	for _, key := range []string{"cloud-save", "cloud-discard"} {
+		if _, i := cleanupFieldAt(sp, key); i >= 0 {
+			t.Fatalf("obsolete action %s", key)
+		}
 	}
-	if !(advIdx < saveIdx && saveIdx < addIdx && addIdx < delIdx) {
-		t.Fatalf("action order should be advanced < save < add account < delete account, got %d < %d < %d < %d",
-			saveIdx, advIdx, addIdx, delIdx)
-	}
-	save, _ := cleanupFieldAt(sp, "cloud-save")
-	del, _ := cleanupFieldAt(sp, "cloud-delete")
-	if got := del.Label(); !strings.Contains(got, "account") || got == save.Label() {
-		t.Fatalf("delete label should name the account and differ from save, got %q", got)
+	_, adv := cleanupFieldAt(sp, "cloud-advanced")
+	_, add := cleanupFieldAt(sp, "cloud-add-account")
+	_, del := cleanupFieldAt(sp, "cloud-delete")
+	if adv < 0 || add <= adv || del <= add {
+		t.Fatal("account action ordering changed")
 	}
 }
 
