@@ -41,7 +41,8 @@ func TestCloudEditorPopoverMouseAndUnsavedClose(t *testing.T) {
 		t.Fatal("centered editor mouse coordinates incorrect")
 	}
 	p.handlePaste("pending-secret")
-	layoutClick(t, p, "Close")
+	p.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	p.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	if !p.settingsNavigationPrompt || !p.cloudEditorActive() {
 		t.Fatal("close discarded dirty credential")
 	}
@@ -49,7 +50,7 @@ func TestCloudEditorPopoverMouseAndUnsavedClose(t *testing.T) {
 	if p.cloudDraft.apiKey != "pending-secret" {
 		t.Fatal("keep editing lost credential")
 	}
-	layoutClick(t, p, "Close")
+	p.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	_, closed := p.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	if closed || p.cloudEditorActive() || p.cloudDraft.apiKey != "" {
 		t.Fatal("discard should return to provider list and clear credential")
@@ -88,7 +89,7 @@ func TestCloudEditorUsesSeparateSectionBlocks(t *testing.T) {
 	p := layoutPage()
 	p.selectCloudRow("profile:work-openai")
 	p.form.Reload()
-	want := []string{"Edit provider", "Connection", "Model tiers", "Advanced settings", "Actions"}
+	want := []string{"Connection", "Model tiers", "Advanced settings", "Actions"}
 	if len(p.form.Sections) != len(want) {
 		t.Fatalf("editor sections = %d; want %d separate bordered blocks", len(p.form.Sections), len(want))
 	}

@@ -101,8 +101,7 @@ func (sp *settingsPage) buildCloudSection() form.Section {
 		}
 	}
 	if sp.cloudEditorActive() {
-		fields := []form.Field{form.NewButton("cloud-editor-close", "Close", true)}
-		fields = append(fields, sp.cloudDetailFields(sp.catalogRow())...)
+		fields := sp.cloudDetailFields(sp.catalogRow())
 		return form.Section{Title: "Edit provider", Fields: fields}
 	}
 	section := sp.cloudProviderListSection()

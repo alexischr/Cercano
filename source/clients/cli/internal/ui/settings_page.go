@@ -412,15 +412,6 @@ func (sp *settingsPage) View() string {
 
 // onCommit routes a committed field to its sink.
 func (sp *settingsPage) onCommit(key, value string) (string, tea.Cmd, error) {
-	if key == "cloud-editor-close" {
-		if sp.hasUnsavedSettings() {
-			sp.settingsPendingLeave = "__close"
-			sp.settingsNavigationPrompt = true
-		} else {
-			sp.closeCloudEditor()
-		}
-		return "", nil, nil
-	}
 	if strings.HasPrefix(key, "routing-") {
 		return sp.commitRouting(key, value)
 	}

@@ -71,5 +71,8 @@ func (sp *settingsPage) buildCloudSections() []form.Section {
 		last := len(sections) - 1
 		sections[last].Fields = append(sections[last].Fields, field)
 	}
+	if len(sections[0].Fields) == 0 {
+		sections = sections[1:]
+	}
 	return sections
 }
