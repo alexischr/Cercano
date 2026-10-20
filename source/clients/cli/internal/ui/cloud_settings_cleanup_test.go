@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/charmbracelet/x/ansi"
 	"strings"
 	"testing"
 
@@ -141,8 +142,8 @@ func TestCloudChoiceLabelsCompactAndSingleMissingRecommendationWarning(t *testin
 	sp.form = form.New([]form.Section{sp.buildCloudSection()})
 
 	for quality, want := range map[string]string{
-		"economy":  "  economy  inherit  ›",
-		"standard": "  standard  inherit  ›",
+		"economy":  "Economy",
+		"standard": "Standard",
 	} {
 		f, _ := cleanupFieldAt(sp, "cloud-pick-cloud-quality-"+quality)
 		if f == nil {
@@ -156,7 +157,7 @@ func TestCloudChoiceLabelsCompactAndSingleMissingRecommendationWarning(t *testin
 	if pf == nil {
 		t.Fatalf("picker button for premium missing")
 	}
-	if got := pf.Label(); !strings.Contains(got, "inherit zai-org/GLM-5.3") {
+	if got := pf.Display(); !strings.Contains(got, "zai-org/GLM-5.3 (recommended)") {
 		t.Fatalf("premium label should show the inherited model compactly, got %q", got)
 	}
 
@@ -208,5 +209,34 @@ func TestCloudAccountActionsSeparatedFromSaveDiscard(t *testing.T) {
 	del, _ := cleanupFieldAt(sp, "cloud-delete")
 	if got := del.Label(); !strings.Contains(got, "account") || got == save.Label() {
 		t.Fatalf("delete label should name the account and differ from save, got %q", got)
+	}
+}
+
+func TestCloudTierModelColumnsAlign(t *testing.T) {
+	p := cloudSamplePage()
+	p.selectCloudRow("profile:work-openai")
+	p.cloudDraft.Effective = map[string]string{"economy": "economy-model", "standard": "standard-model", "premium": "premium-model"}
+	p.cloudDraft.Choices = p.cloudDraft.Choices.Clone()
+	p.cloudDraft.Choices.ImageModel = "image-model"
+	f := form.New([]form.Section{{Title: "Model tiers", Fields: p.cloudChoiceFields(p.catalogRow())}})
+	rendered := ansi.Strip(f.View(100, p.palette, p.styles))
+	column := -1
+	for _, id := range []string{"economy-model", "standard-model", "premium-model", "image-model"} {
+		found := false
+		for _, line := range strings.Split(rendered, "\n") {
+			if at := strings.Index(line, id); at >= 0 {
+				at = ansi.StringWidth(line[:at])
+				if column < 0 {
+					column = at
+				}
+				if column != at {
+					t.Fatalf("misaligned %s: %s", id, rendered)
+				}
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("missing %s: %s", id, rendered)
+		}
 	}
 }
