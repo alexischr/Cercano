@@ -30,16 +30,35 @@ type codexModel struct {
 	Priority    int    `json:"priority"`   // lower sorts first
 }
 
-// listChatGPTModels fetches GET <codex base>/models?client_version=… with the
-// profile's subscription bearer and ChatGPT-Account-Id — the account-scoped
-// catalog Codex itself renders. Bounded like the other catalog fetches (6s
-// timeout, 16 MiB body cap), and redirects are refused so the bearer can
-// never follow one off-host.
+// listChatGPTModels serves the settings picker the account-scoped catalog for
+// a signed-in ChatGPT profile, using its stored (auto-refreshing) bearer.
 func (s *Server) listChatGPTModels(ctx context.Context, profile string) *proto.ListCloudProfileModelsResponse {
 	access, accountID, err := s.cfgSvc.Credentials().ChatGPT(profile, chatgptauth.Flow{}).Token(ctx)
 	if err != nil {
 		return &proto.ListCloudProfileModelsResponse{Error: err.Error()}
 	}
+	models, err := s.fetchChatGPTCatalog(ctx, access, accountID)
+	if err != nil {
+		return &proto.ListCloudProfileModelsResponse{Error: err.Error()}
+	}
+	out := &proto.ListCloudProfileModelsResponse{}
+	for _, m := range models {
+		name := m.DisplayName
+		if name == "" {
+			name = m.Slug
+		}
+		out.Models = append(out.Models, &proto.CloudModelInfo{Id: m.Slug, DisplayName: name})
+	}
+	return out
+}
+
+// fetchChatGPTCatalog fetches GET <codex base>/models?client_version=… with a
+// subscription bearer and ChatGPT-Account-Id — the account-scoped catalog
+// Codex itself renders — and returns the picker-visible entries, newest
+// (highest priority) first. Bounded like the other catalog fetches (6s
+// timeout, 16 MiB body cap), and redirects are refused so the bearer can
+// never follow one off-host.
+func (s *Server) fetchChatGPTCatalog(ctx context.Context, access, accountID string) ([]codexModel, error) {
 	base := s.chatgptCatalogBase
 	if base == "" {
 		base = responses.CodexBaseURL
@@ -47,7 +66,7 @@ func (s *Server) listChatGPTModels(ctx context.Context, profile string) *proto.L
 	modelsURL := strings.TrimRight(base, "/") + "/models?client_version=" + url.QueryEscape(codexCatalogClientVersion)
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, modelsURL, nil)
 	if err != nil {
-		return &proto.ListCloudProfileModelsResponse{Error: err.Error()}
+		return nil, err
 	}
 	httpReq.Header.Set("Authorization", "Bearer "+access)
 	if accountID != "" {
@@ -63,33 +82,23 @@ func (s *Server) listChatGPTModels(ctx context.Context, profile string) *proto.L
 	}
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		return &proto.ListCloudProfileModelsResponse{Error: err.Error()}
+		return nil, err
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
 	if err != nil {
-		return &proto.ListCloudProfileModelsResponse{Error: err.Error()}
+		return nil, err
 	}
 	if resp.StatusCode >= 400 {
-		return &proto.ListCloudProfileModelsResponse{
-			Error: fmt.Sprintf("ChatGPT model catalog returned %d", resp.StatusCode),
-		}
+		return nil, fmt.Errorf("ChatGPT model catalog returned %d", resp.StatusCode)
 	}
 	var parsed struct {
 		Models []codexModel `json:"models"`
 	}
 	if err := json.Unmarshal(body, &parsed); err != nil {
-		return &proto.ListCloudProfileModelsResponse{Error: "parse: " + err.Error()}
+		return nil, fmt.Errorf("parse: %w", err)
 	}
-	out := &proto.ListCloudProfileModelsResponse{}
-	for _, m := range chatgptPickerModels(parsed.Models) {
-		name := m.DisplayName
-		if name == "" {
-			name = m.Slug
-		}
-		out.Models = append(out.Models, &proto.CloudModelInfo{Id: m.Slug, DisplayName: name})
-	}
-	return out
+	return chatgptPickerModels(parsed.Models), nil
 }
 
 // chatgptPickerModels mirrors Codex's own picker: only entries the backend
