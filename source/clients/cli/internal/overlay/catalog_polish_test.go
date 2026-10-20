@@ -65,3 +65,20 @@ func TestCatalogFooterReverseFocusAndMouse(t *testing.T) {
 		}
 	}
 }
+
+func TestCatalogHeaderSpacingAndFilterRule(t *testing.T) {
+	c := NewCatalog("DeepInfra - Choose a Model > Economy", "", false)
+	lines := strings.Split(ansi.Strip(c.View(100, 24, theme.Cracker())), "\n")
+	for i, line := range lines {
+		if strings.Contains(line, "Choose a Model") {
+			if i+2 >= len(lines) || !strings.Contains(lines[i+2], "Search models") {
+				t.Fatal("expected one blank line after title")
+			}
+		}
+		if strings.Contains(line, "Compatible models") {
+			if i+1 >= len(lines) || !strings.Contains(lines[i+1], strings.Repeat("─", 96)) {
+				t.Fatal("missing rule beneath filter")
+			}
+		}
+	}
+}

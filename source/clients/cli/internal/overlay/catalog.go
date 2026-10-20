@@ -421,11 +421,14 @@ func (c *Catalog) View(width, height int, p theme.Palette) string {
 	c.height = height
 	accent := lipgloss.NewStyle().Foreground(p.Accent).Background(p.Surface)
 	muted := lipgloss.NewStyle().Foreground(p.Primary).Background(p.Surface)
-	lines := []string{lipgloss.NewStyle().Foreground(p.Bright).Bold(true).Render(catalogClip(catalogText(c.Title), w)), muted.Render(catalogClip(catalogText(c.Scope), w))}
+	lines := []string{lipgloss.NewStyle().Foreground(p.Bright).Bold(true).Render(catalogClip(catalogText(c.Title), w))}
+	if c.Scope != "" {
+		lines = append(lines, muted.Render(catalogClip(catalogText(c.Scope), w)))
+	}
 	lines = append(lines, "", "Search models")
 	c.input.SetWidth(max(1, w-4))
 	lines = append(lines, catalogClip(c.input.View(), w), "")
-	c.hits = append(c.hits, catalogHit{y: 5, from: 2, to: width - 2, search: true})
+	c.hits = append(c.hits, catalogHit{y: len(lines) - 1, from: 2, to: width - 2, search: true})
 	filter := "Compatible models"
 	if c.all {
 		filter = "All models"
@@ -440,8 +443,8 @@ func (c *Catalog) View(width, height int, p theme.Palette) string {
 	if c.focus == 1 {
 		filter = "› " + filter
 	}
-	lines = append(lines, muted.Render(catalogClip(filter, w)), "")
-	c.hits = append(c.hits, catalogHit{y: 7, from: 2, to: width - 2, filter: true})
+	lines = append(lines, muted.Render(catalogClip(filter, w)), muted.Render(strings.Repeat("─", w)))
+	c.hits = append(c.hits, catalogHit{y: len(lines) - 1, from: 2, to: width - 2, filter: true})
 	status := catalogText(c.State.Message)
 	if c.State.Busy && status == "" {
 		status = "Loading available models…"
