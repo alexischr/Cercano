@@ -213,3 +213,7 @@ Spec/plan approval does not authorize exporting signing keys, changing GitHub se
 ### Approved exact-candidate lifetime binding
 
 The user approved a candidate-specific launch wrapper with the minimum launch-package support needed to bind native process lifetime evidence to the exact owned child safely across exit and reaping. Preserve generic helper launch behavior. Uncertain or already-exited candidates must not receive usable identity authority; a post-start inspection failure must retain owned-process completion access. This approval does not authorize health-success decisions, signaling processes, selection changes, or treating completion as descendant or health proof.
+
+### Approved read-only candidate-health observation
+
+The user approved combining exact-owned-candidate lifetime checks, native listener observations, and the existing `GetAgentHealth` RPC in a bounded read-only observation layer. A consistent observation is not authenticated peer identity or health success. Endpoint exclusivity and attached-client reconnection remain unresolved gates. This slice must not authorize activation completion, rollback, cleanup, signaling, or live update execution.
