@@ -70,23 +70,13 @@ func TestWizardCloudPathEndToEnd(t *testing.T) {
 		t.Fatalf("after locus: want %s, got %s", wizard.StepCloud, wp.state.Step)
 	}
 
-	// Step 2 phase 1: pick the first provider (anthropic).
+	// A connected account is discovered when the shared provider popover
+	// returns. The root-model tests cover opening and OAuth dispatch.
+	wp.curActiveProfile = "claude"
+	wp.curProfiles = []agentclient.CloudProfileInfo{{Name: "claude", Provider: "anthropic"}}
 	press(t, wp, tea.KeyEnter)
-	if !wp.authPick {
-		t.Fatal("provider selected: want auth-method phase")
-	}
-	if wp.state.CloudProvider != "anthropic" {
-		t.Fatalf("provider: want anthropic, got %s", wp.state.CloudProvider)
-	}
-	// Phase 2: pick "sign in with Claude" (the first anthropic auth row).
-	// It hands off to the loopback modal (owned by the root model) and
-	// advances the wizard behind it — no eager profile commit here.
-	press(t, wp, tea.KeyEnter)
-	if wp.state.Step != wizard.StepOpen {
-		t.Fatalf("after cloud: want %s, got %s (cloud_primary uses open)", wizard.StepOpen, wp.state.Step)
-	}
-	if wp.state.AuthMethod != "claude" {
-		t.Fatalf("auth: want claude, got %s", wp.state.AuthMethod)
+	if wp.state.Step != wizard.StepOpen || wp.state.AuthMethod != "existing" {
+		t.Fatalf("connected account did not continue: %+v", wp.state)
 	}
 
 	// Step 3 (open): autofill should have filled both sides for every tier.
@@ -257,13 +247,14 @@ func TestWizardPickerEscClosesWithoutChange(t *testing.T) {
 
 func TestWizardAPIKeyFlow(t *testing.T) {
 	wp := newTestWizardPage(t)
-	press(t, wp, tea.KeyEnter) // cloud (first row)
-	press(t, wp, tea.KeyDown)  // -> openai (responses)
-	press(t, wp, tea.KeyDown)  // -> openai
-	press(t, wp, tea.KeyEnter) // openai (third preset row)
-	if wp.state.CloudProvider != "openai" {
-		t.Fatalf("provider: want openai, got %s", wp.state.CloudProvider)
-	}
+	// Exercise the retained legacy key-entry primitive directly; new setup
+	// uses the shared settings editor (covered by provider-popover tests).
+	wp.state.Step = wizard.StepCloud
+	wp.state.LocusMode = "cloud_primary"
+	wp.state.CloudProvider = "openai"
+	wp.authPick = true
+	wp.cursor = 0
+
 	press(t, wp, tea.KeyDown)
 	press(t, wp, tea.KeyEnter) // api_key (second auth row)
 	if !wp.keyEntry {
@@ -307,8 +298,11 @@ func TestWizardAPIKeyFlow(t *testing.T) {
 
 func TestWizardKeyEntryEscReturnsToAuthPick(t *testing.T) {
 	wp := newTestWizardPage(t)
-	press(t, wp, tea.KeyEnter) // cloud (first row)
-	press(t, wp, tea.KeyEnter) // anthropic
+	wp.state.Step = wizard.StepCloud
+	wp.state.LocusMode = "cloud_primary"
+	wp.state.CloudProvider = "anthropic"
+	wp.authPick = true
+	wp.cursor = 0
 	press(t, wp, tea.KeyDown)
 	press(t, wp, tea.KeyEnter) // api_key
 	if !wp.keyEntry {
@@ -435,8 +429,11 @@ func TestWizardAbandonClearFailureStaysOpen(t *testing.T) {
 
 func TestWizardKeyEntryQTypesIntoPrompt(t *testing.T) {
 	wp := newTestWizardPage(t)
-	press(t, wp, tea.KeyEnter) // cloud (first row)
-	press(t, wp, tea.KeyEnter) // anthropic
+	wp.state.Step = wizard.StepCloud
+	wp.state.LocusMode = "cloud_primary"
+	wp.state.CloudProvider = "anthropic"
+	wp.authPick = true
+	wp.cursor = 0
 	press(t, wp, tea.KeyDown)
 	press(t, wp, tea.KeyEnter) // api_key → masked prompt
 	if !wp.keyEntry {

@@ -202,7 +202,8 @@ type Model struct {
 	turnToolStarted int       // tool calls started in this turn, for long-turn progress visibility
 	turnToolDone    int       // tool executions completed in this turn, for long-turn progress visibility
 
-	content contentPage
+	content              contentPage
+	wizardProviderReturn *wizardPage // return from the shared provider popover to setup
 
 	// configSurface is non-nil while the unified /config tabbed surface is
 	// open; m.content then holds the active tab's page. See config_surface.go.
@@ -1500,6 +1501,12 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 			}
 			pageID := m.content.ID()
 			cmd, closed := m.content.Update(msg)
+			if m.wizardProviderReturn != nil {
+				if sp, ok := m.content.(*settingsPage); ok && (closed || (sp.providerPicker == nil && !sp.cloudEditorActive() && !sp.pendingCommit && !sp.hasUnsavedSettings())) {
+					m.restoreWizardProvider()
+					return m, cmd
+				}
+			}
 			if closed {
 				m.content = nil
 				m.contentScrollbarDragging = false
@@ -1869,6 +1876,9 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 			sp.expireCatalogFeedback(msg)
 		}
 		return m, nil
+	case wizardAddProviderMsg:
+		return m.openWizardProvider(msg)
+
 	case settingsCommitDoneMsg:
 		// The commit outcome still applies server-side even if the user has
 		// left the settings page — ConfigChanged events keep the chips fresh —

@@ -9,6 +9,7 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"cercano/source/clients/cli/internal/overlay"
 	"cercano/source/clients/cli/internal/theme"
@@ -369,18 +370,7 @@ func (wp *wizardPage) rows() []wizardRow {
 				rows = append(rows, wizardRow{Key: "account:" + p.Name, Label: "Use existing account: " + p.Name, Annotation: "change default account only after confirmation"})
 			}
 		}
-		for _, pr := range wp.providers {
-			ann := ""
-			disabled := false
-			switch pr.Tier {
-			case "coming_soon":
-				ann = "(coming soon)"
-				disabled = true
-			case "untested":
-				ann = "(untested)"
-			}
-			rows = append(rows, wizardRow{Key: pr.ID, Label: pr.Label, Annotation: ann, Disabled: disabled})
-		}
+		rows = append(rows, wizardRow{Key: "add_provider", Label: "+ Add cloud provider…", Annotation: "connect a subscription or API account"})
 		return rows
 	case wizard.StepOpen:
 		// The open-model set: one pick per open capability tier, plus the
@@ -421,12 +411,12 @@ func (wp *wizardPage) rows() []wizardRow {
 // wizardAuthRows is the design doc's auth matrix for one provider.
 func wizardAuthRows(providerID string) []wizardRow {
 	switch providerID {
-	case "anthropic":
+	case "anthropic", "anthropic-subscription":
 		return []wizardRow{
 			{Key: "claude", Label: "sign in with Claude (subscription)", Annotation: "Claude Max/Pro — no API key"},
 			{Key: "api_key", Label: "api key", Annotation: "key from console.anthropic.com"},
 		}
-	case "openai":
+	case "openai", "openai-responses":
 		return []wizardRow{
 			{Key: "chatgpt", Label: "chatgpt plus/pro sign-in", Annotation: "unofficial — may stop working; restricted model list"},
 			{Key: "api_key", Label: "api key", Annotation: "key from platform.openai.com"},
@@ -639,6 +629,9 @@ func (wp *wizardPage) selectRow() (tea.Cmd, bool) {
 
 	switch wp.state.Step {
 	case wizard.StepCloud:
+		if row.Key == "add_provider" {
+			return func() tea.Msg { return wizardAddProviderMsg{page: wp} }, false
+		}
 		if !wp.authPick && (row.Key == "use_existing" || strings.HasPrefix(row.Key, "account:")) {
 			name := wp.curActiveProfile
 			if strings.HasPrefix(row.Key, "account:") {
@@ -839,12 +832,12 @@ func (wp *wizardPage) stepTitle() string {
 func (wp *wizardPage) stepDesc() string {
 	switch wp.state.Step {
 	case wizard.StepLocus:
-		return "Welcome to Cercano. Cercano delegates work across three task tiers: Deep reasoning for hard problems, Everyday development for main chat, and Lightweight tasks for quick helpers. One account or one suitable local model can serve all three. Start with the recommended option; assignments remain editable."
+		return "Welcome to Cercano. Cercano delegates work across three task tiers:\n\n* **Deep reasoning** - Hard problems and complex decisions.\n* **Everyday development** - Main chat and day-to-day coding.\n* **Lightweight tasks** - Quick helpers and background work.\n\nOne account or one suitable local model can serve all three. Start with the recommended option; assignments remain editable."
 	case wizard.StepCloud:
 		if wp.authPick {
 			return "How do you want to authenticate? Connected accounts remain if you cancel setup; manage or remove them in /config."
 		}
-		return "Pick your cloud provider. Connected accounts remain if you cancel setup; manage or remove them in /config."
+		return "Cercano works with nearly any cloud provider, and you can add multiple providers for automatic fallback when one is busy or you exhaust your token limits.\n\nAdd a cloud provider below, or continue with a connected account. Connected accounts remain if you cancel setup; manage or remove them in /config."
 	case wizard.StepOpen:
 		var b strings.Builder
 		b.WriteString("Recommended open models, one per tier \u2014 runtime compatibility and available-memory checks still apply:\n")
@@ -1211,6 +1204,17 @@ func (wp *wizardPage) View() string {
 		for i, line := range strings.Split(d, "\n") {
 			if i > 0 {
 				b.WriteString("\n")
+			}
+			if rest, ok := strings.CutPrefix(line, "* **"); ok {
+				name, description, found := strings.Cut(rest, "** - ")
+				if found {
+					rendered := wp.styles.Primary.Render("* ") + wp.styles.Bright.Bold(true).Render(name) + wp.styles.Primary.Render(" - "+description)
+					if wp.width > 0 {
+						rendered = ansi.Wrap(rendered, wp.width, "")
+					}
+					b.WriteString(rendered)
+					continue
+				}
 			}
 			if wp.width <= 0 || len([]rune(line)) <= wp.width {
 				b.WriteString(wp.styles.Primary.Render(line))
