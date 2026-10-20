@@ -41,7 +41,11 @@ type chatAssistantDeltaMsg struct{ token string }
 
 // chatProgressMsg carries a routing/phase note for the open assistant entry's
 // inline status line (distinct from chatStatusMsg, which is /c-compatible).
-type chatProgressMsg struct{ note string }
+type chatProgressMsg struct {
+	note         string
+	toolActivity bool
+	hostActivity bool
+}
 
 // toolEntry* events drive the tool-call lifecycle in scrollback.
 type toolEntryStartMsg struct{ id, name string }

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"cercano/source/server/pkg/agentclient"
+	"cercano/source/server/pkg/proto"
 	"github.com/charmbracelet/x/ansi"
 	"strings"
 	"testing"
@@ -122,10 +123,10 @@ func TestCompletionProgressIsQuietInMainChat(t *testing.T) {
 			if streaming {
 				c.AppendEntry(&Entry{Role: RoleAssistant, Streaming: true})
 			}
-			c.Apply(chatProgressMsg{note: "Processing delegated task completions."})
+			c.Apply(streamMsgToEvent(agentclient.StreamMsg{Type: agentclient.TypeProgress, Note: "Processing delegated task completions.", ProgressKind: proto.ProgressKind_PROGRESS_KIND_HOST_ACTIVITY}))
 			c.rebuild()
 			text := ansi.Strip(chatLayoutContent(c))
-			if strings.Contains(text, "Processing delegated task completions") {
+			if strings.Contains(strings.ToLower(text), "processing delegated task completions") {
 				t.Fatalf("debug=%v streaming=%v: routine completion notice visible: %s", debug, streaming, text)
 			}
 			c.Apply(chatProgressMsg{note: "⚠ Completion failed"})
@@ -138,7 +139,7 @@ func TestCompletionProgressIsQuietInMainChat(t *testing.T) {
 			c.setTaskVisibility(debug, false)
 			c.rebuild()
 			text = ansi.Strip(chatLayoutContent(c))
-			if !strings.Contains(text, "Processing delegated task completions") {
+			if !strings.Contains(strings.ToLower(text), "processing delegated task completions") {
 				t.Fatal("child diagnostic lost")
 			}
 		}

@@ -4016,7 +4016,7 @@ func (s *Server) streamConversationTurn(req *proto.ProcessRequestRequest, stream
 				// surface that the no-progress bound was reset by work.
 				if err := stream.Send(&proto.StreamProcessResponse{
 					Payload: &proto.StreamProcessResponse_Progress{
-						Progress: &proto.ProgressUpdate{Message: autonomyWorkNotice()},
+						Progress: &proto.ProgressUpdate{Message: autonomyWorkNotice(), Kind: proto.ProgressKind_PROGRESS_KIND_HOST_ACTIVITY},
 					},
 				}); err != nil {
 					return err
@@ -4035,7 +4035,7 @@ func (s *Server) streamConversationTurn(req *proto.ProcessRequestRequest, stream
 		if req.GetDebugMode() {
 			if err := stream.Send(&proto.StreamProcessResponse{
 				Payload: &proto.StreamProcessResponse_Progress{
-					Progress: &proto.ProgressUpdate{Message: continuationAnnouncement(gate, turn+1)},
+					Progress: &proto.ProgressUpdate{Message: continuationAnnouncement(gate, turn+1), Kind: proto.ProgressKind_PROGRESS_KIND_HOST_ACTIVITY},
 				},
 			}); err != nil {
 				return err
@@ -4166,7 +4166,7 @@ func sendRunnerEvent(stream streamResponseSender, ev runnersvc.Event) error {
 	case runnersvc.EventProgress:
 		return stream.Send(&proto.StreamProcessResponse{
 			Payload: &proto.StreamProcessResponse_Progress{
-				Progress: &proto.ProgressUpdate{Message: ev.Text},
+				Progress: &proto.ProgressUpdate{Message: ev.Text, Kind: proto.ProgressKind(ev.ProgressKind)},
 			},
 		})
 

@@ -364,6 +364,13 @@ func TestStreamToolLoop_AutonomousContinuation_ProductiveWorkThenCompletion(t *t
 	if !workNoticeSeen {
 		t.Errorf("no work-reset notice (%q) in progress notes", autonomyWorkNotice())
 	}
+	for _, message := range stream.sent {
+		if progress := message.GetProgress(); progress != nil && (progress.Message == autonomyWorkNotice() || strings.Contains(progress.Message, "autonomous continuation")) {
+			if progress.Kind != proto.ProgressKind_PROGRESS_KIND_HOST_ACTIVITY {
+				t.Fatalf("host bookkeeping missing category: %+v", progress)
+			}
+		}
+	}
 
 	// Every persisted host-continuation marker is stored as source metadata
 	// (system role) yet reaches the provider as a user-role message — otherwise

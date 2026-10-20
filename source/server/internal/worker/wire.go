@@ -75,6 +75,7 @@ func MarshalEvent(ev runner.Event) *proto.WorkerEvent {
 	p := &proto.WorkerEvent{
 		Kind:         eventKindToProto(ev.Kind),
 		Text:         ev.Text,
+		ProgressKind: proto.ProgressKind(ev.ProgressKind),
 		Model:        ev.Model,
 		IsCloud:      ev.IsCloud,
 		ToolUseId:    ev.ToolUseID,
@@ -117,6 +118,7 @@ func UnmarshalEvent(p *proto.WorkerEvent) runner.Event {
 	ev := runner.Event{
 		Kind:         kind,
 		Text:         p.Text,
+		ProgressKind: runner.ProgressKind(p.ProgressKind),
 		Model:        p.Model,
 		IsCloud:      p.IsCloud,
 		ToolUseID:    p.ToolUseId,

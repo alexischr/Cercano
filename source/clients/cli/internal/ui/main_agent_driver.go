@@ -6,6 +6,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"cercano/source/server/pkg/agentclient"
+	"cercano/source/server/pkg/proto"
 )
 
 // mainAgentDriver opens the main chat's StreamChat and emits agent-agnostic
@@ -72,7 +73,7 @@ func streamMsgToEvent(sm agentclient.StreamMsg) tea.Msg {
 		}
 		return chatProgressMsg{}
 	case agentclient.TypeProgress:
-		return chatProgressMsg{note: normalizeProgress(sm.Note)}
+		return chatProgressMsg{note: normalizeProgress(sm.Note), toolActivity: sm.ProgressKind == proto.ProgressKind_PROGRESS_KIND_TOOL_ACTIVITY, hostActivity: sm.ProgressKind == proto.ProgressKind_PROGRESS_KIND_HOST_ACTIVITY}
 	case agentclient.TypeRouteSelected:
 		return chatStatusMsg{model: sm.RouteModel, cloud: sm.RouteCloud}
 	case agentclient.TypeToolUseStart:

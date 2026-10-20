@@ -705,3 +705,13 @@ func TestCompactionTaskWorkerSnapshot(t *testing.T) {
 		}
 	}
 }
+
+func TestProgressCategoryRoundTrip(t *testing.T) {
+	for _, kind := range []runner.ProgressKind{runner.ProgressNotice, runner.ProgressToolActivity, runner.ProgressHostActivity, 99} {
+		original := runner.Event{Kind: runner.EventProgress, Text: "arbitrary wording", ProgressKind: kind}
+		got := UnmarshalEvent(MarshalEvent(original))
+		if got.ProgressKind != kind || got.Text != original.Text {
+			t.Fatalf("lost progress semantics: %+v", got)
+		}
+	}
+}

@@ -55,9 +55,19 @@ and explicit `task_stop` activity remain visible. Retained poll evidence stays
 in the entry data, child tabs, and inspection paths; hiding is presentation
 only. Child tabs retain their tool evidence. Persisted host completion and
 autonomous-continuation envelopes are retained as metadata, not rendered as
-ordinary chat prose outside debug mode. Actual assistant follow-ups, permission
-prompts, and actionable autonomy pause notices remain visible; continuation
-counts, run IDs, and no-progress-reset bookkeeping are debug-only.
+ordinary main-chat prose, including in development mode. Actual assistant
+follow-ups, permission prompts, and actionable autonomy pause notices remain
+visible.
+
+Live progress carries an explicit category through the runner, worker transport,
+conversation replay, and client decoder. Tool activity uses the existing tool
+row rather than adding a second status line. Host continuation/completion
+bookkeeping is retained as diagnostic activity but hidden in main chat, including
+development mode. Neither rule depends on the message's wording, punctuation,
+capitalization, or arrival order. Ordinary and unknown progress categories keep
+the existing visible-notice behavior; assistant text is not classified by these
+rules. Legacy untyped tool notices retain a compatibility deduplication path.
+Both the server and CLI must be rebuilt/restarted to use the structured contract.
 
 Inspection is still read-only: merely listing or retrieving a result does not
 acknowledge its completion notification. There is not yet a durable signal that

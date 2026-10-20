@@ -49,7 +49,17 @@ type Authentication struct {
 	Challenge                 llm.AuthChallenge
 }
 
+// ProgressKind distinguishes diagnostic activity from user-facing notices.
+type ProgressKind int32
+
+const (
+	ProgressNotice ProgressKind = iota
+	ProgressToolActivity
+	ProgressHostActivity
+)
+
 type Event struct {
+	ProgressKind    ProgressKind
 	PersistedTurnID string
 	TurnEpoch       string
 	TurnGeneration  uint64

@@ -898,7 +898,7 @@ func (c *Core) makeLoopSink(sink EventSink, failures *failurelog.Writer, convers
 			})
 
 		case agent.LoopToolExecStart:
-			sink.Emit(Event{Kind: EventProgress, Text: toolProgress(ev.ToolName)})
+			sink.Emit(Event{Kind: EventProgress, Text: toolProgress(ev.ToolName), ProgressKind: ProgressToolActivity})
 			sink.Emit(Event{
 				Kind:      EventToolExecStart,
 				ToolUseID: ev.ToolUseID,

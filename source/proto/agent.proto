@@ -405,8 +405,17 @@ message WatchdogEvent {
 }
 
 // Progress update during a long-running task.
+// Presentation semantics are independent of human-readable wording.
+// Unspecified retains ordinary visible progress for older producers.
+enum ProgressKind {
+  PROGRESS_KIND_UNSPECIFIED = 0;
+  PROGRESS_KIND_TOOL_ACTIVITY = 1;
+  PROGRESS_KIND_HOST_ACTIVITY = 2;
+}
+
 message ProgressUpdate {
   string message = 1;
+  ProgressKind kind = 2;
 }
 
 // SubAgentEvent carries structured lifecycle and transcript events for a child
@@ -1938,6 +1947,7 @@ message WorkerEvent {
   repeated string granted_tools = 22;
   repeated string ignored_tools = 23;
  ServingRouteInfo route = 24;
+ ProgressKind progress_kind = 25;
 }
 
 // WorkerEventKind mirrors runner.EventKind.

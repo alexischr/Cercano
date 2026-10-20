@@ -85,7 +85,7 @@ func TestMakeLoopSink_EmitsProgressBeforeToolExec(t *testing.T) {
 	if len(s.events) != 2 {
 		t.Fatalf("got %d events, want progress + exec start: %+v", len(s.events), s.events)
 	}
-	if s.events[0].Kind != EventProgress || s.events[0].Text != "running Bash" {
+	if s.events[0].Kind != EventProgress || s.events[0].Text != "running Bash" || s.events[0].ProgressKind != ProgressToolActivity {
 		t.Fatalf("first event should be tool progress, got %+v", s.events[0])
 	}
 	if s.events[1].Kind != EventToolExecStart || s.events[1].ToolUseID != "tool-1" {

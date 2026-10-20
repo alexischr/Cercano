@@ -625,17 +625,23 @@ func (c *chatView) Apply(msg tea.Msg) tea.Cmd {
 	case chatProgressMsg:
 		// Host completion bookkeeping follows the same presentation policy as
 		// routine polling. Keep it out of the assistant's streaming status too.
-		if m.note == "Processing delegated task completions." {
+		if m.hostActivity {
 			c.AppendEntry(&Entry{Role: RoleSystem, Content: m.note, TaskActivity: true})
 			break
 		}
-		// Every in-flight tool row already represents its execution status.
+		// Tool lifecycle events already own the row and spinner. Activity
+		// messages must never create a second transcript entry, even when
+		// they arrive before that row or use different display spelling.
+		if m.toolActivity {
+			break
+		}
+		// Legacy untyped producers: every in-flight tool row already represents its execution status.
 		// Suppress redundant host notices for all tools, including new and MCP
 		// tools, rather than maintaining a tool-name allowlist.
 		if name, ok := strings.CutPrefix(m.note, "running "); ok {
 			represented := false
 			for _, e := range c.entries {
-				if e.Tool != nil && e.Tool.ToolName == name && e.Tool.Status == ToolStatusInProgress {
+				if e.Tool != nil && strings.EqualFold(e.Tool.ToolName, name) && e.Tool.Status == ToolStatusInProgress {
 					represented = true
 					break
 				}

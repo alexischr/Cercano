@@ -2072,29 +2072,30 @@ func parseRuntimeTime(value string) time.Time {
 type StreamMsg struct {
 	Authentication *AuthenticationRequired
 	Type           StreamMsgType
-	Token          string // for TypeToken
-	Note           string // for TypeProgress
-	Final          string // for TypeDone (full response)
-	Notice         string // for TypeDone (agent informational note, e.g. cloud absent)
-	Model          string // for TypeDone
-	TokIn          int    // for TypeDone
-	TokOut         int    // for TypeDone
-	Err            error  // for TypeError
-	ToolUseID      string // for TypeToolUseStart/Stop, TypeToolExecStart/Complete, TypePermissionRequired
-	ToolName       string // for TypeToolUseStart, TypePermissionRequired
-	ArgsSummary    string // for TypeToolUseStop
-	ArgsJSON       string // for TypePermissionRequired
-	Summary        string // for TypeToolExecComplete
-	Detail         string // for TypeToolExecComplete (clean outcome token)
-	StartLine      int    // for TypeToolExecComplete (1-based first line of an edit/write; 0 = n/a)
-	IsError        bool   // for TypeToolExecComplete
-	RouteModel     string // for TypeRouteSelected (engine handling the turn)
-	RouteCloud     bool   // for TypeRouteSelected (true = cloud, false = local)
-	Tier           string // for TypePermissionRequired ("W" | "X")
-	Destructive    bool   // for TypePermissionRequired (display-only ⚠ hint)
-	WatchdogKind   string // for TypeWatchdog ("challenge" | "block" | "echo")
-	Protocol       string // for TypeWatchdog (protocol name, empty for echo)
-	Thread         string // for TypeWatchdog echo only ("watchdog" | "main")
+	Token          string             // for TypeToken
+	Note           string             // for TypeProgress
+	ProgressKind   proto.ProgressKind // semantic category, never inferred from Note
+	Final          string             // for TypeDone (full response)
+	Notice         string             // for TypeDone (agent informational note, e.g. cloud absent)
+	Model          string             // for TypeDone
+	TokIn          int                // for TypeDone
+	TokOut         int                // for TypeDone
+	Err            error              // for TypeError
+	ToolUseID      string             // for TypeToolUseStart/Stop, TypeToolExecStart/Complete, TypePermissionRequired
+	ToolName       string             // for TypeToolUseStart, TypePermissionRequired
+	ArgsSummary    string             // for TypeToolUseStop
+	ArgsJSON       string             // for TypePermissionRequired
+	Summary        string             // for TypeToolExecComplete
+	Detail         string             // for TypeToolExecComplete (clean outcome token)
+	StartLine      int                // for TypeToolExecComplete (1-based first line of an edit/write; 0 = n/a)
+	IsError        bool               // for TypeToolExecComplete
+	RouteModel     string             // for TypeRouteSelected (engine handling the turn)
+	RouteCloud     bool               // for TypeRouteSelected (true = cloud, false = local)
+	Tier           string             // for TypePermissionRequired ("W" | "X")
+	Destructive    bool               // for TypePermissionRequired (display-only ⚠ hint)
+	WatchdogKind   string             // for TypeWatchdog ("challenge" | "block" | "echo")
+	Protocol       string             // for TypeWatchdog (protocol name, empty for echo)
+	Thread         string             // for TypeWatchdog echo only ("watchdog" | "main")
 
 	SubAgentID       string   // for TypeSubAgent
 	SubAgentParentID string   // for TypeSubAgent
@@ -2816,7 +2817,7 @@ func decodeStreamResponse(msg *proto.StreamProcessResponse) *StreamMsg {
 		return &StreamMsg{Type: TypeToken, Token: td.GetContent()}
 	}
 	if pg := msg.GetProgress(); pg != nil {
-		return &StreamMsg{Type: TypeProgress, Note: pg.GetMessage()}
+		return &StreamMsg{Type: TypeProgress, Note: pg.GetMessage(), ProgressKind: pg.GetKind()}
 	}
 	if fr := msg.GetFinalResponse(); fr != nil {
 		m := fr.GetRoutingMetadata()

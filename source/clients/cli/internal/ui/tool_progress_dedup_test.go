@@ -1,6 +1,9 @@
 package ui
 
-import "testing"
+import (
+	"cercano/source/server/pkg/agentclient"
+	"testing"
+)
 
 func TestAllToolRowsSuppressRedundantRunningProgress(t *testing.T) {
 	for _, name := range []string{"git_push", "Read", "task_wait", "dispatch", "workflow", "mcp__vendor__new_tool", "future_tool"} {
@@ -28,5 +31,14 @@ func TestAllToolRowsSuppressRedundantRunningProgress(t *testing.T) {
 				t.Fatal("warning suppressed")
 			}
 		})
+	}
+}
+
+func TestLegacyToolProgressThroughNormalization(t *testing.T) {
+	c := newTestChatView(100, 30)
+	c.Apply(toolEntryStartMsg{id: "tool", name: "RunCommand"})
+	c.Apply(streamMsgToEvent(agentclient.StreamMsg{Type: agentclient.TypeProgress, Note: "running RunCommand"}))
+	if len(c.Entries()) != 1 {
+		t.Fatalf("legacy normalized duplicate: %+v", c.Entries())
 	}
 }
