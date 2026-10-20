@@ -1153,6 +1153,9 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 		return m, cmd
 
 	case tea.MouseClickMsg:
+		if m.claudeLoginModal != nil {
+			return m.handleClaudeLoginModalMouse(msg)
+		}
 		// Confirmation gates keyboard input, not mouse selection or navigation.
 		mouse := msg.Mouse()
 		if mouse.Button == tea.MouseLeft && m.mouseInHeaderTitle(mouse.X, mouse.Y) {
@@ -5625,11 +5628,6 @@ func (m Model) View() tea.View {
 		ReportAssociatedText:       true,
 	}
 	v.MouseMode = tea.MouseModeCellMotion
-	if m.claudeLoginModal != nil && m.claudeLoginModal.fullWidth() {
-		// The manual sign-in URL is printed for copying, often over SSH. Mouse
-		// tracking would send drags to the app and block terminal selection.
-		v.MouseMode = tea.MouseModeNone
-	}
 	// Drive the real terminal cursor to the input caret position. Only
 	// when the chat input owns focus (no overlay, no pending confirm).
 	if m.searchVisible() && m.searchCanOwnInput() {

@@ -79,32 +79,23 @@ func keyText(text string) tea.KeyPressMsg {
 	return tea.KeyPressMsg{Code: r[0], Text: text}
 }
 
-// The manual URL must be copyable from any terminal: printed in full, at full
-// frame width, with every row but the last holding nothing but URL text.
-func TestClaudeLoginModalPrintsManualURLForCopying(t *testing.T) {
+func TestClaudeLoginModalCompactBrowserAction(t *testing.T) {
 	pal := theme.Cracker()
-	styles := theme.NewStyles(pal)
 	mo := waitingModalWithCode()
-	const frameW = 80
-	out := mo.View(styles, pal, frameW, 40)
-
-	var urlRows []string
-	for _, line := range strings.Split(ansi.Strip(out), "\n") {
-		if w := ansi.StringWidth(line); w != frameW {
-			t.Fatalf("modal row width %d, want full frame width %d: %q", w, frameW, line)
-		}
-		if strings.HasPrefix(line, "https://") || len(urlRows) > 0 && len(urlRows[len(urlRows)-1]) == frameW {
-			urlRows = append(urlRows, strings.TrimRight(line, " "))
-		}
+	out := ansi.Strip(mo.View(theme.NewStyles(pal), pal, 100, 40))
+	if strings.Contains(out, "code_challenge") || !strings.Contains(out, "[ Open browser ]") {
+		t.Fatalf("expected compact action, got:\n%s", out)
 	}
-	if got := strings.Join(urlRows, ""); got != testManualURL {
-		t.Fatalf("joined URL rows:\n got %q\nwant %q", got, testManualURL)
+	if w, _ := mo.modalDim(100, 40); w > 64 {
+		t.Fatalf("modal width = %d", w)
 	}
-	if !strings.Contains(out, "\x1b]8;;"+testManualURL) {
-		t.Error("URL rows should also be OSC 8 links to the whole URL")
-	}
-	if !strings.Contains(ansi.Strip(out), "paste the code") {
-		t.Error("modal should ask for the pasted code")
+	m := New(nil, false)
+	m.claudeLoginModal = mo
+	updated, _ := m.handleClaudeLoginModalKey(tea.KeyPressMsg{Code: tea.KeyTab})
+	m = updated.(Model)
+	_, cmd := m.handleClaudeLoginModalKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd == nil || mo.submitting {
+		t.Fatal("focused browser action did not open browser")
 	}
 }
 
@@ -229,23 +220,30 @@ func TestClaudeLoginAutoOpenSkippedWhenHeadless(t *testing.T) {
 	}
 }
 
-// While the manual URL is printed, the terminal must own the mouse so a drag
-// selects the URL text. With mouse tracking on, drags go to the app instead and
-// the URL can't be copied, which is the whole point of the SSH fallback.
-func TestClaudeLoginModalReleasesMouseForURLSelection(t *testing.T) {
+// Mouse reporting stays enabled for the compact sign-in action.
+func TestClaudeLoginModalMouseAction(t *testing.T) {
 	m := New(nil, false)
-	m.width, m.height = 140, 45
-	if got := m.View().MouseMode; got != tea.MouseModeCellMotion {
-		t.Fatalf("without the modal, mouse mode = %v, want cell motion", got)
-	}
-
+	m.width, m.height = 100, 40
 	m.claudeLoginModal = waitingModalWithCode()
-	if got := m.View().MouseMode; got != tea.MouseModeNone {
-		t.Fatalf("with the manual URL showing, mouse mode = %v, want none", got)
+	if m.View().MouseMode != tea.MouseModeCellMotion {
+		t.Fatal("mouse reporting disabled")
 	}
-
-	m.claudeLoginModal.setDone()
-	if got := m.View().MouseMode; got != tea.MouseModeCellMotion {
-		t.Fatalf("after sign-in finished, mouse mode = %v, want cell motion", got)
+	mo := m.claudeLoginModal
+	w, h := mo.modalDim(m.width, m.height)
+	rendered := ansi.Strip(mo.View(m.styles, m.palette, m.width, m.height))
+	if len(strings.Split(rendered, "\n")) != h {
+		t.Fatalf("render height differs from geometry: %d vs %d", len(strings.Split(rendered, "\n")), h)
 	}
+	for row, line := range strings.Split(rendered, "\n") {
+		if col := strings.Index(line, "[ Open browser ]"); col >= 0 {
+			x := (m.width-w)/2 + ansi.StringWidth(line[:col])
+			y := (m.height-h)/2 + row
+			_, cmd := m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+			if cmd == nil || !mo.browserFocused {
+				t.Fatal("mouse did not activate browser button")
+			}
+			return
+		}
+	}
+	t.Fatal("missing browser action")
 }

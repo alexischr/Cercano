@@ -5,7 +5,7 @@
 // the agent runs a PKCE loopback (not device-code). The first frame carries two
 // URLs for the same grant. The loopback one is opened in a browser on this
 // machine when one can be launched; approving it lets the agent's loopback
-// catch the redirect. The manual one is printed in full for copying to a
+// catch the redirect. The manual one is available through the copy shortcut for a
 // browser anywhere (the SSH case); approving it shows a code, which the user
 // pastes into the modal and the modal submits under the frame's login id.
 // State machine and streaming plumbing mirror the ChatGPT modal.
@@ -50,7 +50,7 @@ type claudeLoginModal struct {
 	// authorizeURL is populated from the first stream frame — the loopback
 	// URL opened in a browser on this machine.
 	authorizeURL string
-	// manualURL and loginID come from the same frame. manualURL is printed for
+	// manualURL and loginID come from the same frame. manualURL is retained for
 	// copying to any browser; the code it yields is submitted under loginID.
 	// Both are empty against an older agent, which only does the loopback.
 	manualURL string
@@ -73,7 +73,8 @@ type claudeLoginModal struct {
 	cancel context.CancelFunc
 	// browserOpened guards the one-shot auto-open so re-draws / extra frames
 	// don't spawn a browser tab twice.
-	browserOpened bool
+	browserOpened  bool
+	browserFocused bool
 }
 
 // newClaudeLoginModal opens the modal in the waiting state for a given profile
@@ -91,7 +92,7 @@ func (mo *claudeLoginModal) setURL(authorizeURL, manualURL, loginID string) {
 // user lands on it without hunting for the link — but only where a browser can
 // show up on this machine. Over SSH or without a display the attempt would
 // fail silently or, worse, start a text-mode browser in this terminal; the
-// printed manual URL covers those cases.
+// copy-link shortcut covers those cases.
 func (mo *claudeLoginModal) autoOpenBrowser() tea.Cmd {
 	if mo.browserOpened || mo.authorizeURL == "" || !browserLaunchable(os.Getenv, runtime.GOOS) {
 		return nil
@@ -106,7 +107,7 @@ func (mo *claudeLoginModal) acceptsCode() bool {
 	return mo.state == claudeLoginWaiting && mo.loginID != "" && !mo.submitting
 }
 
-// shownURL is the URL printed for the user to open: the manual one when the
+// shownURL is the URL used by the explicit open/copy actions: the manual one when the
 // agent offers it (it works from any browser), else the loopback one.
 func (mo *claudeLoginModal) shownURL() string {
 	if mo.manualURL != "" {
@@ -121,6 +122,7 @@ func (mo *claudeLoginModal) pasteCode(text string) {
 	if !mo.acceptsCode() {
 		return
 	}
+	mo.browserFocused = false
 	clean := strings.Join(strings.Fields(ansi.Strip(text)), "")
 	if clean != "" {
 		mo.code += clean
@@ -248,35 +250,11 @@ func (mo *claudeLoginModal) applyCodeResult(msg claudeLoginCodeResultMsg) {
 
 // --- rendering ---
 
-// modalDim returns the box dimensions for the compositor to center. While a
-// manual URL is showing the box spans the full frame width with no side
-// borders, so the URL's hard-wrapped rows hold nothing but URL text and a
-// terminal selection across them copies cleanly (browsers drop the line
-// breaks on paste).
+// modalDim keeps sign-in compact regardless of authorization URL length.
 func (mo *claudeLoginModal) modalDim(frameW, frameH int) (int, int) {
-	boxW := 64
-	if frameW-4 < boxW {
-		boxW = frameW - 4
-	}
-	if boxW < 40 {
-		boxW = 40
-	}
-	boxH := 13
-	if mo.fullWidth() {
-		boxW = frameW
-		boxH = len(mo.lines(theme.Styles{}, boxW)) + 2
-	}
-	if boxH > frameH-4 {
-		boxH = frameH - 4
-	}
-	if boxH < 10 {
-		boxH = 10
-	}
+	boxW := min(64, max(10, frameW-4))
+	boxH := len(mo.lines(theme.Styles{}, boxW-4)) + 2
 	return boxW, boxH
-}
-
-func (mo *claudeLoginModal) fullWidth() bool {
-	return mo.state == claudeLoginWaiting && mo.manualURL != ""
 }
 
 // View renders the modal as a bordered box sized to the frame.
@@ -289,10 +267,6 @@ func (mo *claudeLoginModal) View(styles theme.Styles, palette theme.Palette, fra
 		Width(boxW - 2).
 		Height(boxH - 2)
 	inner := boxW - 4
-	if mo.fullWidth() {
-		box = box.BorderLeft(false).BorderRight(false).Padding(0).Width(boxW)
-		inner = boxW
-	}
 	return box.Render(strings.Join(mo.lines(styles, inner), "\n"))
 }
 
@@ -300,7 +274,8 @@ func (mo *claudeLoginModal) View(styles theme.Styles, palette theme.Palette, fra
 func (mo *claudeLoginModal) lines(styles theme.Styles, w int) []string {
 	out := []string{styles.Primary.Bold(true).Render(mo.title()), ""}
 	out = append(out, mo.renderBody(styles, w)...)
-	return append(out, "", mo.renderActions(styles))
+	out = append(out, "")
+	return append(out, strings.Split(ansi.Wrap(mo.renderActions(styles), w, ""), "\n")...)
 }
 
 func (mo *claudeLoginModal) title() string {
@@ -322,29 +297,21 @@ func (mo *claudeLoginModal) renderBody(styles theme.Styles, w int) []string {
 		if mo.authorizeURL == "" && mo.manualURL == "" {
 			return []string{styles.Muted.Render("Starting sign-in…")}
 		}
-		if mo.manualURL == "" {
-			// Older agent: loopback only, no code to paste.
-			return []string{
-				styles.Muted.Render("Approve the sign-in in your browser. If it didn't open,"),
-				styles.Muted.Render("open this URL:"),
-				"  " + hyperlink(mo.authorizeURL, styles.Primary.Render("claude.ai authorize")),
-			}
-		}
-		intro := "Open this URL in a browser on any device and approve the sign-in:"
+		intro := "Approve the sign-in in your browser."
 		if mo.browserOpened {
-			intro = "Approve the sign-in in the browser that just opened, or open this URL in a browser on any device:"
+			intro = "Approve the sign-in in the browser that just opened."
 		}
 		out := wrap(styles.Muted, intro)
-		out = append(out, "")
-		// Hard-wrap at exactly w so every row but the last is pure URL. Each
-		// row is also an OSC 8 link to the whole URL for terminals that click.
-		url := mo.shownURL()
-		for _, row := range strings.Split(ansi.Hardwrap(url, w, false), "\n") {
-			out = append(out, hyperlink(url, styles.Primary.Render(row)))
+		buttonStyle := styles.Primary
+		if mo.browserFocused {
+			buttonStyle = buttonStyle.Reverse(true)
 		}
-		out = append(out, "")
-		out = append(out, wrap(styles.Muted, "Then paste the code shown after approving, and press Enter:")...)
-		out = append(out, mo.renderCodeField(styles, w))
+		out = append(out, "", buttonStyle.Render("[ Open browser ]"), "")
+		if mo.manualURL != "" {
+			out = append(out, wrap(styles.Muted, "Or copy the link to another device, then paste the code here:")...)
+			out = append(out, mo.renderCodeField(styles, w))
+		}
+
 		switch {
 		case mo.codeErr != "":
 			out = append(out, wrap(styles.Error, mo.codeErr)...)
@@ -387,7 +354,7 @@ func (mo *claudeLoginModal) renderActions(styles theme.Styles) string {
 	switch mo.state {
 	case claudeLoginWaiting:
 		if mo.loginID != "" {
-			return styles.Muted.Render("[Enter] submit code  [Ctrl+Y] copy URL  [Ctrl+O] open browser  [Esc] cancel")
+			return styles.Muted.Render("[Tab] switch focus  [Enter] activate\n[Ctrl+Y] copy URL  [Ctrl+O] open browser  [Esc] cancel")
 		}
 		return styles.Muted.Render("[o] open browser  [Esc] Cancel  (waiting for approval…)")
 	case claudeLoginDone:
@@ -412,9 +379,16 @@ func (m Model) handleClaudeLoginModalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cm
 			}
 			m.claudeLoginModal = nil
 			return m, nil
+		case "tab", "shift+tab":
+			mo.browserFocused = !mo.browserFocused
+			return m, nil
+		case "enter":
+			if mo.browserFocused {
+				return m, openBrowserCmd(mo.shownURL())
+			}
 		case "ctrl+o":
 			if mo.authorizeURL != "" {
-				return m, openBrowserCmd(mo.authorizeURL)
+				return m, openBrowserCmd(mo.shownURL())
 			}
 			return m, nil
 		case "ctrl+y":
@@ -427,8 +401,11 @@ func (m Model) handleClaudeLoginModalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cm
 		if mo.loginID == "" {
 			// Older agent: no code field, keep the bare [o] shortcut.
 			if msg.String() == "o" && mo.authorizeURL != "" {
-				return m, openBrowserCmd(mo.authorizeURL)
+				return m, openBrowserCmd(mo.shownURL())
 			}
+			return m, nil
+		}
+		if mo.browserFocused {
 			return m, nil
 		}
 		if !mo.acceptsCode() {
@@ -458,5 +435,24 @@ func (m Model) handleClaudeLoginModalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cm
 		return m, nil
 	}
 	m.claudeLoginModal = nil
+	return m, nil
+}
+
+// handleClaudeLoginModalMouse uses the same layout as rendering and consumes
+// clicks outside the action so they cannot reach the settings underneath.
+func (m Model) handleClaudeLoginModalMouse(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
+	mo := m.claudeLoginModal
+	if mo.state != claudeLoginWaiting || mo.shownURL() == "" || msg.Button != tea.MouseLeft {
+		return m, nil
+	}
+	w, h := mo.modalDim(m.width, m.height)
+	x, y := max(0, (m.width-w)/2)+2, max(0, (m.height-h)/2)+1
+	for row, line := range mo.lines(theme.Styles{}, w-4) {
+		text := ansi.Strip(line)
+		if text == "[ Open browser ]" && msg.Y == y+row && msg.X >= x && msg.X < x+ansi.StringWidth(text) {
+			mo.browserFocused = true
+			return m, openBrowserCmd(mo.shownURL())
+		}
+	}
 	return m, nil
 }
