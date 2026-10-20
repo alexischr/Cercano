@@ -53,3 +53,12 @@ func (c Completion) ExitCode() (int, bool) {
 	}
 	return c.process.exitCode, true
 }
+
+// Done closes when the sole reaper returns, including uncertain wait failures.
+// Closure is not completion proof; use WaitForCompletion for that distinction.
+func (p *Process) Done() <-chan struct{} {
+	if p == nil {
+		return nil
+	}
+	return p.done
+}

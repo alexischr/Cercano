@@ -146,6 +146,21 @@ func (p *Process) Executable() string {
 // unsupported platform, or an invalid/unopenable output log returns an
 // error with no child started.
 func Launch(opts Options) (*Process, error) {
+	return launchObserved(opts, nil)
+}
+
+// LaunchObserved captures a bounded read-only observation before starting the
+// reaper. A non-nil Process on error means the child WAS started; callers retain
+// completion access and must not retry blindly. observe must not wait for exit,
+// signal, reap, or retain the diagnostic PID as authority.
+func LaunchObserved(opts Options, observe func(int) error) (*Process, error) {
+	if observe == nil {
+		return nil, errors.New("launch: nil observer")
+	}
+	return launchObserved(opts, observe)
+}
+
+func launchObserved(opts Options, observe func(int) error) (*Process, error) {
 	if opts.Executable == "" {
 		return nil, fmt.Errorf("%w: empty path", ErrInvalidExecutable)
 	}
@@ -202,6 +217,10 @@ func Launch(opts Options) (*Process, error) {
 		return nil, fmt.Errorf("launch: starting %s: %w", opts.Executable, err)
 	}
 	p := &Process{pid: cmd.Process.Pid, executable: opts.Executable, done: make(chan struct{}), exitCode: -1}
+	var observationErr error
+	if observe != nil {
+		observationErr = observeOwned(cmd.Process, func() error { return observe(p.pid) })
+	}
 	// Only this goroutine calls Wait. It never signals or supervises. An exit
 	// status error still proves termination; other wait errors do not.
 	go func() {
@@ -213,7 +232,7 @@ func Launch(opts Options) (*Process, error) {
 		}
 		close(p.done)
 	}()
-	return p, nil
+	return p, observationErr
 }
 
 // openOutputStream opens one child output stream: a caller-owned regular
