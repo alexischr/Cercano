@@ -48,6 +48,9 @@ func TestCatalogIdentityAndActions(t *testing.T) {
 	for _, a := range []CatalogAction{CatalogInherit, CatalogNone, CatalogCustom} {
 		c = NewCatalog("Choose", "", false)
 		c.SetEntries([]CatalogEntry{{Name: "Action", Action: a}})
+		if a == CatalogCustom {
+			c.setFocus(4)
+		}
 		if catKey(&c, tea.KeyEnter).Action != a {
 			t.Fatal("conflated special action")
 		}
@@ -85,9 +88,6 @@ func TestCatalogCompactDetailsAndScroll(t *testing.T) {
 	catKey(&c, tea.KeyPgDown)
 	if c.detailOffset == 0 {
 		t.Fatal("details not scrollable")
-	}
-	if catKey(&c, tea.KeyEscape).Action != CatalogIdle || c.compactDetail {
-		t.Fatal("Escape must return from details")
 	}
 	if catKey(&c, tea.KeyEscape).Action != CatalogCancel {
 		t.Fatal("Escape must close picker")

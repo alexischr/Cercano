@@ -69,8 +69,10 @@ func TestCloudCustomEntryHiddenUntilPickerChoosesCustom(t *testing.T) {
 	if sp.catalogPicker == nil {
 		t.Fatalf("catalog picker did not open")
 	}
-	// Move to the custom entry and confirm it.
-	sp.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	// Tab to the custom-ID footer action and confirm it.
+	for i := 0; i < 4; i++ {
+		sp.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	}
 	sp.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if sp.catalogPicker != nil {
 		t.Fatalf("catalog picker did not close after choosing custom")
@@ -116,7 +118,9 @@ func TestCloudCustomEntryHiddenUntilPickerChoosesCustom(t *testing.T) {
 	if sp.catalogPicker == nil {
 		t.Fatalf("quality catalog picker did not open")
 	}
-	sp.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	for i := 0; i < 4; i++ {
+		sp.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	}
 	sp.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if f, _ := cleanupFieldAt(sp, "cloud-custom-premium"); f == nil {
 		t.Fatalf("cloud-custom-premium should appear after choosing the custom picker entry")

@@ -81,6 +81,9 @@ func (c Catalog) filtered() []CatalogEntry {
 	}
 	var found []match
 	for _, e := range c.Entries {
+		if e.Action == CatalogCustom {
+			continue
+		}
 		if c.account != "" {
 			found := e.Account == c.account
 			for _, a := range e.Accounts {
@@ -148,8 +151,45 @@ func (c *Catalog) SetEntries(entries []CatalogEntry) {
 		}
 	}
 }
+func (c Catalog) hasCustom() bool {
+	for _, e := range c.Entries {
+		if e.Action == CatalogCustom {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *Catalog) setFocus(f int) {
-	c.focus = (f + 4) % 4
+	targets := []int{0, 1, 2, 3, 5, 6}
+	if c.hasCustom() {
+		targets = []int{0, 1, 2, 3, 4, 5, 6}
+	}
+	if !c.Browse {
+		targets = append(targets, 7)
+	}
+	if c.Providers {
+		targets = []int{0, 2, 6}
+	}
+	if f > c.focus {
+		c.focus = targets[0]
+		for _, target := range targets {
+			if target >= f {
+				c.focus = target
+				break
+			}
+		}
+	} else if f < c.focus {
+		c.focus = targets[len(targets)-1]
+		for i := len(targets) - 1; i >= 0; i-- {
+			if targets[i] <= f {
+				c.focus = targets[i]
+				break
+			}
+		}
+	} else {
+		c.focus = f
+	}
 	if c.focus == 0 {
 		c.input.Focus()
 	} else {
@@ -181,11 +221,7 @@ func (c *Catalog) Update(msg tea.Msg) (tea.Cmd, CatalogOutcome) {
 	move := func(n int) { c.cursor = max(0, min(len(entries)-1, c.cursor+n)); c.detailOffset = 0; c.notice = "" }
 	switch key.String() {
 	case "esc":
-		if c.compactDetail {
-			c.compactDetail = false
-			c.detailOffset = 0
-			return nil, CatalogOutcome{}
-		}
+
 		return nil, CatalogOutcome{Action: CatalogCancel}
 	case "ctrl+r":
 		if !c.State.Busy {
@@ -260,6 +296,17 @@ func (c *Catalog) Update(msg tea.Msg) (tea.Cmd, CatalogOutcome) {
 			return nil, CatalogOutcome{}
 		}
 	case "enter":
+		switch c.focus {
+		case 4:
+			return nil, CatalogOutcome{Action: CatalogCustom}
+		case 5:
+			if !c.State.Busy {
+				return nil, CatalogOutcome{Action: CatalogRefresh}
+			}
+			return nil, CatalogOutcome{}
+		case 6:
+			return nil, CatalogOutcome{Action: CatalogCancel}
+		}
 		if c.State.Action == CatalogCredentials {
 			return nil, CatalogOutcome{Action: CatalogCredentials}
 		}
@@ -324,7 +371,7 @@ func (c Catalog) details(w int) []string {
 	}
 	lines := []string{catalogText(e.Name)}
 	if e.Action == CatalogIdle {
-		lines = append(lines, "ID: "+catalogText(e.ID))
+		lines = append(lines, "", catalogText(e.ID), "")
 	}
 	if e.Account != "" {
 		lines = append(lines, "Account: "+catalogText(e.Account))
@@ -371,11 +418,13 @@ func (c *Catalog) View(width, height int, p theme.Palette) string {
 	h := height - 2
 	c.width = width
 	c.height = height
-	accent := lipgloss.NewStyle().Foreground(p.Accent)
-	muted := lipgloss.NewStyle().Foreground(p.Muted)
+	accent := lipgloss.NewStyle().Foreground(p.Accent).Background(p.Surface)
+	muted := lipgloss.NewStyle().Foreground(p.Primary).Background(p.Surface)
 	lines := []string{lipgloss.NewStyle().Foreground(p.Bright).Bold(true).Render(catalogClip(catalogText(c.Title), w)), muted.Render(catalogClip(catalogText(c.Scope), w))}
+	lines = append(lines, "", "Search models")
 	c.input.SetWidth(max(1, w-4))
-	lines = append(lines, catalogClip(c.input.View(), w))
+	lines = append(lines, catalogClip(c.input.View(), w), "")
+	c.hits = append(c.hits, catalogHit{y: 5, from: 2, to: width - 2, search: true})
 	filter := "Compatible models"
 	if c.all {
 		filter = "All models"
@@ -390,7 +439,8 @@ func (c *Catalog) View(width, height int, p theme.Palette) string {
 	if c.focus == 1 {
 		filter = "› " + filter
 	}
-	lines = append(lines, muted.Render(catalogClip(filter, w)))
+	lines = append(lines, muted.Render(catalogClip(filter, w)), "")
+	c.hits = append(c.hits, catalogHit{y: 7, from: 2, to: width - 2, filter: true})
 	status := catalogText(c.State.Message)
 	if c.State.Busy && status == "" {
 		status = "Loading available models…"
@@ -427,7 +477,11 @@ func (c *Catalog) View(width, height int, p theme.Palette) string {
 	if strings.TrimSpace(c.Query()) != "" && count == 0 {
 		lines = append(lines, catalogClip("No models match your search.", w))
 	}
-	bodyH := max(1, h-len(lines)-2)
+	footerRows := 4
+	if w < 48 && c.hasCustom() {
+		footerRows = 5
+	}
+	bodyH := max(1, h-len(lines)-footerRows)
 	wide := width >= 100 && height >= 24
 	compact := c.IsCompact()
 	listW, detailW := w, w
@@ -486,7 +540,7 @@ func (c *Catalog) View(width, height int, p theme.Palette) string {
 		}
 		row := catalogPad(mark+name, listW)
 		if i == c.cursor {
-			row = accent.Render(row)
+			row = lipgloss.NewStyle().Foreground(p.Bright).Background(p.SelectionBg).Render(row)
 		}
 		if !c.compactDetail {
 			c.hits = append(c.hits, catalogHit{y: len(lines) + len(list) + 1, from: 2, to: 2 + listW, index: i, entry: true})
@@ -527,16 +581,59 @@ func (c *Catalog) View(width, height int, p theme.Palette) string {
 			lines = append(lines, details...)
 		}
 	}
-	footer := "[ Cancel ]   [ Refresh ]"
-	c.hits = append(c.hits, catalogHit{y: 3, from: 2, to: width - 2, search: true}, catalogHit{y: 4, from: 2, to: width - 2, filter: true}, catalogHit{y: h, from: 2, to: 12, action: CatalogCancel}, catalogHit{y: h, from: 15, to: 28, action: CatalogRefresh})
-	note := c.notice
-	if len(lines) > h-2 {
-		lines = lines[:h-2]
+	// Fixed footer: each action is reachable by Tab and uses the same hit box
+	// for pointer activation. No keyboard-help text competes with the content.
+	if len(lines) > h-footerRows {
+		lines = lines[:h-footerRows]
 	}
-	for len(lines) < h-2 {
+	for len(lines) < h-footerRows {
 		lines = append(lines, "")
 	}
-	lines = append(lines, muted.Render(catalogClip(note, w)), muted.Render(catalogClip(footer, w)))
+	lines = append(lines, muted.Render(strings.Repeat("─", w)), catalogClip(c.notice, w))
+	type button struct {
+		label  string
+		focus  int
+		action CatalogAction
+	}
+	buttons := []button{}
+	if c.hasCustom() {
+		buttons = append(buttons, button{"Custom ID…", 4, CatalogCustom})
+	}
+	buttons = append(buttons, button{"Refresh", 5, CatalogRefresh}, button{"Cancel", 6, CatalogCancel})
+	if !c.Browse {
+		buttons = append(buttons, button{"Use", 7, CatalogSelect})
+	}
+	footer := ""
+	footerY := h - 1
+	if footerRows == 5 {
+		footerY--
+	}
+	for _, b := range buttons {
+		label := "[ " + b.label + " ]"
+		if w < 60 {
+			label = "[" + b.label + "]"
+		}
+		if ansi.StringWidth(footer)+ansi.StringWidth(label) > w {
+			lines = append(lines, footer)
+			footer = ""
+			footerY++
+		}
+		x := ansi.StringWidth(footer)
+		style := muted
+		if c.focus == b.focus {
+			style = accent.Bold(true).Underline(true)
+		}
+		footer += style.Render(label) + " "
+		if b.focus == 4 && w >= 60 {
+			remaining := len("[ Refresh ] [ Cancel ]")
+			if !c.Browse {
+				remaining += len(" [ Use ]")
+			}
+			footer += strings.Repeat(" ", max(0, w-ansi.StringWidth(footer)-remaining))
+		}
+		c.hits = append(c.hits, catalogHit{y: footerY, from: 2 + x, to: 2 + x + ansi.StringWidth(label), action: b.action})
+	}
+	lines = append(lines, catalogClip(strings.TrimRight(footer, " "), w), "")
 	for i, s := range lines {
 		lines[i] = catalogClip(s, w)
 	}

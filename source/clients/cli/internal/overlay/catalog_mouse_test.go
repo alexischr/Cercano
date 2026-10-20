@@ -29,7 +29,7 @@ func TestCatalogMouseModelAndCancel(t *testing.T) {
 		}
 		for y, line := range strings.Split(view, "\n") {
 			if strings.Contains(line, "[ Cancel ]") {
-				_, out := c.Update(tea.MouseClickMsg{X: 5, Y: y, Button: tea.MouseLeft})
+				_, out := c.Update(tea.MouseClickMsg{X: ansi.StringWidth(line[:strings.Index(line, "[ Cancel ]")]) + 2, Y: y, Button: tea.MouseLeft})
 				if out.Action != CatalogCancel {
 					t.Fatal(out)
 				}

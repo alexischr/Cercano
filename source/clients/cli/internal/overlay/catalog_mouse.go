@@ -34,6 +34,13 @@ func (c *Catalog) click(x, y int) (tea.Cmd, CatalogOutcome) {
 			c.setFocus(2)
 			return c.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 		}
+		if hit.action == CatalogSelect {
+			c.setFocus(7)
+			return c.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		}
+		if hit.action == CatalogRefresh && c.State.Busy {
+			return nil, CatalogOutcome{}
+		}
 		return nil, CatalogOutcome{Action: hit.action}
 	}
 	return nil, CatalogOutcome{}
