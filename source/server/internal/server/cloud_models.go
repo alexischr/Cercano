@@ -1,6 +1,7 @@
 package server
 
 import (
+	"cercano/source/server/internal/anthropicauth"
 	"cercano/source/server/internal/catalog"
 	"cercano/source/server/internal/llm/responses"
 	"context"
@@ -73,6 +74,10 @@ func (s *Server) ListCloudProfileModels(ctx context.Context, req *proto.ListClou
 	}
 
 	base := strings.TrimRight(p.BaseURL, "/")
+	// Messages profiles use the same default endpoint as inference.
+	if base == "" && p.Flavor == "messages" {
+		base = "https://api.anthropic.com"
+	}
 	if base == "" {
 		return &proto.ListCloudProfileModelsResponse{Error: "profile has no base_url"}, nil
 	}
@@ -91,17 +96,26 @@ func (s *Server) ListCloudProfileModels(ctx context.Context, req *proto.ListClou
 	}
 	httpReq.Header.Set("anthropic-version", "2023-06-01")
 
-	// Auth: carry the profile's API key from the keychain. ChatGPT
-	// subscription profiles branch off above; a Claude subscription profile
-	// has an empty base_url and stops at the check above, which the client
-	// answers with its curated fallback list.
-	if st := s.cfgSvc.Secrets(); st != nil {
+	// Subscription discovery uses the same refreshing credential owner and
+	// OAuth headers as Messages inference, not a static API key.
+	if p.Route == "subscription" {
+		access, err := s.cfgSvc.Credentials().Anthropic(name, anthropicauth.Flow{}).Token(ctx)
+		if err != nil {
+			return &proto.ListCloudProfileModelsResponse{Error: err.Error()}, nil
+		}
+		httpReq.Header.Set("Authorization", "Bearer "+access)
+		httpReq.Header.Set("anthropic-beta", "oauth-2025-04-20")
+	} else if st := s.cfgSvc.Secrets(); st != nil {
 		if key, err := st.Get(name); err == nil && key != "" {
 			httpReq.Header.Set("x-api-key", key)
 		}
 	}
 
-	client := &http.Client{Timeout: 6 * time.Second}
+	client := &http.Client{Timeout: 6 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return fmt.Errorf("Anthropic model catalog refused redirect")
+		},
+	}
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		return &proto.ListCloudProfileModelsResponse{Error: err.Error()}, nil
