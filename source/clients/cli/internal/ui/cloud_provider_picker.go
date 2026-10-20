@@ -37,6 +37,7 @@ func (sp *settingsPage) updateProviderPicker(msg tea.Msg) tea.Cmd {
 	case overlay.CatalogSelect:
 		sp.providerPicker = nil
 		sp.selectCloudRow(out.ID)
+		sp.cloudEditorOpen = true
 		sp.uniqueCloudDraftName()
 		sp.cloudDirty = true
 		sp.form.Reload()

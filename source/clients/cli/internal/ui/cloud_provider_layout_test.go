@@ -55,7 +55,7 @@ func TestCloudProviderLayoutMouse(t *testing.T) {
 	if p.cloudAdvanced {
 		t.Fatal("advanced opened by default")
 	}
-	layoutClick(t, p, "Advanced settings")
+	layoutClick(t, p, "▸ Advanced settings")
 	if !p.cloudAdvanced {
 		t.Fatal("advanced not clickable")
 	}

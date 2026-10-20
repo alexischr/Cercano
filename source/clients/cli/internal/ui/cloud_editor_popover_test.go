@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"cercano/source/server/pkg/agentclient"
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"strings"
@@ -97,5 +98,38 @@ func TestCloudEditorUsesSeparateSectionBlocks(t *testing.T) {
 		if p.form.Sections[i].Title != title {
 			t.Fatalf("section %d = %q; want %q", i, p.form.Sections[i].Title, title)
 		}
+	}
+}
+
+func TestAddProviderUsesCloudEditorPopover(t *testing.T) {
+	for _, query := range []string{"Mistral", "Custom endpoint"} {
+		t.Run(query, func(t *testing.T) {
+			p := layoutPage()
+			p.cloudView.Providers = append(p.cloudView.Providers, agentclient.CloudProvider{ID: "mistral", Label: "Mistral", Flavor: "chat_completions", BaseURL: "https://api.mistral.ai/v1"})
+			p.openProviderPicker()
+			p.handlePaste(query)
+			p.updateProviderPicker(tea.KeyPressMsg{Code: tea.KeyEnter})
+			if p.providerPicker != nil || !p.cloudEditorActive() {
+				t.Fatalf("provider selection stayed inline: selected=%q editorOpen=%v", p.cloudSelected, p.cloudEditorOpen)
+			}
+			if !p.cloudDraftNew || !p.cloudDirty {
+				t.Fatal("new provider draft not preserved")
+			}
+			for _, section := range p.form.Sections {
+				for _, f := range section.Fields {
+					if f.Key() == "cloud-add-provider" {
+						t.Fatal("editor shares provider list form")
+					}
+				}
+			}
+			p.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+			if !p.settingsNavigationPrompt {
+				t.Fatal("Escape must protect unsaved setup")
+			}
+			p.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
+			if p.cloudEditorActive() || p.cloudSelected != "" {
+				t.Fatal("discard must return to provider list")
+			}
+		})
 	}
 }
