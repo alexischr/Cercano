@@ -113,3 +113,34 @@ func TestHostMetadataVisibilityDoesNotSuppressUserText(t *testing.T) {
 		t.Fatal("debug mode leaked host metadata")
 	}
 }
+
+func TestCompletionProgressIsQuietInMainChat(t *testing.T) {
+	for _, debug := range []bool{false, true} {
+		for _, streaming := range []bool{false, true} {
+			c := newTestChatView(100, 30)
+			c.setTaskVisibility(debug, true)
+			if streaming {
+				c.AppendEntry(&Entry{Role: RoleAssistant, Streaming: true})
+			}
+			c.Apply(chatProgressMsg{note: "Processing delegated task completions."})
+			c.rebuild()
+			text := ansi.Strip(chatLayoutContent(c))
+			if strings.Contains(text, "Processing delegated task completions") {
+				t.Fatalf("debug=%v streaming=%v: routine completion notice visible: %s", debug, streaming, text)
+			}
+			c.Apply(chatProgressMsg{note: "⚠ Completion failed"})
+			c.Apply(chatAssistantDeltaMsg{token: "Processing delegated task completions. Actual assistant reply."})
+			c.rebuild()
+			text = ansi.Strip(chatLayoutContent(c))
+			if !strings.Contains(text, "Completion failed") || !strings.Contains(text, "Actual assistant reply") {
+				t.Fatalf("meaningful output hidden: %s", text)
+			}
+			c.setTaskVisibility(debug, false)
+			c.rebuild()
+			text = ansi.Strip(chatLayoutContent(c))
+			if !strings.Contains(text, "Processing delegated task completions") {
+				t.Fatal("child diagnostic lost")
+			}
+		}
+	}
+}

@@ -623,6 +623,12 @@ func (c *chatView) Apply(msg tea.Msg) tea.Cmd {
 		e.Status = ""
 
 	case chatProgressMsg:
+		// Host completion bookkeeping follows the same presentation policy as
+		// routine polling. Keep it out of the assistant's streaming status too.
+		if m.note == "Processing delegated task completions." {
+			c.AppendEntry(&Entry{Role: RoleSystem, Content: m.note, TaskActivity: true})
+			break
+		}
 		// Every in-flight tool row already represents its execution status.
 		// Suppress redundant host notices for all tools, including new and MCP
 		// tools, rather than maintaining a tool-name allowlist.
