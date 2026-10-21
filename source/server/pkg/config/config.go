@@ -656,20 +656,15 @@ func Defaults() Config {
 						Premium:  CostTierModel{Model: "claude-fable-5"},
 					},
 					"openai": {
-						Economy:  CostTierModel{Model: "gpt-5-mini"},
-						Standard: CostTierModel{Model: "gpt-6-astra"},
+						Economy:  CostTierModel{Model: "gpt-6-luna"},
+						Standard: CostTierModel{Model: "gpt-6.1-sol"},
 						Premium:  CostTierModel{Model: "gpt-6-astra"},
 					},
-					// OpenAI reached through a ChatGPT subscription (Codex)
-					// serves a narrower lineup than the direct API: the mini
-					// models are rejected with a 400 ("not supported when
-					// using Codex with a ChatGPT account"). Economy therefore
-					// resolves to the same model as standard — this route has
-					// no cheaper option, and a working expensive summarizer
-					// beats a broken cheap one.
+					// User-approved tier lineup; these exact IDs are also available
+					// through the account-scoped ChatGPT subscription catalog.
 					"openai-chatgpt": {
-						Economy:  CostTierModel{Model: "gpt-6-astra"},
-						Standard: CostTierModel{Model: "gpt-6-astra"},
+						Economy:  CostTierModel{Model: "gpt-6-luna"},
+						Standard: CostTierModel{Model: "gpt-6.1-sol"},
 						Premium:  CostTierModel{Model: "gpt-6-astra"},
 					},
 					// Approved Mistral recommendations; live tool-continuation
