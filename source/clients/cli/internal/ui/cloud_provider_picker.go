@@ -47,18 +47,9 @@ func (sp *settingsPage) updateProviderPicker(msg tea.Msg) tea.Cmd {
 }
 func (sp *settingsPage) handleClick(x, y int) tea.Cmd {
 	if sp.settingsNavigationPrompt {
-		if y == 1 {
-			code := rune(0)
-			if x >= 0 && x < 21 {
-				code = 'y'
-			}
-			if x >= 23 && x < 40 {
-				code = 'n'
-			}
-			if code != 0 {
-				cmd, _ := sp.Update(tea.KeyPressMsg{Code: code, Text: string(code)})
-				return cmd
-			}
+		if code := sp.settingsLeaveClick(x, y); code != 0 {
+			cmd, _ := sp.Update(tea.KeyPressMsg{Code: code, Text: string(code)})
+			return cmd
 		}
 		return nil
 	}
