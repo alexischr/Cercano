@@ -399,6 +399,13 @@ const defaultInputPlaceholder = "type a message, /help for commands"
 const steerInputPlaceholder = "type to queue"
 const armedInputPlaceholder = "(press ^C again to quit, or type a message)"
 
+// WithVersion sets the build version displayed by the startup banner and header.
+// Call before starting the UI, while banner metadata has not entered scrollback.
+func (m Model) WithVersion(version string) Model {
+	m.splash.Meta.Version = "v" + strings.TrimPrefix(version, "v")
+	return m
+}
+
 // New builds the root model. The provided agent client must already be Dial'd.
 // openHistoryOnStart=true makes the CLI open the /history picker as soon as
 // the terminal size is known (used by the `cercano -r` flag).
@@ -463,11 +470,7 @@ func New(ag *agentclient.Client, openHistoryOnStart bool) Model {
 
 	splash := banner.NewAnimModel(p, banner.Meta{
 		Tagline: "local-first ai coprocessor",
-		Version: "v0.1.0",
-		// Model is left empty here and filled in by the configLoadedMsg
-		// handler once the agent reports the active locus + model, so the
-		// splash reflects the real primary profile instead of a hard-coded
-		// name. The banner render omits the segment while it's empty.
+		Version: "vdev",
 	})
 
 	initialConvID := newConvID()
@@ -2170,12 +2173,6 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 		} else if !msg.CloudConfigured {
 			m.cloudModel = ""
 			m.activeCloudProfile = ""
-		}
-		// Reflect the active primary profile in the splash / scrollback banner
-		// (the scrollback banner is copied from m.splash.Meta at handoff, which
-		// happens on first user input — well after this config load lands).
-		if pm := primaryModelName(msg.OpenModel, msg.CloudModel, msg.LocusMode, msg.CloudConfigured); pm != "" {
-			m.splash.Meta.Model = pm
 		}
 		return m, nil
 
@@ -5975,7 +5972,7 @@ func (m Model) headerTitleRange() (int, int, bool) {
 	if m.sessionTitle == "" || m.width <= 0 {
 		return 0, 0, false
 	}
-	leftW := headerTextWidth("▓▓ CERCANO v0.1.0")
+	leftW := headerTextWidth("▓▓ CERCANO " + m.splash.Meta.Version)
 	titlePlain := "░▒▓ " + m.sessionTitle + " ▓▒░"
 	titleW := headerTextWidth(titlePlain)
 	titleStart := (m.width - titleW) / 2
@@ -6033,10 +6030,10 @@ func (m Model) renderHeader() string {
 	// the bar reads cleanly even on wide terminals.
 	left := lipgloss.JoinHorizontal(lipgloss.Left,
 		m.styles.Primary.Render("▓▓ CERCANO"),
-		m.styles.Muted.Render(" v0.1.0"),
+		m.styles.Muted.Render(" "+m.splash.Meta.Version),
 	)
 
-	leftW := headerTextWidth("▓▓ CERCANO v0.1.0")
+	leftW := headerTextWidth("▓▓ CERCANO " + m.splash.Meta.Version)
 
 	// No title — flush left and right to the edges with a single gap.
 	if m.sessionTitle == "" {

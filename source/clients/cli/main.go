@@ -81,7 +81,7 @@ func runCLI(cfg config.Config, openHistoryOnStart, openWizardOnStart bool, seedD
 		fmt.Fprintln(os.Stderr, "cercano: auto-launched agent server (log:", ag.ServerLog+")")
 	}
 
-	m := cliui.New(ag, openHistoryOnStart)
+	m := cliui.New(ag, openHistoryOnStart).WithVersion(version)
 	if openWizardOnStart {
 		m = m.OpenWizardOnStart()
 	}
