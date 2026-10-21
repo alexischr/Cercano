@@ -14,7 +14,13 @@ func (sp *settingsPage) settingsLeavePopover() (view string, x, y int) {
 		label = "Routing"
 	}
 	width := min(54, sp.width)
-	content := "Unsaved " + label + " edits.\n\n[ Discard and leave ]\n[ Keep editing ]"
+	button := func(text string, selected bool) string {
+		if selected {
+			return lipgloss.NewStyle().Foreground(sp.palette.Accent).Bold(true).Render("› " + text)
+		}
+		return "  " + text
+	}
+	content := "Unsaved " + label + " edits.\n\n" + button("[ Discard and leave ]", sp.settingsLeaveDiscardSelected) + "\n" + button("[ Keep editing ]", !sp.settingsLeaveDiscardSelected) + "\n\n↑/↓ or Tab: select · Enter: confirm · Esc: keep"
 	view = lipgloss.NewStyle().Foreground(sp.palette.Primary).Background(sp.palette.Surface).
 		Border(lipgloss.RoundedBorder()).BorderForeground(sp.palette.Accent).
 		Padding(1, 2).Width(max(1, width-2)).Render(content)
@@ -42,4 +48,21 @@ func (sp *settingsPage) settingsLeaveClick(x, y int) rune {
 		}
 	}
 	return 0
+}
+
+// Returns an existing confirmation shortcut, keeping page and config-tab
+// navigation on the same keyboard behavior. Empty means consumed navigation.
+func (sp *settingsPage) settingsLeaveKey(key string) string {
+	switch key {
+	case "up", "down", "left", "right", "tab", "shift+tab":
+		sp.settingsLeaveDiscardSelected = !sp.settingsLeaveDiscardSelected
+		return ""
+	case "enter", "space", " ":
+		if sp.settingsLeaveDiscardSelected {
+			return "y"
+		}
+		return "n"
+	default:
+		return key
+	}
 }

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"cercano/source/clients/cli/internal/overlay"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -81,4 +82,59 @@ func TestSettingsLeavePromptBlocksOutsideClicksAndDiscards(t *testing.T) {
 		}
 	}
 	t.Fatal("discard action missing")
+}
+
+func TestSettingsLeavePromptKeyboardSelection(t *testing.T) {
+	p := layoutPage()
+	p.cloudDirty = true
+	p.settingsPendingLeave = "__close"
+	p.settingsNavigationPrompt = true
+	if !strings.Contains(ansi.Strip(p.View()), "› [ Keep editing ]") {
+		t.Fatal("missing safe default selection caret")
+	}
+	p.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+	if !strings.Contains(ansi.Strip(p.View()), "› [ Discard and leave ]") {
+		t.Fatal("up did not select discard")
+	}
+	p.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	if !strings.Contains(ansi.Strip(p.View()), "› [ Keep editing ]") {
+		t.Fatal("tab did not move selection")
+	}
+	p.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if p.settingsNavigationPrompt || !p.cloudDirty {
+		t.Fatal("enter did not activate keep editing")
+	}
+}
+
+func TestSettingsLeavePromptOwnsKeysOverPicker(t *testing.T) {
+	p := layoutPage()
+	p.cloudDirty = true
+	picker := overlay.NewCatalog("Models", "test", false)
+	p.catalogPicker = &picker
+	p.settingsPendingLeave = "__close"
+	p.settingsNavigationPrompt = true
+	p.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if p.settingsNavigationPrompt || !p.cloudDirty || p.catalogPicker == nil {
+		t.Fatal("underlying picker stole confirmation input")
+	}
+}
+
+func TestSettingsLeavePromptConfigNavigationKeyboard(t *testing.T) {
+	p := layoutPage()
+	p.cloudDirty = true
+	p.settingsNavigationPrompt = true
+	m := Model{content: p, configSurface: &configSurface{active: configTabCloud, pendingClose: true}}
+	var handled bool
+	m, _, handled = m.handleConfigSurfaceKey(tea.KeyPressMsg{Code: tea.KeyTab})
+	if !handled || !p.settingsLeaveDiscardSelected {
+		t.Fatal("config navigation swallowed Tab")
+	}
+	m, _, _ = m.handleConfigSurfaceKey(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
+	if p.settingsLeaveDiscardSelected {
+		t.Fatal("shift-tab did not select keep")
+	}
+	m, _, _ = m.handleConfigSurfaceKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.configSurface == nil || m.configSurface.pendingClose || p.settingsNavigationPrompt || !p.cloudDirty {
+		t.Fatal("Enter did not keep editing config")
+	}
 }

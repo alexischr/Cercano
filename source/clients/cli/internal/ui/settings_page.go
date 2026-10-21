@@ -94,17 +94,18 @@ type settingsPage struct {
 	// cloudView is the grouped provider catalog from GetCloudProviders that the
 	// cloud section renders (one row per provider with its profiles grouped
 	// under it). Loaded alongside profiles under the same profilesLoaded gate.
-	cloudView                agentclient.CloudProvidersView
-	cloudEditorOpen          bool
-	cloudSelected            string
-	cloudAdvanced            bool
-	cloudDraft               cloudDraft
-	cloudDraftNew            bool
-	cloudDirty               bool
-	routingDirty             bool
-	routingDraft             *agentclient.RoutingAssignments
-	settingsPendingLeave     string
-	settingsNavigationPrompt bool
+	cloudView                    agentclient.CloudProvidersView
+	cloudEditorOpen              bool
+	cloudSelected                string
+	cloudAdvanced                bool
+	cloudDraft                   cloudDraft
+	cloudDraftNew                bool
+	cloudDirty                   bool
+	routingDirty                 bool
+	routingDraft                 *agentclient.RoutingAssignments
+	settingsPendingLeave         string
+	settingsLeaveDiscardSelected bool
+	settingsNavigationPrompt     bool
 	// Cloud model catalog for the selected profile. Fetched lazily by
 	// selectCloudRow via ListCloudProfileModels when the row is anthropic-
 	// style; cleared on row-selection change so a switch between profiles
@@ -314,14 +315,8 @@ func (sp *settingsPage) handlePaste(content string) bool {
 }
 
 func (sp *settingsPage) Update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
-	if sp.providerPicker != nil {
-		return sp.updateProviderPicker(msg), false
-	}
-	if sp.catalogPicker != nil {
-		return sp.updateCatalogKey(msg), false
-	}
 	if sp.settingsPendingLeave != "" {
-		switch msg.String() {
+		switch sp.settingsLeaveKey(msg.String()) {
 		case "y", "Y":
 			target := sp.settingsPendingLeave
 			sp.settingsPendingLeave = ""
@@ -345,10 +340,18 @@ func (sp *settingsPage) Update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return nil, false
 	}
 
+	if sp.providerPicker != nil {
+		return sp.updateProviderPicker(msg), false
+	}
+	if sp.catalogPicker != nil {
+		return sp.updateCatalogKey(msg), false
+	}
+
 	cmd, closed := sp.form.Update(msg)
 	if closed && sp.hasUnsavedSettings() {
 		sp.settingsPendingLeave = "__close"
 		sp.settingsNavigationPrompt = true
+		sp.settingsLeaveDiscardSelected = false
 		closed = false
 	}
 	if closed && sp.cloudEditorActive() {

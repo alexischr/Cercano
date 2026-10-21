@@ -158,6 +158,9 @@ func (m Model) handleConfigSurfaceKey(msg tea.KeyPressMsg) (Model, tea.Cmd, bool
 
 	key := msg.String()
 	if cs.pendingClose || cs.pendingTab != nil {
+		if sp, ok := m.content.(*settingsPage); ok {
+			key = sp.settingsLeaveKey(key)
+		}
 		switch key {
 		case "y", "Y":
 			close, tab := cs.pendingClose, cs.pendingTab
@@ -184,7 +187,7 @@ func (m Model) handleConfigSurfaceKey(msg tea.KeyPressMsg) (Model, tea.Cmd, bool
 		return m, nil, true
 	}
 
-	if sp, ok := m.content.(*settingsPage); ok && (sp.catalogPicker != nil || sp.providerPicker != nil || sp.cloudEditorActive()) {
+	if sp, ok := m.content.(*settingsPage); ok && (sp.settingsNavigationPrompt || sp.catalogPicker != nil || sp.providerPicker != nil || sp.cloudEditorActive()) {
 		next, cmd := m.dropFocusForwarding(msg)
 		return next, cmd, true
 	}
@@ -373,6 +376,7 @@ func (m *Model) deferCloudNavigation(tab *configTab, close bool) bool {
 	m.configSurface.pendingTab = tab
 	m.configSurface.pendingClose = close
 	sp.settingsNavigationPrompt = true
+	sp.settingsLeaveDiscardSelected = false
 	return true
 }
 

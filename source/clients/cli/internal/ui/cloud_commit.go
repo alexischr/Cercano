@@ -145,6 +145,7 @@ func (sp *settingsPage) commitCloud(ca cloudCommitAction) (string, tea.Cmd, erro
 		if sp.cloudDirty {
 			sp.settingsPendingLeave = ca.rowID
 			sp.settingsNavigationPrompt = true
+			sp.settingsLeaveDiscardSelected = false
 			return "Unsaved profile edits. Discard and leave? y/n", nil, nil
 		}
 		sp.selectCloudRow(ca.rowID)
