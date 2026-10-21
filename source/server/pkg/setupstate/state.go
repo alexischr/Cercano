@@ -12,16 +12,26 @@ import (
 type Step string
 
 const (
-	StepLocus Step = "locus" // FIRST — how you want to use Cercano (organizing question)
-	StepCloud Step = "cloud" // provider + auth; only when the locus uses cloud
-	StepOpen  Step = "open"  // curated open-model set; only when the locus uses open
-	StepDone  Step = "done"  // terminal: config applied, state cleared
+	StepResources  Step = "resources"
+	StepPreference Step = "preference"
+	StepLocus      Step = "locus" // legacy locus-first screen; migrated on resume
+	StepCloud      Step = "cloud" // provider + auth; only when the locus uses cloud
+	StepOpen       Step = "open"  // curated open-model set; only when the locus uses open
+	StepDone       Step = "done"  // confirmation screen; apply and Clear complete the run
 )
 
 // State is every answer collected so far plus the current step. It is
 // persisted after every transition so quitting mid-wizard resumes in place;
 // a completed run clears the file.
 type State struct {
+	ReplaceTaskOverrides bool     `yaml:"replace_task_overrides,omitempty"`
+	ExcludedProfiles     []string `yaml:"excluded_profiles,omitempty"`
+	FlowVersion          int      `yaml:"flow_version,omitempty"`
+	ResourcePage         int      `yaml:"resource_page,omitempty"` // frontier, other cloud, resource summary
+	Preference           string   `yaml:"preference,omitempty"`
+	SecondaryProfile     string   `yaml:"secondary_profile,omitempty"`
+	UseLocal             bool     `yaml:"use_local,omitempty"`
+
 	// Explicit edits are separate from automatically displayed recommendations.
 	CloudPicksEdited map[string]bool   `yaml:"cloud_picks_edited,omitempty" json:"cloud_picks_edited,omitempty"`
 	Step             Step              `yaml:"step"`
@@ -30,16 +40,12 @@ type State struct {
 	CloudProvider    string            `yaml:"cloud_provider,omitempty"` // cloud preset ID
 	AuthMethod       string            `yaml:"auth_method,omitempty"`    // meridian | chatgpt | device_code | api_key
 	TierPicks        map[string]string `yaml:"tier_picks,omitempty"`     // "<tier>.<side>" → model id
-	// Baseline is the cloud-profile configuration captured when the run
-	// started, before any eager commits. Abandoning the wizard restores it.
-	// Persisted with the run so a resumed (or crashed) run can still be
-	// abandoned back to the pre-wizard state. Contains no secrets — API keys
-	// live in the OS keychain, never here.
+	// Baseline is retained only to decode older progress. Cancellation never
+	// restores it or deletes accounts; completed connections persist.
 	Baseline *Baseline `yaml:"baseline,omitempty"`
 }
 
-// Baseline is the pre-wizard cloud configuration used to undo eager commits
-// when the user abandons the run.
+// Baseline is legacy non-secret snapshot data; it is not used for rollback.
 type Baseline struct {
 	ActiveProfile string            `yaml:"active_profile"`
 	Profiles      []ProfileSnapshot `yaml:"profiles,omitempty"`
@@ -64,7 +70,7 @@ type ProfileSnapshot struct {
 }
 
 // Fresh returns a new first-step run with no prior answers or rollback baseline.
-func Fresh() State { return State{Step: StepLocus} }
+func Fresh() State { return State{Step: StepResources, FlowVersion: 2} }
 
 // StatePath resolves the resume file. CERCANO_WIZARD_STATE overrides for
 // tests, mirroring the uiconfig env-override convention.

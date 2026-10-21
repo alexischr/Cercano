@@ -41,10 +41,13 @@ type wizardScenarioStub struct {
 	client *agentclient.Client
 
 	// Server-side fake state.
-	locusMode  string
-	modelTiers map[string]string
-	profiles   []*proto.CloudProfileInfo
-	active     string
+	locusMode      string
+	modelTiers     map[string]string
+	profiles       []*proto.CloudProfileInfo
+	active         string
+	routing        *proto.RoutingAssignments
+	routingUpdates []*proto.UpdateRoutingAssignmentsRequest
+	catalog        *proto.ListRuntimeModelsResponse
 
 	// Recorded mutations.
 	updates   []*proto.UpdateConfigRequest
@@ -123,8 +126,17 @@ func (s *wizardScenarioStub) GetCloudProviders(context.Context, *proto.GetCloudP
 		Providers: []*proto.CloudProvider{{
 			Id: "anthropic", Label: "anthropic", Tier: "verified", Backend: "chat_completions", Route: "direct",
 		}},
-		Active: s.active,
+		Active: s.active, Assignments: s.routing, CustomProfiles: s.profiles,
 	}, nil
+}
+
+func (s *wizardScenarioStub) UpdateRoutingAssignments(_ context.Context, req *proto.UpdateRoutingAssignmentsRequest) (*proto.UpdateRoutingAssignmentsResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.routingUpdates = append(s.routingUpdates, req)
+	s.routing = req.Assignments
+	s.active = req.Assignments.Primary
+	return &proto.UpdateRoutingAssignmentsResponse{Ok: true}, nil
 }
 
 func (s *wizardScenarioStub) GetCloudProfiles(context.Context, *proto.GetCloudProfilesRequest) (*proto.GetCloudProfilesResponse, error) {
@@ -223,6 +235,11 @@ func (s *wizardScenarioStub) GetOpenRuntimeStatus(context.Context, *proto.GetOpe
 // (recommended for the three capability tiers) is not on disk yet; the small
 // fast-tier and embedding models already are.
 func (s *wizardScenarioStub) ListRuntimeModels(context.Context, *proto.ListRuntimeModelsRequest) (*proto.ListRuntimeModelsResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.catalog != nil {
+		return s.catalog, nil
+	}
 	return &proto.ListRuntimeModelsResponse{
 		SystemRamBytes:     137438953472,
 		MemoryTopology:     "unified",
@@ -290,14 +307,24 @@ func newScenario(t *testing.T) (*wizardScenarioStub, *agentclient.Client) {
 	return stub, client
 }
 
-// scenarioWizard constructs a fresh wizard page against the scenario's
-// agent — the production constructor, including its read-only resource
-// discovery. Calling it again after the wizard has closed simulates a
-// genuine re-entry (same environment, same server state).
+// scenarioWizard retains the legacy scoped-apply fixture. New resource flow
+// tests instantiate the production constructor without this compatibility shim.
 func scenarioWizard(t *testing.T, client *agentclient.Client) *wizardPage {
 	t.Helper()
 	p := theme.BuiltinThemes()[0]
-	return newWizardPage(client, p.Palette, theme.NewStyles(p.Palette), 100, 40)
+	saved, resumed := wizard.Load()
+	wp := newWizardPage(client, p.Palette, theme.NewStyles(p.Palette), 100, 40)
+	if resumed {
+		wp.state = saved
+	} else {
+		wp.state = wizard.State{Step: wizard.StepLocus}
+	}
+	wp.state.FlowVersion = 0
+	if wp.state.Step == wizard.StepOpen {
+		wp.autofillTiers()
+	}
+	wp.cursor = wp.defaultCursor()
+	return wp
 }
 
 // pressRows moves the cursor onto the row with the given key and presses
@@ -385,7 +412,7 @@ func (s *wizardScenarioStub) assertProfilesIntact(t *testing.T, want ...string) 
 func (s *wizardScenarioStub) writeCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return len(s.updates) + len(s.upserts) + len(s.keyNames) + len(s.activated) + len(s.removals) + len(s.downloads)
+	return len(s.routingUpdates) + len(s.updates) + len(s.upserts) + len(s.keyNames) + len(s.activated) + len(s.removals) + len(s.downloads)
 }
 
 // TestWizardScenarioCloudOnlyOneAccountFullAccept: a user with one working

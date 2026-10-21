@@ -3,10 +3,9 @@
 // in the ui package; nothing here knows about Bubble Tea.
 // Design: docs/features/setup-wizard/README.md.
 //
-// The flow is locus-first: the organizing question is how the user wants to
-// run Cercano (the locus mode), and that answer decides which of the two
-// middle steps run — cloud-profile setup when the locus uses cloud, the
-// curated open-model set when it uses open.
+// Fresh setup discovers resources, asks for a viable preference, then previews
+// confirmation. Legacy step values remain readable for migration and the shared
+// account/model editing screens.
 package wizard
 
 import (
@@ -18,10 +17,12 @@ import (
 type Step = setupstate.Step
 
 const (
-	StepLocus = setupstate.StepLocus
-	StepCloud = setupstate.StepCloud
-	StepOpen  = setupstate.StepOpen
-	StepDone  = setupstate.StepDone
+	StepResources  = setupstate.StepResources
+	StepPreference = setupstate.StepPreference
+	StepLocus      = setupstate.StepLocus
+	StepCloud      = setupstate.StepCloud
+	StepOpen       = setupstate.StepOpen
+	StepDone       = setupstate.StepDone
 )
 
 // Sides of the taxonomy, mirroring config.Provider values. Used as TierPicks
@@ -47,7 +48,7 @@ type State setupstate.State
 type Baseline = setupstate.Baseline
 type ProfileSnapshot = setupstate.ProfileSnapshot
 
-// New returns a fresh run positioned at the first step (locus).
+// New returns a fresh resource-discovery run.
 func New() State { return State(setupstate.Fresh()) }
 
 // next returns the step after s. The two middle steps are conditional on the
@@ -55,6 +56,10 @@ func New() State { return State(setupstate.Fresh()) }
 // open-model set only when it uses open.
 func (s State) next() Step {
 	switch s.Step {
+	case StepResources:
+		return StepPreference
+	case StepPreference:
+		return StepDone
 	case StepLocus:
 		if ModeUsesCloud(s.LocusMode) {
 			return StepCloud
@@ -77,6 +82,16 @@ func (s State) next() Step {
 // Prev returns the step before s (for back-navigation), branching the same
 // way next does. The first step returns itself.
 func (s State) Prev() Step {
+	if s.FlowVersion >= 2 {
+		switch s.Step {
+		case StepResources:
+			return StepResources
+		case StepPreference:
+			return StepResources
+		case StepDone, StepOpen, StepCloud:
+			return StepPreference
+		}
+	}
 	switch s.Step {
 	case StepCloud:
 		return StepLocus
@@ -101,6 +116,12 @@ func (s State) Prev() Step {
 // to the next step. The caller persists via Save.
 func (s *State) Advance() error {
 	switch s.Step {
+	case StepResources:
+	case StepPreference:
+		if s.Preference == "" {
+			return fmt.Errorf("choose an available setup preference")
+		}
+
 	case StepLocus:
 		if s.LocusMode == "" {
 			return fmt.Errorf("locus step: no mode selected")

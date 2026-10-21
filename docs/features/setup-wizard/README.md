@@ -1,50 +1,84 @@
 # Setup Wizard
 
-Launch-time interactive setup for Cercano: gets a new user from zero to a
-working configuration in one guided pass. The organizing question is **how you
-want to use Cercano** (the locus), and everything else follows from it — cloud
-profiles when cloud is in the mix, a recommended set of open-weight models when
-open is in the mix. Open models are served by the **bundled `llama-server`
-runtime** and drawn from a **curated compatibility catalog** we author and
-test; there is no Ollama install step and no Ollama catalog dependency.
+Setup is **resources → preference → confirmation**, not a routing-template quiz.
+It reuses the existing account editor, curated llama-server catalog, wizard resume
+file, and routing APIs. No new credential store or parallel configuration system
+is involved.
 
-## Recommended starting setup
+## Your resources
 
-Cercano delegates work across three task-quality tiers: **Deep reasoning** for
-hard analysis, **Everyday development** for normal coding, and **Lightweight
-tasks** for small lookups and transformations. These describe work quality, not
-three required providers or downloads. Local model configuration also exposes
-capability slots, including vision and embeddings; these are not additional
-paid accounts.
+Hardware and account discovery are read-only. Setup asks about Claude/ChatGPT
+first, then other providers such as DeepInfra and Mistral. Existing accounts with
+stored credentials start selected; they can be deselected without deleting them.
+Multiple accounts may be connected through the shared configuration popover.
+Subscription connections use its OAuth flow, and disconnected existing accounts
+open their existing editor for reconnection rather than creating duplicate names.
+“Not sure” explains account access without forcing authentication.
 
-The wizard discovers existing accounts and machine/catalog information and
-highlights a starting setup. A working cloud account is enough to start without
-a local download. The available families are cloud-only, mixed (cloud primary
-or local primary), and local-only. Choosing local-only prohibits cloud routes
-and backups; local-primary permits configured cloud fallback. Cloud-primary
-uses cloud for main work and local models for background work. Mixed use may
-send work off the machine. These selections remain editable in `/config`.
+Credential presence is not proof of current entitlement, quota, or token validity.
+The resource summary says **credentials connected**; access is checked when used.
+A subscription must support Cercano's integration. Unconnected profiles do not
+qualify a cloud setup merely because their metadata exists.
 
-Before **Use recommended setup**, review the proposed assignments and changes
-from existing local overrides. Custom local selections are retained rather than
-replaced merely because the recommendation list changed. The preview lists each
-known missing selected artifact once, skips already downloaded artifacts, and
-flags unresolved selections and unknown memory. Viewing this preview does not
-start downloads. Downloads for known missing selections begin after confirmation;
-being downloaded is not proof that a model is loaded or ready to serve.
+Local eligibility requires **at least 48 GiB of system memory** (shown as the
+48 GB product baseline) and a known supported GPU memory topology. Apple Silicon
+uses its unified pool; discrete GPUs use the largest individual known pool, never
+summed GPU memory or system RAM as extra graphics memory. Unknown probes and
+CPU-only/unknown-GPU configurations do not qualify. The selected or curated local
+models must also pass the existing preliminary weight-plus-overhead budget screen.
+Model sizes and compatibility metadata must be known. An eligible machine can
+review smaller local-model choices before choosing a preference; explicit model
+choices are not silently replaced.
 
-Recommendations are starting points, not machine-fit certification. System RAM
-alone does not establish GPU capacity, full-context fit, or simultaneous model
-residency. Existing intentional context overrides remain unchanged, and runtime
-allocation and serving-capacity checks still apply. The proposed Qwen 27B default
-remains gated pending runtime validation; no unverified identifier or full-context
-promise is shipped by this effort.
+This is eligibility, **not runtime-fit validation**. Context, cache, allocation,
+and serving readiness still use the existing runtime checks. No new model default
+or full-context guarantee is implied. Unsupported hardware probing stays unknown.
 
-Use `/setup` (**Run setup again**) or the command-line entry points below for
-nondestructive guided re-entry. This is not setup reset. Escape pauses/backtracks;
-pressing `q` twice discards unconfirmed choices and clears saved wizard progress.
-Completed account connections remain and can be managed explicitly in `/config`;
-cancellation never deletes accounts or restores stale account snapshots.
+## Your preference
+
+Only viable choices are shown:
+
+| Preference | Resources required | Default behavior |
+| --- | --- | --- |
+| Frontier-first | A selected Claude/OpenAI account with credentials | Primary and delegated work use the frontier account; no local downloads |
+| Balanced | At least two of frontier, other hosted providers, eligible local models | Frontier primary when available, hosted routine work when available, local helpers when eligible |
+| Cloud open models / Hosted cloud models | A selected non-frontier provider with credentials | Hosted work without requiring a frontier subscription or local downloads |
+| Local only | Eligible local hardware and model choices | All inference remains local; cloud routes and backups are removed from the proposed routing, not account storage |
+
+The generic Hosted cloud models label is used for other provider types rather than
+assuming every non-frontier provider serves open weights. Descriptions name the
+resources that will actually be used. Accounts default to
+the active account within their resource class; setup does not benchmark or
+optimize account prices. Existing accounts remain available in configuration.
+A no-resource result offers reconnection, discovery retry, or local-model review
+where the hardware baseline permits it; it cannot advance to an unusable setup.
+
+## Confirm
+
+The compact review names primary/routine resources, local helpers, existing cloud
+backups that remain selected, and required downloads. It explicitly distinguishes
+cloud use from local-only operation. **View details** shows task assignments,
+redirects, local model choices, and technical readiness limitations.
+
+Existing explicit task assignments are preserved by default, and the review says
+they take precedence over template defaults. **Use template task assignments
+instead** is an explicit, pending choice to replace them. It does not write until
+confirmation. Local model/context overrides, unrelated settings, account metadata,
+and credentials are otherwise preserved.
+
+Confirmation rechecks selected credentials/account identity, routing snapshots,
+and local capability before the first write. A changed routing snapshot or removed
+credential requires reviewing resources again rather than overwriting concurrent
+changes. Apply uses the existing sequential APIs; it is **not an atomic transaction**.
+A later failure may leave earlier accepted changes saved. Downloads begin only
+after confirmed settings have been saved; local inference is not ready until the
+required downloads and runtime checks succeed.
+
+Escape backtracks or pauses. Pressing `q` twice discards unconfirmed choices and
+clears the resume file. Completed account connections persist, as disclosed before
+authentication. Old wizard progress returns to resource discovery while retaining
+pending model choices and account names; current resource/preference progress
+resumes in place. Neither discovery, migration, nor cancellation invokes setup reset.
 
 ## Triggers
 
@@ -64,12 +98,9 @@ the wizard configures, and open models are acquired as **GGUF downloads**
 `llama_server.model_dirs`). The wizard never checks for a running Ollama daemon
 and never pulls from the Ollama library.
 
-Pointing Cercano at an **external server** — an Ollama instance running
-locally or remotely, or a hosted OpenAI-compatible endpoint (DeepInfra,
-Mistral, Groq, …) — is a deliberate, post-setup configuration action on the
-`/m` (models) surface, not a first-run branch. Keeping it out of setup is what
-lets the wizard present a single, honest "llama-server is the local engine"
-story.
+Hosted providers such as DeepInfra and Mistral are part of resource discovery.
+External local engines remain managed through the existing model/runtime surfaces;
+the wizard's local recommendation path uses the curated llama-server catalog.
 
 ## Automatic context selection
 
@@ -155,209 +186,24 @@ This whole subsystem is a re-architecture of the model-catalog track; the
 need a follow-up rewrite to match (Ollama-library discovery → HuggingFace +
 gate). This doc records the decision; that track carries the implementation.
 
-## Steps
+## Implementation and verification
 
-The step machine is **locus-first**. `wizard.State.Step` sequences:
+- `setupstate` stores non-secret progress, including selected preference and
+  excluded accounts; the CLI wizard owns navigation.
+- Resource eligibility and preference selection live in `wizard_resources.go`.
+- Routing proposals and pre-write revalidation live in `wizard_resource_routing.go`.
+- Shared account connection UI remains in `wizard_provider_popover.go` and the
+  configuration account editor.
+- Tests cover the account/capability matrix, 48 GiB boundary, discrete-memory
+  non-summing, confirmation-only writes, explicit override replacement, concurrent
+  routing changes, credential removal, hardware changes, resume, old-state migration,
+  cancellation, and OAuth reconnection dispatch.
 
-```
-StepLocus → StepCloud (if locus uses cloud) → StepOpen (if locus uses open) → StepDone
-```
+## Historical decisions
 
-Both middle steps are conditional on the locus answer. Cloud-only skips
-`StepOpen`; open-only skips `StepCloud`; the two "primary" modes visit both.
-(This replaces the old `StepPrimary → StepCloud → StepLocus → StepTiers`
-ordering, where an "open or cloud?" question preceded locus — locus now
-subsumes that question.)
+The entries below describe previous iterations. The resource-first flow above
+supersedes their locus/template-first navigation and eligibility rules.
 
-### 1. Locus — how you want to use Cercano
-
-First and organizing question: **"How should Cercano run your work?"** Maps
-directly onto the four `locus.Mode` values, presented with a recommendation
-framing rather than as neutral peers:
-
-| Choice | Mode | Framing |
-|---|---|---|
-| Cloud primary, open co-processor | `cloud_primary` | **Recommended** — highest-quality, frontier experience |
-| Open only | `open_only` | **Recommended** — fast, fully private, local |
-| Open primary, cloud fallback | `open_primary` | Cost saver |
-| Cloud only | `cloud_only` | Not recommended — skips the point of Cercano |
-
-The two recommended options lead. `open_primary` is offered as the cost-saver
-middle path. `cloud_only` is selectable but explicitly discouraged: it never
-engages the local co-processor, so it forgoes the privacy, latency, and cost
-benefits Cercano exists to provide. The screen states that this is easy to
-change later (via `/m` or the config file), so nobody agonizes.
-
-The answer sets `LocusMode` and determines which of the next two steps run.
-
-### 2. Cloud profiles — one or more (only when locus uses cloud)
-
-Runs for `cloud_only` and `cloud_primary`. The user configures **one or more**
-cloud profiles:
-
-- **One** profile is enough to finish.
-- **Multiple** profiles are supported: one is the active primary, others are
-  available as a backup/fallback and as targets the user can switch to later
-  from `/m`. Each added profile is a full `UpsertCloudProfile` commit.
-
-Provider list with per-provider auth methods (order preserved from prior
-design; the auth mechanics are unchanged by the reordering):
-
-| Provider | Auth methods (in offered order) |
-|---|---|
-| Anthropic | Meridian proxy (subscription) · API key |
-| OpenAI | ChatGPT sign-in (unofficial) · API key |
-| GitHub Copilot | Device-code sign-in (subscription) |
-| Google Gemini | AI Studio API key (free tier) |
-| Mistral / Groq / xAI | API key |
-| OpenAI-compatible endpoint | Base URL + API key |
-
-Auth flow details:
-
-- **Meridian proxy (Anthropic):** existing flow, unchanged. The commit sends
-  `base_url` (Meridian's default `http://127.0.0.1:3456`) and `route: meridian`;
-  the server only activates a keyless profile when a proxy base URL says who
-  handles auth.
-- **ChatGPT sign-in (OpenAI):** authorization-code + PKCE against
-  `auth.openai.com`, localhost callback on port 1455; headless fallback via
-  the device-code variant (`/api/accounts/deviceauth/*`). Requests route to
-  the ChatGPT Codex backend with the `ChatGPT-Account-Id` header.
-  **Labeling requirement:** the entry reads "ChatGPT Plus/Pro sign-in —
-  unofficial; uses the Codex CLI's client and may stop working. Model list is
-  restricted." API-key entry is one keystroke away; a runtime failure offers
-  the API-key switch directly.
-- **GitHub Copilot:** standard device-code flow (`github.com/login/device/code`
-  → `login/oauth/access_token` → `api.githubcopilot.com`). Model catalog
-  fetched live; serves OpenAI, Anthropic, and Google models under one
-  subscription. Enterprise domain supported (`copilot-api.<domain>`).
-- **API keys:** masked prompt, validated with a cheap live call before saving.
-
-Each profile is seeded with the provider's everyday-tier recommended model —
-the profile's model is what serves main-chat requests, so a wizard-created
-profile is **never activated modelless**. `UpsertCloudProfile` already enforces
-this at the RPC (flavor required; `base_url` required for `chat_completions`),
-which is why the empty-`flavor` / modelless-profile warnings cannot arise from
-a wizard-built config: the wizard only ever writes complete, valid profiles.
-The legacy stray-`GEMINI_API_KEY` capture is **not** carried into this flow —
-setup does not opportunistically mint cloud profiles from ambient environment
-variables.
-
-### 3. Open model set — recommended, tier-mapped (only when locus uses open)
-
-Runs for `cloud_primary`, `open_primary`, and `open_only`. Instead of picking
-one "primary" open model, the wizard presents a **recommended set** of GGUFs,
-one per open capability tier, drawn from the **curated compatibility catalog**
-(above) — every entry verified on our llama.cpp build.
-
-The set is **sized to the machine**: the server picks it with
-`CuratedCatalog.ProfileForRAM(totalRAM)` (profiles keyed by RAM threshold —
-24 / 48 / 96 / 128 GB; a machine below the smallest threshold still gets the
-24 GB profile) and returns it over `ListRuntimeModels` as
-`recommended_open_models` (tier → the stable inventory id
-`llama_server:catalog:<id>`). The wizard autofills the `.Open` slots of the
-four capability tiers from it:
-
-| Tier | Role | 24 GB | 128 GB |
-|---|---|---|---|
-| `most_capable` | Hardest agentic work | Qwen3-14B | GLM-4.5-Air |
-| `everyday` | Main chat / workhorse | Qwen3-14B | Qwen3-30B-A3B Instruct |
-| `fast_light` | Small background helpers | Phi-4-mini | Phi-4-mini |
-| `fast_light_text` | Prose judgment (recaps, verdicts) | Phi-4-mini | Phi-4-mini |
-
-Picks are stored as the model's **display name** (the open-slot convention;
-taxonomy resolution and the finish-time download resolve it back to the
-catalog id). The `embedding` tier lives in the catalog profile but is not part
-of the wizard's autofilled capability set.
-
-- The default set is shown as an accept-and-move-on list. Accepting fills the
-  **`.Open` slots** of `Models.Tiers.{most_capable,everyday,fast_light,fast_light_text}`.
-- The set is **editable**: each row opens the same model picker `/m` uses. In
-  setup the picker offers the curated catalog; the broader HuggingFace browse
-  (with the architecture gate) is available on `/m` afterward, not inline.
-- Populating `fast_light_text.Open` here is also what removes the compaction
-  summarizer warning at its source — the tier has a real model instead of
-  falling through to an empty slot.
-
-**No download UI in the wizard.** Selecting the set does not block on transfer.
-The curated catalog is populated (six GGUFs across the 24 / 48 / 96 / 128 GB
-profiles in `llamaserver/catalog.json`), superseding the old two-entry
-`defaultCatalog` stub; every entry passes the architecture gate.
-
-### 4. Finish — background downloads, `/m` progress, cloud covers the gap
-
-On finish the wizard:
-
-1. Writes locus + cloud profiles + open tier picks through `UpdateConfig` /
-   `UpsertCloudProfile` / `ApplyModelTierPatch`.
-2. **Kicks off the open-model downloads in the background.** `applyConfig`'s
-   `enrollOpenDownloads` resolves each distinct open pick's display name back to
-   its catalog id and fires `DownloadRuntimeModel` (states
-   `not_downloaded → downloading → downloaded`), skipping any already on disk.
-   Best-effort and non-fatal — a failure surfaces in the status line but never
-   blocks finish. It does not wait.
-3. Prints a closing message: *"Your open models are downloading in the
-   background. View progress any time with `/m`. Until they finish, Cercano
-   uses your cloud model so you can start working now."*
-
-This closing promise is only true if routing actually falls back to cloud
-while a GGUF is still downloading — see the routing contract below.
-
-## Completion gate
-
-Setup completes **only when the chosen locus's required path resolves**:
-
-- Locus uses cloud (`cloud_only` / `cloud_primary`) → at least one **complete,
-  valid, active** cloud profile exists.
-- Locus uses open (`open_primary` / `open_only`) → the open tier slots are
-  populated (downloads may still be in flight; a *selected* set satisfies the
-  gate, since cloud or a prior local model covers until they land — except
-  `open_only`, which has no cloud cover and must warn that work waits on the
-  first download).
-
-If the required path does not resolve, the wizard does not report success. It
-ends with an explicit **"SETUP INCOMPLETE — here's what's missing"** screen and
-the `cercano setup` process exits non-zero. This replaces the legacy flow's
-unconditional "[8/8] Setup complete!" — which printed success even when no
-usable model was configured.
-
-## Routing contract: cloud covers the gap
-
-The finish-message promise — *cloud covers the gap while open models
-download* — is backed by `dispatch.OpenModelReady`, checked at open-provider
-registration (`hostsvc/providers/providers.go`, `worker/worker.go`). It gates on
-the configured open model's GGUF being present on disk: while that file is still
-downloading (or missing) `OpenModelReady` returns false, the open provider
-registers **absent** (`nil` / `"NONE"`), and `dispatch/select.go`'s `Select`
-crosses to the cloud tier — no special download-state logic in `Select` itself.
-The gate is coarse (the configured open model, not per-tier), realizing
-readiness as *on disk*:
-
-> **An open tier's provider registers as present only when its GGUF is actually
-> on disk** (`Discover` reports it `downloaded`). While the file is still
-> downloading, the tier registers **absent**, so `Select` crosses to cloud with
-> no new fallback logic — and the moment the file lands, the provider flips to
-> present and the next request uses it.
-
-The one thing that would break this is a provider that is always constructed and
-only errors at call time; a not-yet-downloaded model must register **absent**,
-not present-but-failing. Under `open_only` there is no cloud tier to cross to,
-which is why the completion gate warns that work waits on the first download
-rather than promising cover.
-
-## Non-goals (V1)
-
-- No Ollama detection, install, or pull anywhere in setup. External
-  servers (local/remote Ollama, hosted OpenAI-compatible endpoints) are a
-  post-setup `/m` configuration action, not a wizard branch.
-- No in-wizard download progress screen — progress lives on `/m`.
-- No enterprise SSO / Vertex AI / Azure Entra flows — API-key style entries
-  only beyond the three sign-in flows above.
-- No credential migration from other tools' keychains, and no opportunistic
-  capture of ambient API-key environment variables.
-- Wizard does not manage MCP servers or permissions; those keep their own
-  config surfaces.
-
-## Decisions
 
 ### 2026-07-11 — RAM-tiered open recommendations + enroll-on-finish (implemented)
 

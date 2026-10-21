@@ -132,7 +132,7 @@ func TestMissingStateAndFreshWizard(t *testing.T) {
 		t.Fatal(err)
 	}
 	state, ok := setupstate.Load()
-	if !ok || state.Step != setupstate.StepLocus || state.Baseline != nil {
+	if !ok || state.Step != setupstate.StepResources || state.Baseline != nil {
 		t.Fatal("stale wizard")
 	}
 }

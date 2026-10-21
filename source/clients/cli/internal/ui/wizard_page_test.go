@@ -26,6 +26,10 @@ func newTestWizardPage(t *testing.T) *wizardPage {
 	// the cloud step renders. Mirrors the agent catalog's order/tiers (anthropic,
 	// openai (responses), openai, …) so the step-navigation presses below land on
 	// the providers the assertions expect.
+	// Legacy navigation fixtures continue to exercise scoped apply/edit primitives.
+	// Resource-first entry and migration are tested through the production constructor.
+	wp.state.FlowVersion = 0
+	wp.state.Step = wizard.StepLocus
 	wp.providers = wizardTestProviders()
 	// Existing navigation tests exercise the optional customization path.
 	wp.customizingLocus = true
@@ -157,12 +161,12 @@ func TestWizardEscResumesMidRun(t *testing.T) {
 	p := theme.BuiltinThemes()[0]
 	wp := newWizardPage(nil, p.Palette, theme.NewStyles(p.Palette), 100, 40)
 
-	press(t, wp, tea.KeyEnter) // pick cloud_primary (first row) → cloud step
+	pressRows(t, wp, "resource_next") // frontier question → other accounts
 	if closed := press(t, wp, tea.KeyEscape); closed {
 		t.Fatal("esc on cloud step should go back, not close")
 	}
-	if wp.state.Step != wizard.StepLocus {
-		t.Fatalf("esc: want %s, got %s", wizard.StepLocus, wp.state.Step)
+	if wp.state.Step != wizard.StepResources {
+		t.Fatalf("esc: want %s, got %s", wizard.StepResources, wp.state.Step)
 	}
 	if closed := press(t, wp, tea.KeyEscape); !closed {
 		t.Fatal("esc on first step should close the page")
@@ -170,11 +174,11 @@ func TestWizardEscResumesMidRun(t *testing.T) {
 
 	// A fresh page resumes from the persisted state.
 	wp2 := newWizardPage(nil, p.Palette, theme.NewStyles(p.Palette), 100, 40)
-	if wp2.state.Step != wizard.StepLocus {
-		t.Fatalf("resume: want %s, got %s", wizard.StepLocus, wp2.state.Step)
+	if wp2.state.Step != wizard.StepResources {
+		t.Fatalf("resume: want %s, got %s", wizard.StepResources, wp2.state.Step)
 	}
-	if wp2.state.LocusMode != "cloud_primary" {
-		t.Fatalf("resume: want preserved locus cloud_primary, got %q", wp2.state.LocusMode)
+	if wp2.state.LocusMode != "" || wp2.state.ResourcePage != 0 {
+		t.Fatalf("resource questions must not invent a routing preference: %+v", wp2.state)
 	}
 }
 

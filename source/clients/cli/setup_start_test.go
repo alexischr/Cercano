@@ -28,7 +28,7 @@ func TestFreshSetupWithPreservedConfiguration(t *testing.T) {
 		t.Fatal("fresh resume state ignored when config retained")
 	}
 	s, ok := setupstate.Load()
-	if !ok || s.Step != setupstate.StepLocus || s.Baseline != nil {
+	if !ok || s.Step != setupstate.StepResources || s.FlowVersion != 2 || s.Baseline != nil {
 		t.Fatal("old answers or baseline restored")
 	}
 	if err := setupstate.Clear(); err != nil {

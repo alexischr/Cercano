@@ -5,7 +5,11 @@ import tea "charm.land/bubbletea/v2"
 // Use the real configuration page while its provider picker/editor is open.
 // Keeping it as the active content page reuses paste, mouse, async-save, catalog,
 // and OAuth result handling rather than introducing a second authentication UI.
-type wizardAddProviderMsg struct{ page *wizardPage }
+type wizardAddProviderMsg struct {
+	page    *wizardPage
+	query   string
+	profile string
+}
 
 func (m Model) openWizardProvider(msg wizardAddProviderMsg) (tea.Model, tea.Cmd) {
 	if msg.page == nil || m.content != msg.page || m.wizardProviderReturn != nil {
@@ -15,6 +19,14 @@ func (m Model) openWizardProvider(msg wizardAddProviderMsg) (tea.Model, tea.Cmd)
 	m.wizardProviderReturn = msg.page
 	m.content = sp
 	sp.openProviderPicker()
+	if msg.profile != "" {
+		sp.providerPicker = nil
+		sp.selectCloudRow("profile:" + msg.profile)
+		sp.form.Reload()
+	}
+	if msg.query != "" {
+		sp.handlePaste(msg.query)
+	}
 	return m, cmd
 }
 
@@ -24,6 +36,7 @@ func (m *Model) restoreWizardProvider() {
 		return
 	}
 	m.wizardProviderReturn = nil
+	wp.loadProviders()
 	wp.discoverResources()
 	wp.authPick = false
 	wp.cursor = wp.defaultCursor()

@@ -32,6 +32,8 @@ type wizardRow struct {
 // as a content page. The wizard package owns step sequencing, validation,
 // and resume persistence; this type owns rendering and key handling only.
 type wizardPage struct {
+	curRouting    *agentclient.RoutingAssignments
+	routingOK     bool
 	showDetails   bool
 	width, height int
 	palette       theme.Palette
@@ -118,6 +120,26 @@ func newWizardPage(ag *agentclient.Client, p theme.Palette, s theme.Styles, w, h
 	if !ok {
 		st = wizard.New()
 	}
+	resumeOpen := st.Step == wizard.StepOpen
+	if st.FlowVersion != 2 {
+		// Older progress remains data, not authority to bypass resource checks.
+		st.FlowVersion = 2
+		st.Step = wizard.StepResources
+		st.ResourcePage = 0
+	}
+	if st.ResourcePage < 0 || st.ResourcePage > 2 {
+		st.ResourcePage = 0
+	}
+	switch st.Step {
+	case wizard.StepResources, wizard.StepPreference, wizard.StepOpen, wizard.StepDone:
+	default:
+		st.Step = wizard.StepResources
+		st.ResourcePage = 0
+	}
+	if st.Step == wizard.StepDone && st.Preference == "" {
+		st.Step = wizard.StepResources
+		st.ResourcePage = 2
+	}
 	wp := &wizardPage{palette: p, styles: s, agent: ag, state: st, width: w, height: h}
 	if recs, err := config.LoadTierRecommendations(); err == nil {
 		wp.recs, wp.recsOK = recs, true
@@ -131,7 +153,7 @@ func newWizardPage(ag *agentclient.Client, p theme.Palette, s theme.Styles, w, h
 	wp.commitKeyFn = wp.commitAPIKey
 	wp.loadProviders()
 	wp.discoverResources()
-	if st.Step == wizard.StepOpen {
+	if resumeOpen {
 		wp.autofillTiers()
 	}
 	wp.cursor = wp.defaultCursor()
@@ -141,6 +163,7 @@ func newWizardPage(ag *agentclient.Client, p theme.Palette, s theme.Styles, w, h
 // loadProviders caches the cloud-provider catalog for account selection.
 // Discovery is best-effort and read-only; tests may seed providers directly.
 func (wp *wizardPage) loadProviders() {
+	wp.routingOK = false
 	if wp.agent == nil {
 		return
 	}
@@ -151,6 +174,11 @@ func (wp *wizardPage) loadProviders() {
 		return
 	}
 	wp.providers = view.Providers
+	wp.curRouting = view.Assignments.Clone()
+	if wp.curRouting.Primary == "" {
+		wp.curRouting.Primary = view.Active
+	}
+	wp.routingOK = true
 }
 
 // discoverResources reads what the user already has — an active cloud
@@ -159,6 +187,9 @@ func (wp *wizardPage) loadProviders() {
 // change list are computed from these; discovery itself writes nothing,
 // downloads nothing, and restarts nothing.
 func (wp *wizardPage) discoverResources() {
+	wp.curProfiles = nil
+	wp.curActiveProfile = ""
+	wp.hasCloudAccount = false
 	if wp.agent == nil {
 		return
 	}
@@ -306,6 +337,11 @@ func (wp *wizardPage) applyConfig() error {
 	if _, err := wizardCloudChoices(wp.state, nil); err != nil {
 		return err
 	}
+	if wp.state.FlowVersion >= 2 {
+		if err := wp.validateResourceSelection(ctx); err != nil {
+			return err
+		}
+	}
 	if err := wp.confirmCloudAccount(ctx); err != nil {
 		return err
 	}
@@ -321,6 +357,15 @@ func (wp *wizardPage) applyConfig() error {
 			return fmt.Errorf("%s: %w", p.ModelTierKey, err)
 		}
 	}
+	if wp.state.FlowVersion >= 2 {
+		warning, err := wp.agent.UpdateRoutingAssignments(ctx, wp.resourceRouting())
+		if err != nil {
+			return fmt.Errorf("routing assignments: %w", err)
+		}
+		if warning != "" {
+			wp.status = warning
+		}
+	}
 	wp.enrollOpenDownloads(ctx)
 	return nil
 }
@@ -334,6 +379,8 @@ func (wp *wizardPage) SetSize(w, h int) { wp.width, wp.height = w, h }
 // pair of modes.
 func (wp *wizardPage) rows() []wizardRow {
 	switch wp.state.Step {
+	case wizard.StepResources, wizard.StepPreference:
+		return wp.resourceRows()
 	case wizard.StepLocus:
 		rows := []wizardRow{
 			{Key: "cloud_only", Label: "Cloud", Annotation: "all work in the cloud; no local model downloads"},
@@ -395,6 +442,17 @@ func (wp *wizardPage) rows() []wizardRow {
 		return rows
 	case wizard.StepDone:
 		rows := []wizardRow{{Key: "finish", Label: "Use this setup", Annotation: "apply the previewed settings and close"}}
+		if wp.state.FlowVersion >= 2 && wp.curRouting != nil && len(wp.curRouting.Tasks) > 0 {
+			label := "Use template task assignments instead"
+			if wp.state.ReplaceTaskOverrides {
+				label = "Keep my existing task assignments instead"
+			}
+			rows = append(rows, wizardRow{Key: "replace_tasks", Label: label, Annotation: "explicitly choose whether to replace existing task overrides"})
+		}
+		if wp.state.FlowVersion >= 2 && wp.state.UseLocal && len(requiredDownloads(wp.catalog, wp.catalogOK, wp.selectedOpenPicks())) > 0 {
+			rows[0].Label = "Download models and finish setup"
+		}
+
 		label := "View details"
 		if wp.showDetails {
 			label = "Hide details"
@@ -403,8 +461,8 @@ func (wp *wizardPage) rows() []wizardRow {
 		if wizard.ModeUsesOpen(wp.state.LocusMode) {
 			rows = append(rows, wizardRow{Key: "edit_models", Label: "Customize local models"})
 		}
-		if wizard.ModeUsesCloud(wp.state.LocusMode) && len(wp.curProfiles) > 1 {
-			rows = append(rows, wizardRow{Key: "change_account", Label: "Customize cloud account", Annotation: "choose the default account before applying"})
+		if wp.state.FlowVersion >= 2 || (wizard.ModeUsesCloud(wp.state.LocusMode) && len(wp.curProfiles) > 1) {
+			rows = append(rows, wizardRow{Key: "change_account", Label: "Review connected accounts", Annotation: "review resources before applying"})
 		}
 		return rows
 	}
@@ -482,6 +540,20 @@ func (wp *wizardPage) autofillTiers() {
 // recommended mode, everything else on the first selectable row.
 func (wp *wizardPage) defaultCursor() int {
 	rows := wp.rows()
+	if wp.state.Step == wizard.StepResources && wp.state.ResourcePage < 2 && len(wp.resourceAccounts(wp.state.ResourcePage == 0)) > 0 {
+		for i, row := range rows {
+			if row.Key == "resource_next" {
+				return i
+			}
+		}
+	}
+	if wp.state.Step == wizard.StepPreference {
+		for i, r := range rows {
+			if r.Key == wp.recommendedPreference() {
+				return i
+			}
+		}
+	}
 	if wp.state.Step == wizard.StepLocus {
 		rec := wp.recommendedLocus()
 		for i, r := range rows {
@@ -596,6 +668,27 @@ func (wp *wizardPage) abandon() (closed bool) {
 // page (state stays persisted for resume).
 func (wp *wizardPage) back() (closed bool) {
 	wp.status = ""
+	if wp.state.FlowVersion >= 2 {
+		if wp.state.Step == wizard.StepResources {
+			if wp.state.ResourcePage == 0 {
+				wp.persist()
+				return true
+			}
+			wp.state.ResourcePage--
+		} else if wp.state.Step == wizard.StepOpen && wp.state.Preference == "" {
+			wp.state.Step = wizard.StepResources
+			wp.state.ResourcePage = 2
+		} else {
+			wp.state.Step = wp.state.Prev()
+			if wp.state.Step == wizard.StepResources {
+				wp.state.ResourcePage = 2
+			}
+		}
+		wp.cursor = wp.defaultCursor()
+		wp.showDetails = false
+		wp.persist()
+		return false
+	}
 	if wp.state.Step == wizard.StepCloud && wp.authPick {
 		wp.authPick = false
 		wp.cursor = wp.defaultCursor()
@@ -631,6 +724,8 @@ func (wp *wizardPage) selectRow() (tea.Cmd, bool) {
 	wp.status = ""
 
 	switch wp.state.Step {
+	case wizard.StepResources, wizard.StepPreference:
+		return wp.selectResourceRow(row)
 	case wizard.StepCloud:
 		if row.Key == "add_provider" {
 			return func() tea.Msg { return wizardAddProviderMsg{page: wp} }, false
@@ -731,6 +826,11 @@ func (wp *wizardPage) selectRow() (tea.Cmd, bool) {
 		}
 		wp.openTierPicker(row.Key)
 	case wizard.StepDone:
+		if row.Key == "replace_tasks" {
+			wp.state.ReplaceTaskOverrides = !wp.state.ReplaceTaskOverrides
+			wp.persist()
+			return nil, false
+		}
 		if row.Key == "details" {
 			wp.showDetails = !wp.showDetails
 			return nil, false
@@ -743,6 +843,13 @@ func (wp *wizardPage) selectRow() (tea.Cmd, bool) {
 			return nil, false
 		}
 		if row.Key == "change_account" {
+			if wp.state.FlowVersion >= 2 {
+				wp.state.Step = wizard.StepResources
+				wp.state.ResourcePage = 0
+				wp.cursor = 0
+				wp.persist()
+				return nil, false
+			}
 			wp.state.Step = wizard.StepCloud
 			wp.authPick = false
 			wp.quickSetup = true
@@ -788,6 +895,14 @@ func (wp *wizardPage) openRuntimeCheckCmd() tea.Cmd {
 // advance moves the state machine forward, autofills on entry to the open
 // step, persists, and repositions the cursor.
 func (wp *wizardPage) advance() {
+	if wp.state.FlowVersion >= 2 && wp.state.Step == wizard.StepOpen && wp.state.Preference == "" {
+		wp.state.Step = wizard.StepResources
+		wp.state.ResourcePage = 2
+		wp.cursor = 0
+		wp.persist()
+		return
+	}
+
 	if err := wp.state.Advance(); err != nil {
 		wp.status = err.Error()
 		return
@@ -814,6 +929,17 @@ func (wp *wizardPage) persist() {
 // stepIndex returns the 1-based position and total screen count for the
 // header; the open path has one screen fewer.
 func (wp *wizardPage) stepIndex() (int, int) {
+	if wp.state.FlowVersion >= 2 {
+		switch wp.state.Step {
+		case wizard.StepResources:
+			return 1, 3
+		case wizard.StepPreference:
+			return 2, 3
+		default:
+			return 3, 3
+		}
+	}
+
 	order := []wizard.Step{wizard.StepLocus}
 	if wizard.ModeUsesCloud(wp.state.LocusMode) {
 		order = append(order, wizard.StepCloud)
@@ -831,6 +957,10 @@ func (wp *wizardPage) stepIndex() (int, int) {
 
 func (wp *wizardPage) stepTitle() string {
 	switch wp.state.Step {
+	case wizard.StepResources:
+		return "your resources"
+	case wizard.StepPreference:
+		return "your preference"
 	case wizard.StepLocus:
 		return "choose a setup template"
 	case wizard.StepCloud:
@@ -848,6 +978,8 @@ func (wp *wizardPage) stepTitle() string {
 
 func (wp *wizardPage) stepDesc() string {
 	switch wp.state.Step {
+	case wizard.StepResources, wizard.StepPreference:
+		return wp.resourceDescription()
 	case wizard.StepLocus:
 		return "Welcome to Cercano. Cercano delegates work across three task tiers:\n\n* **Deep reasoning** - Hard problems and complex decisions.\n* **Everyday development** - Main chat and day-to-day coding.\n* **Lightweight tasks** - Quick helpers and background work.\n\nOne account or one suitable local model can serve all three. Choose a template below. You can customize its accounts and models before applying it."
 	case wizard.StepCloud:
@@ -865,6 +997,9 @@ func (wp *wizardPage) stepDesc() string {
 		b.WriteString("Accept them, or select any to change it \u2014 easy to change later. Downloads run in the background \u2014 track them with /m.")
 		return b.String()
 	case wizard.StepDone:
+		if wp.state.FlowVersion >= 2 {
+			return wp.resourceConfirmation()
+		}
 		if wp.showDetails {
 			return wp.summary()
 		}
@@ -909,7 +1044,13 @@ func (wp *wizardPage) summary() string {
 			} else {
 				fmt.Fprintf(&b, "  account:  %s (was: %s; changes default account on confirmation)\n", p.Name, wp.curActiveProfile)
 			}
-			b.WriteString("  Explicit task-account routes remain unchanged; this selects the cloud default.\n")
+			if wp.state.FlowVersion < 2 {
+				b.WriteString("  Explicit task-account routes remain unchanged; this selects the cloud default.\n")
+			} else if wp.state.ReplaceTaskOverrides {
+				b.WriteString("  Task assignments will use the selected template after confirmation.\n")
+			} else {
+				b.WriteString("  Existing explicit task assignments are retained; unassigned tasks use the selected template.\n")
+			}
 			pending, err := wizardCloudChoices(wp.state, p.Choices)
 			if err != nil {
 				fmt.Fprintf(&b, "  Cannot apply cloud choices: %s\n", err)
@@ -1326,6 +1467,7 @@ func wrapWords(s string, width int) []string {
 // gate-verified curated model. Best-effort: with no agent (tests) or a failed
 // read, catalogOK stays false and the open side falls back to the shipped recs.
 func (wp *wizardPage) loadRuntimeCatalog() {
+	wp.catalogOK = false
 	if wp.agent == nil {
 		return
 	}

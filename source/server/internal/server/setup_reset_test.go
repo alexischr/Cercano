@@ -89,7 +89,7 @@ func TestSetupResetKeepsExistingRPCSession(t *testing.T) {
 		t.Fatalf("stale routing graph: %+v", assignment)
 	}
 	state, ok := setupstate.Load()
-	if !ok || state.Step != setupstate.StepLocus || state.Baseline != nil {
+	if !ok || state.Step != setupstate.StepResources || state.Baseline != nil {
 		t.Fatal("old wizard resumed")
 	}
 	names, _ = s.cfgSvc.Secrets().List()

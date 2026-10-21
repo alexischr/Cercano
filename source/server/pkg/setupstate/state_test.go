@@ -16,7 +16,7 @@ func TestFreshHasNoPreviousAnswers(t *testing.T) {
 		t.Fatal(err)
 	}
 	fresh := Fresh()
-	if !reflect.DeepEqual(fresh, State{Step: StepLocus}) {
+	if !reflect.DeepEqual(fresh, State{Step: StepResources, FlowVersion: 2}) {
 		t.Fatalf("fresh=%+v", fresh)
 	}
 	if err := Save(fresh); err != nil {

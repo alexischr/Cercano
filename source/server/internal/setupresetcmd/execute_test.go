@@ -29,7 +29,7 @@ func TestLocalResetAndFreshWizard(t *testing.T) {
 	}
 	t.Setenv("CERCANO_WIZARD_STATE", wizardPath)
 	s, ok := setupstate.Load()
-	if !ok || s.Step != setupstate.StepLocus || s.Baseline != nil {
+	if !ok || s.Step != setupstate.StepResources || s.Baseline != nil {
 		t.Fatal("not fresh setup")
 	}
 }

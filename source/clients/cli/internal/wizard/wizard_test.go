@@ -43,7 +43,7 @@ func eqSteps(a, b []Step) bool {
 }
 
 func TestCloudPrimaryVisitsBothMiddleSteps(t *testing.T) {
-	s := New()
+	s := State{Step: StepLocus}
 	s.LocusMode = "cloud_primary" // uses cloud AND open
 	got := runToEnd(t, s)
 	want := []Step{StepLocus, StepCloud, StepOpen, StepDone}
@@ -53,7 +53,7 @@ func TestCloudPrimaryVisitsBothMiddleSteps(t *testing.T) {
 }
 
 func TestCloudOnlySkipsOpenStep(t *testing.T) {
-	s := New()
+	s := State{Step: StepLocus}
 	s.LocusMode = "cloud_only"
 	got := runToEnd(t, s)
 	want := []Step{StepLocus, StepCloud, StepDone}
@@ -64,7 +64,7 @@ func TestCloudOnlySkipsOpenStep(t *testing.T) {
 
 func TestOpenPathsSkipCloudStep(t *testing.T) {
 	for _, mode := range []string{"open_only", "open_primary"} {
-		s := New()
+		s := State{Step: StepLocus}
 		s.LocusMode = mode
 		got := runToEnd(t, s)
 		want := []Step{StepLocus, StepOpen, StepDone}
@@ -88,7 +88,7 @@ func TestPrevBranchesOnLocus(t *testing.T) {
 }
 
 func TestAdvanceRejectsMissingAnswers(t *testing.T) {
-	s := New()
+	s := State{Step: StepLocus}
 	if err := s.Advance(); err == nil {
 		t.Error("locus without mode: want error")
 	}
@@ -113,7 +113,7 @@ func TestResumeRoundTrip(t *testing.T) {
 	if _, ok := Load(); ok {
 		t.Fatal("empty dir: want nothing to resume")
 	}
-	s := New()
+	s := State{Step: StepLocus}
 	s.LocusMode = "cloud_primary"
 	if err := s.Advance(); err != nil {
 		t.Fatalf("advance: %v", err)
@@ -155,7 +155,7 @@ func TestBaselineRoundTrip(t *testing.T) {
 	// The baseline must survive persistence so a resumed (or crashed) run
 	// can still be abandoned back to the pre-wizard configuration.
 	useTempState(t)
-	s := New()
+	s := State{Step: StepLocus}
 	s.Baseline = &Baseline{
 		ActiveProfile: "default",
 		Profiles: []ProfileSnapshot{
@@ -193,5 +193,35 @@ func TestClear(t *testing.T) {
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Error("clear: state file still present")
+	}
+}
+
+func TestResourceFirstNavigationAndResume(t *testing.T) {
+	useTempState(t)
+	s := New()
+	if s.Step != StepResources || s.FlowVersion != 2 {
+		t.Fatalf("wrong fresh state: %+v", s)
+	}
+	if err := s.Advance(); err != nil || s.Step != StepPreference {
+		t.Fatalf("resources: %+v %v", s, err)
+	}
+	if err := s.Advance(); err == nil {
+		t.Fatal("missing preference accepted")
+	}
+	s.Preference = "local"
+	s.LocusMode = "open_only"
+	s.UseLocal = true
+	if err := s.Advance(); err != nil || s.Step != StepDone {
+		t.Fatalf("preference: %+v %v", s, err)
+	}
+	if s.Prev() != StepPreference {
+		t.Fatal("review back must return to preference")
+	}
+	if err := Save(s); err != nil {
+		t.Fatal(err)
+	}
+	loaded, ok := Load()
+	if !ok || loaded.Preference != "local" || !loaded.UseLocal {
+		t.Fatal("resource preference lost on resume")
 	}
 }
