@@ -6,11 +6,13 @@ import (
 )
 
 func TestStartupBuildVersion(t *testing.T) {
-	for _, version := range []string{"dev", "9.87.654-rc.12+build.123", "v9.87.654"} {
+	for version, want := range map[string]string{"dev": "dev", "9.87.654-rc.12+build.123": "v9.87.654-rc.12+build.123", "v9.87.654": "v9.87.654"} {
 		t.Run(version, func(t *testing.T) {
 			m := New(nil, false).WithVersion(version)
 			m.width = 160
-			want := "v" + strings.TrimPrefix(version, "v")
+			if m.splash.Meta.Version != want {
+				t.Fatalf("version = %q, want %q", m.splash.Meta.Version, want)
+			}
 			for name, output := range map[string]string{"animation": m.splash.View(), "top bar": m.renderHeader()} {
 				if !strings.Contains(plain(output), want) || strings.Contains(plain(output), "v0.1.0") {
 					t.Errorf("%s missing build version %s: %s", name, want, plain(output))

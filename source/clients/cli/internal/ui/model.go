@@ -22,6 +22,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"cercano/source/clients/cli/internal/banner"
+	"cercano/source/clients/cli/internal/buildversion"
 	"cercano/source/clients/cli/internal/render"
 	"cercano/source/clients/cli/internal/slash"
 	"cercano/source/clients/cli/internal/theme"
@@ -402,7 +403,7 @@ const armedInputPlaceholder = "(press ^C again to quit, or type a message)"
 // WithVersion sets the build version displayed by the startup banner and header.
 // Call before starting the UI, while banner metadata has not entered scrollback.
 func (m Model) WithVersion(version string) Model {
-	m.splash.Meta.Version = "v" + strings.TrimPrefix(version, "v")
+	m.splash.Meta.Version = buildversion.Display(version)
 	return m
 }
 

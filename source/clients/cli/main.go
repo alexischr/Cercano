@@ -11,10 +11,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"strings"
 
 	tea "charm.land/bubbletea/v2"
 
+	"cercano/source/clients/cli/internal/buildversion"
 	cliui "cercano/source/clients/cli/internal/ui"
 	"cercano/source/server/pkg/agentclient"
 	"cercano/source/server/pkg/config"
@@ -23,11 +23,6 @@ import (
 // version is set at build time via -ldflags "-X main.version=...".
 // Falls back to "dev" for local builds.
 var version = "dev"
-
-func init() {
-	// Normalize: strip leading "v" so the print format "v%s" doesn't double up.
-	version = strings.TrimPrefix(version, "v")
-}
 
 func main() {
 	resumeShort := flag.Bool("r", false, "Open the conversation history picker on launch (alias for --resume)")
@@ -39,7 +34,7 @@ func main() {
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Printf("cercano-cli v%s\n", version)
+		fmt.Printf("cercano-cli %s\n", buildversion.Display(version))
 		return
 	}
 

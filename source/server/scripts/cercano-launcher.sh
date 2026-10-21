@@ -57,7 +57,10 @@ stale() {
 build_install() {
     local bin="$1" dir="$2" pkg="$3"
     local tmp="$bin.new.$$"
-    if ! (cd "$dir" && go build -o "$tmp" "$pkg"); then
+    # Match the module Makefiles: Git tag/commit, optional dirty suffix, no v.
+    local version
+    version="${VERSION:-$(git -C "$REPO" describe --tags --always --dirty 2>/dev/null | sed 's/^v//' || echo dev)}"
+    if ! (cd "$dir" && go build -ldflags "-X main.version=$version" -o "$tmp" "$pkg"); then
         rm -f "$tmp"
         return 1
     fi

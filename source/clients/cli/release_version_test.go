@@ -18,13 +18,16 @@ func (p *versionProbeTransport) RoundTrip(*http.Request) (*http.Response, error)
 
 // Run the real entrypoint without allowing HTTP or touching agent startup.
 func TestReleaseVersionOffline(t *testing.T) {
-	for _, arg := range []string{"--version"} {
-		t.Run(arg, func(t *testing.T) {
+	for input, want := range map[string]string{"dev": "dev", "9.87.654-rc.12+build.123": "v9.87.654-rc.12+build.123", "v9.87.654": "v9.87.654"} {
+		t.Run(input, func(t *testing.T) {
+			oldVersion := version
+			version = input
+			defer func() { version = oldVersion }()
 			oldArgs, oldFlags, oldTransport, oldStdout := os.Args, flag.CommandLine, http.DefaultTransport, os.Stdout
 			defer func() {
 				os.Args, flag.CommandLine, http.DefaultTransport, os.Stdout = oldArgs, oldFlags, oldTransport, oldStdout
 			}()
-			os.Args = []string{"cercano-cli", arg}
+			os.Args = []string{"cercano-cli", "--version"}
 			flag.CommandLine = flag.NewFlagSet("cercano-cli", flag.ContinueOnError)
 			probe := &versionProbeTransport{}
 			http.DefaultTransport = probe
@@ -44,7 +47,7 @@ func TestReleaseVersionOffline(t *testing.T) {
 			if probe.calls != 0 {
 				t.Errorf("version command attempted %d HTTP requests", probe.calls)
 			}
-			if want := "cercano-cli v" + version + "\n"; string(out) != want {
+			if want := "cercano-cli " + want + "\n"; string(out) != want {
 				t.Errorf("output = %q, want %q", out, want)
 			}
 		})
