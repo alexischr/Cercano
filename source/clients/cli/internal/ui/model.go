@@ -301,12 +301,6 @@ type Model struct {
 	// sent with every turn. Set by /d (development mode); empty = normal.
 	workDirOverride string
 
-	// supportsVision records affirmative global provider image capability
-	// evidence fetched at startup. False also includes unknown metadata and
-	// lookup failures, and says nothing about a conversation model override.
-	// visionNotice therefore describes inspection rather than denying vision.
-	supportsVision bool
-
 	// openRuntimeStatus is the most recent OpenRuntimeStatusChanged event
 	// from the agent — populated on a config-driven runtime swap when the
 	// server's headless detection can't find the binary or a model. nil
@@ -570,7 +564,7 @@ func (m *Model) applyTheme(t theme.Theme) {
 
 // Init is called by Bubble Tea once at startup.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.input.Focus(), m.splash.Init(), fetchConfigCmd(m.agent), fetchToolsCmd(m.agent), fetchPermissionModeCmd(m.agent), fetchOpenRuntimeStatusCmd(m.agent), fetchVisionCmd(m.agent), subscribeEventsCmd(m.agent), subscribeConnStateCmd(m.agent))
+	return tea.Batch(m.input.Focus(), m.splash.Init(), fetchConfigCmd(m.agent), fetchToolsCmd(m.agent), fetchPermissionModeCmd(m.agent), fetchOpenRuntimeStatusCmd(m.agent), subscribeEventsCmd(m.agent), subscribeConnStateCmd(m.agent))
 }
 
 // permissionModeMsg carries the result of the startup GetPermissionMode RPC.
@@ -640,34 +634,6 @@ func fetchOpenRuntimeStatusCmd(ag *agentclient.Client) tea.Cmd {
 		// is nil — this is a one-shot, not a stream drain.
 		return openRuntimeStatusChangedMsg{status: st}
 	}
-}
-
-// visionCapsMsg carries the result of the startup GetProviderCapabilities RPC.
-type visionCapsMsg struct{ supported bool }
-
-// fetchVisionCmd asks the agent whether the active provider accepts image
-// inputs and returns a visionCapsMsg. False also covers unknown capabilities
-// and lookup failures; it must not be presented as proof of no vision support.
-func fetchVisionCmd(ag *agentclient.Client) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		caps, err := ag.GetProviderCapabilities(ctx)
-		if err != nil {
-			return visionCapsMsg{supported: false}
-		}
-		return visionCapsMsg{supported: caps.SupportsVision}
-	}
-}
-
-// visionNotice explains the inspection path when image support is unconfirmed.
-// The startup capability lookup is global, not conversation-specific, and its
-// boolean cannot distinguish unsupported from unknown or unavailable metadata.
-func (m Model) visionNotice() string {
-	if len(m.input.Attachments()) == 0 || m.supportsVision {
-		return ""
-	}
-	return m.styles.Muted.Render("Images are read through the image inspector")
 }
 
 // toolsLoadedMsg carries the result of the startup ListTools RPC; populates
@@ -2659,7 +2625,7 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 				m.mainChat().AppendEntry(&Entry{Role: RoleSystem, Content: m.styles.Muted.Render(notice)})
 			}
 			m.refreshViewport()
-			return m, tea.Batch(msg.next, fetchConfigCmd(m.agent), fetchToolsCmd(m.agent), fetchPermissionModeCmd(m.agent), fetchVisionCmd(m.agent), fetchOpenRuntimeStatusCmd(m.agent))
+			return m, tea.Batch(msg.next, fetchConfigCmd(m.agent), fetchToolsCmd(m.agent), fetchPermissionModeCmd(m.agent), fetchOpenRuntimeStatusCmd(m.agent))
 		}
 		if msg.state == agentclient.ConnStateFailed {
 			// Only reachable when the client itself is shutting down
@@ -2675,10 +2641,6 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 			cache[t.Name] = t
 		}
 		m.toolCache = cache
-		return m, nil
-
-	case visionCapsMsg:
-		m.supportsVision = msg.supported
 		return m, nil
 
 	case toolResultMsg:
@@ -5542,9 +5504,6 @@ func (m Model) composeFrame() (parts []string, inputIdx int) {
 		inputIdx = len(parts) + len(promptParts)
 		promptParts = append(promptParts, m.input.View())
 		promptParts = append(promptParts, promptLine)
-		if notice := m.visionNotice(); notice != "" {
-			promptParts = append(promptParts, notice)
-		}
 	}
 	promptParts = append(promptParts, m.renderStatus())
 
