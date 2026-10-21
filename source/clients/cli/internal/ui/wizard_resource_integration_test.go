@@ -23,10 +23,6 @@ func resourcePreferencesPage(t *testing.T, wp *wizardPage) {
 		t.Fatalf("expected resources first: %+v", wp.state)
 	}
 	pressRows(t, wp, "resource_next")
-	if wp.state.ResourcePage != 2 {
-		t.Fatal("missing resource summary")
-	}
-	pressRows(t, wp, "preferences")
 	if wp.state.Step != wizard.StepPreference {
 		t.Fatal("missing preference screen")
 	}
@@ -87,8 +83,8 @@ func TestResourcePreferenceEligibilityMatrix(t *testing.T) {
 			}
 			if tc.want == "" {
 				pressRows(t, wp, "resource_next")
-				if !wp.rows()[0].Disabled {
-					t.Fatal("no-resource setup can continue")
+				if rows := wp.rows(); len(rows) != 1 || rows[0].Key != "resources" {
+					t.Fatal("no-resource setup offers an invalid configuration")
 				}
 			}
 		})
@@ -342,17 +338,26 @@ func TestResourceReconnectUsesExistingOAuthEditor(t *testing.T) {
 	}
 }
 
-func TestResourceLocalModelReviewReturnsToDiscovery(t *testing.T) {
-	_, client := newScenario(t)
+func TestResourceModelReviewFollowsPreference(t *testing.T) {
+	stub, client := newScenario(t)
 	wp := resourceWizard(t, client)
-	pressRows(t, wp, "resource_next")
-	pressRows(t, wp, "local_models")
+	resourcePreferencesPage(t, wp)
+	for _, row := range wp.rows() {
+		if row.Key == "local_models" || row.Key == "edit_models" {
+			t.Fatal("model editing offered before preference")
+		}
+	}
+	pressRows(t, wp, "local")
+	pressRows(t, wp, "edit_models")
 	if wp.state.Step != wizard.StepOpen {
-		t.Fatal("model editor not opened")
+		t.Fatal("model customization unavailable after preference")
 	}
 	pressRows(t, wp, "continue")
-	if wp.state.Step != wizard.StepResources || wp.state.ResourcePage != 2 {
-		t.Fatal("model editing bypassed resource/preferences steps")
+	if wp.state.Step != wizard.StepDone {
+		t.Fatal("model editing should return to confirmation")
+	}
+	if stub.writeCount() != 0 {
+		t.Fatal("model customization applied unconfirmed changes")
 	}
 }
 

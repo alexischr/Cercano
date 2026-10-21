@@ -140,6 +140,15 @@ func newWizardPage(ag *agentclient.Client, p theme.Palette, s theme.Styles, w, h
 		st.Step = wizard.StepResources
 		st.ResourcePage = 2
 	}
+	// The former informational resource page is now the configuration step.
+	if st.FlowVersion >= 2 && st.Step == wizard.StepResources && st.ResourcePage == 2 {
+		st.Step = wizard.StepPreference
+		st.ResourcePage = 0
+	}
+	if st.FlowVersion >= 2 && st.Step == wizard.StepOpen && st.Preference == "" {
+		st.Step = wizard.StepPreference
+		st.ResourcePage = 0
+	}
 	wp := &wizardPage{palette: p, styles: s, agent: ag, state: st, width: w, height: h}
 	if recs, err := config.LoadTierRecommendations(); err == nil {
 		wp.recs, wp.recsOK = recs, true
@@ -676,12 +685,12 @@ func (wp *wizardPage) back() (closed bool) {
 			}
 			wp.state.ResourcePage = 0
 		} else if wp.state.Step == wizard.StepOpen && wp.state.Preference == "" {
-			wp.state.Step = wizard.StepResources
-			wp.state.ResourcePage = 2
+			wp.state.Step = wizard.StepPreference
+			wp.state.ResourcePage = 0
 		} else {
 			wp.state.Step = wp.state.Prev()
 			if wp.state.Step == wizard.StepResources {
-				wp.state.ResourcePage = 2
+				wp.state.ResourcePage = 0
 			}
 		}
 		wp.cursor = wp.defaultCursor()
@@ -896,8 +905,8 @@ func (wp *wizardPage) openRuntimeCheckCmd() tea.Cmd {
 // step, persists, and repositions the cursor.
 func (wp *wizardPage) advance() {
 	if wp.state.FlowVersion >= 2 && wp.state.Step == wizard.StepOpen && wp.state.Preference == "" {
-		wp.state.Step = wizard.StepResources
-		wp.state.ResourcePage = 2
+		wp.state.Step = wizard.StepPreference
+		wp.state.ResourcePage = 0
 		wp.cursor = 0
 		wp.persist()
 		return
@@ -958,9 +967,9 @@ func (wp *wizardPage) stepIndex() (int, int) {
 func (wp *wizardPage) stepTitle() string {
 	switch wp.state.Step {
 	case wizard.StepResources:
-		return "your resources"
+		return "cloud providers"
 	case wizard.StepPreference:
-		return "your preference"
+		return "configure Cercano"
 	case wizard.StepLocus:
 		return "choose a setup template"
 	case wizard.StepCloud:

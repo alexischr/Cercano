@@ -27,7 +27,7 @@ func TestResourceProvidersAreUnified(t *testing.T) {
 		}
 	}
 	pressRows(t, wp, "resource_next")
-	if wp.state.ResourcePage != 2 {
-		t.Fatalf("continue should show resource summary, page=%d", wp.state.ResourcePage)
+	if wp.state.Step != wizard.StepPreference {
+		t.Fatalf("continue should show configuration choices, got %s", wp.state.Step)
 	}
 }

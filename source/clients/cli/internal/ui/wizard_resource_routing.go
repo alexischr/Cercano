@@ -76,7 +76,7 @@ func (wp *wizardPage) resourceRouting() *agentclient.RoutingAssignments {
 // provider entitlement/expiry and exact local runtime readiness are not inferred.
 func (wp *wizardPage) validateResourceSelection(ctx context.Context) error {
 	if !wp.routingOK {
-		return fmt.Errorf("routing discovery is unavailable; recheck resources before applying")
+		return fmt.Errorf("routing discovery is unavailable; go back to cloud providers and continue again before applying")
 	}
 	view, err := wp.agent.GetCloudProviders(ctx)
 	if err != nil {
@@ -87,7 +87,7 @@ func (wp *wizardPage) validateResourceSelection(ctx context.Context) error {
 		live.Primary = view.Active
 	}
 	if !reflect.DeepEqual(live, wp.curRouting) {
-		return fmt.Errorf("routing changed since preview; recheck resources and review the setup again")
+		return fmt.Errorf("routing changed since preview; go back to cloud providers and continue again and review the setup again")
 	}
 	profiles, _, err := wp.agent.GetCloudProfiles(ctx)
 	if err != nil {
@@ -116,7 +116,7 @@ func (wp *wizardPage) validateResourceSelection(ctx context.Context) error {
 			return fmt.Errorf("primary account unavailable; reconnect or choose another setup")
 		}
 		if wp.state.SecondaryProfile != "" && (secondary == nil || secondary.Name == primary.Name || wizardFrontierProfile(*secondary)) {
-			return fmt.Errorf("routine-work account unavailable; recheck resources")
+			return fmt.Errorf("routine-work account unavailable; go back to cloud providers and continue again")
 		}
 		classes := 1
 		if secondary != nil && wizardFrontierProfile(*primary) {
@@ -151,7 +151,7 @@ func (wp *wizardPage) validateResourceSelection(ctx context.Context) error {
 	}
 	for _, name := range []string{wp.state.CloudProfile, wp.state.SecondaryProfile} {
 		if name != "" && !sameConnection(name) {
-			return fmt.Errorf("account %q changed since preview; recheck resources", name)
+			return fmt.Errorf("account %q changed since preview; go back to cloud providers and continue again", name)
 		}
 	}
 	proposed := wp.resourceRouting()
@@ -160,13 +160,13 @@ func (wp *wizardPage) validateResourceSelection(ctx context.Context) error {
 	}
 	for _, name := range append(proposed.PrimaryBackupAccounts(), proposed.SecondaryBackup) {
 		if name != "" && !sameConnection(name) {
-			return fmt.Errorf("backup account %q is unavailable; recheck resources", name)
+			return fmt.Errorf("backup account %q is unavailable; go back to cloud providers and continue again", name)
 		}
 	}
 	if wp.state.UseLocal {
 		cat, err := wp.agent.ListRuntimeModels(ctx)
 		if err != nil {
-			return fmt.Errorf("cannot recheck local capability: %w", err)
+			return fmt.Errorf("cannot verify local capability: %w", err)
 		}
 		probe := *wp
 		probe.catalog = cat
@@ -180,7 +180,7 @@ func (wp *wizardPage) validateResourceSelection(ctx context.Context) error {
 
 func (wp *wizardPage) resourceConfirmation() string {
 	if !wp.routingOK {
-		return "Resource discovery needs another check.\n\nReview connected accounts and recheck resources before applying."
+		return "Resource discovery needs another check.\n\nReview connected accounts and go back to cloud providers and continue again before applying."
 	}
 	if wp.state.UseLocal {
 		if ok, why := wp.localResource(); !ok {

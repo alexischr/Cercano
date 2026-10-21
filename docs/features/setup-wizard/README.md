@@ -5,13 +5,15 @@ It reuses the existing account editor, curated llama-server catalog, wizard resu
 file, and routing APIs. No new credential store or parallel configuration system
 is involved.
 
-## Your resources
+## Step 1 — Cloud providers
 
 Hardware and account discovery are read-only. Setup has one **Add cloud provider**
 screen for Claude, ChatGPT/Codex, DeepInfra, Mistral, and other supported providers.
 The provider picker starts with an empty search field. Existing accounts with
 stored credentials start selected; they can be deselected without deleting them.
-Multiple accounts may be connected through the shared configuration popover.
+Add as many providers and additional accounts with the same provider as needed.
+Additional accounts can be configured as backups in `/config`. The shared account
+popover returns to step 1, where **Add cloud provider** remains available.
 Subscription connections use its OAuth flow, and disconnected existing accounts
 open their existing editor for reconnection rather than creating duplicate names.
 Provider editors show Connection controls first. **Model tiers** and **Advanced
@@ -38,15 +40,22 @@ uses its unified pool; discrete GPUs use the largest individual known pool, neve
 summed GPU memory or system RAM as extra graphics memory. Unknown probes and
 CPU-only/unknown-GPU configurations do not qualify. The selected or curated local
 models must also pass the existing preliminary weight-plus-overhead budget screen.
-Model sizes and compatibility metadata must be known. An eligible machine can
-review smaller local-model choices before choosing a preference; explicit model
-choices are not silently replaced.
+Model sizes and compatibility metadata must be known. Local-model customization is available only after choosing a configuration that
+uses local models; explicit model choices are not silently replaced.
 
 This is eligibility, **not runtime-fit validation**. Context, cache, allocation,
 and serving readiness still use the existing runtime checks. No new model default
 or full-context guarantee is implied. Unsupported hardware probing stays unknown.
 
-## Your preference
+## Step 2 — Configure Cercano
+
+Continue from cloud providers refreshes discovery automatically and opens step 2
+of 3. There is no separate resource-summary screen or manual Recheck button.
+A short capability summary appears above the viable configurations. Local
+eligibility explains the detected total system RAM, the 48 GB minimum, GPU
+presence, and unified or dedicated GPU memory; it does not claim a wired/free
+memory measurement. Account addition stays in step 1, and model customization
+comes after choosing a configuration.
 
 Only viable choices are shown:
 
@@ -62,10 +71,10 @@ assuming every non-frontier provider serves open weights. Descriptions name the
 resources that will actually be used. Accounts default to
 the active account within their resource class; setup does not benchmark or
 optimize account prices. Existing accounts remain available in configuration.
-A no-resource result offers reconnection, discovery retry, or local-model review
-where the hardware baseline permits it; it cannot advance to an unusable setup.
+A no-resource result explains the limitation and offers a return to cloud
+providers. It cannot apply an unusable setup.
 
-## Confirm
+## Step 3 — Review and confirm
 
 The compact review names primary/routine resources, local helpers, existing cloud
 backups that remain selected, and required downloads. It explicitly distinguishes

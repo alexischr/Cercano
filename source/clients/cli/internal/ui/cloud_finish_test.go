@@ -218,6 +218,15 @@ func TestCloudSignInDoneReturnsToSetup(t *testing.T) {
 			if m.content != wp || m.wizardProviderReturn != nil || wp.state.Step != "resources" {
 				t.Fatal("Done did not return to setup resources")
 			}
+			addAvailable := false
+			for _, row := range wp.rows() {
+				if row.Key == "add_provider" {
+					addAvailable = true
+				}
+			}
+			if !addAvailable {
+				t.Fatal("sign-in removed the option to add another cloud account")
+			}
 			if stub.writeCount() != 0 {
 				t.Fatal("returning from sign-in reapplied account or routing changes")
 			}

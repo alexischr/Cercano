@@ -16,7 +16,7 @@ const wizardLocalRAMFloor int64 = 48 << 30
 // for a discrete GPU. Unknown probes cannot enable local recommendations.
 func wizardLocalHardware(cat agentclient.RuntimeModelCatalog, catalogOK bool) (bool, int64, string) {
 	if !catalogOK || cat.SystemRAMBytes <= 0 {
-		return false, 0, "Machine memory could not be determined. Retry discovery or connect a cloud account."
+		return false, 0, "Machine memory could not be determined. Local configurations cannot be recommended yet."
 	}
 	if cat.SystemRAMBytes < wizardLocalRAMFloor {
 		return false, 0, fmt.Sprintf("This machine reports %s of memory. Local setups require at least 48 GB and supported GPU acceleration.", formatBytes(cat.SystemRAMBytes))
@@ -43,7 +43,11 @@ func wizardLocalHardware(cat agentclient.RuntimeModelCatalog, catalogOK bool) (b
 	if cat.Hardware.Kind == agentclient.HardwareTopologyUnified && pool < wizardLocalRAMFloor {
 		return false, 0, "Unified memory is below the 48 GB local baseline."
 	}
-	return true, pool, "This machine meets the local hardware baseline. Model readiness still needs runtime checks."
+	memoryKind := "dedicated GPU memory"
+	if cat.Hardware.Kind == agentclient.HardwareTopologyUnified {
+		memoryKind = "unified memory"
+	}
+	return true, pool, fmt.Sprintf("%s total system memory (48 GB minimum), GPU detected, and %s %s.", formatBytes(cat.SystemRAMBytes), formatBytes(pool), memoryKind)
 }
 
 func wizardFrontierProfile(p agentclient.CloudProfileInfo) bool {
@@ -86,7 +90,7 @@ func (wp *wizardPage) localResource() (bool, string) {
 		}
 		model, found := openModelByLabel(wp.catalog, pick)
 		if !found || model.SizeBytes <= 0 || model.Runtime != "llama_server" || (tier != config.TierEmbedding && !model.SupportsChat) {
-			return false, "The hardware meets the baseline, but suitable local model sizes are unknown. Retry discovery or use cloud."
+			return false, "The hardware meets the baseline, but suitable local model sizes are unknown. A local configuration cannot be recommended yet."
 		}
 		if model.SizeBytes+estimateOverheadBytes(model.SizeBytes) > usable {
 			return false, "The current local model choices exceed the preliminary GPU memory budget. Smaller compatible models are needed."
@@ -168,15 +172,8 @@ func (wp *wizardPage) resourceRows() []wizardRow {
 			}
 			rows = append(rows, wizardRow{Key: p.key, Label: p.label, Annotation: description})
 		}
-		if len(rows) == 0 {
-			return []wizardRow{{Key: "resources", Label: "Connect an account or recheck this machine"}}
-		}
-		return rows
-	}
-	if wp.state.ResourcePage == 2 {
-		rows := []wizardRow{{Key: "preferences", Label: "Choose how Cercano works", Disabled: len(wp.resourcePreferences()) == 0 || !wp.routingOK}, {Key: "recheck", Label: "Recheck resources"}, {Key: "accounts", Label: "Connect another account"}}
-		if ok, _, _ := wizardLocalHardware(wp.catalog, wp.catalogOK); ok {
-			rows = append(rows, wizardRow{Key: "local_models", Label: "Review local model choices", Annotation: "optional; do not replace existing choices silently"})
+		if len(rows) == 0 || !wp.routingOK {
+			return []wizardRow{{Key: "resources", Label: "Back to cloud providers"}}
 		}
 		return rows
 	}
@@ -201,34 +198,33 @@ func (wp *wizardPage) resourceRows() []wizardRow {
 }
 
 func (wp *wizardPage) resourceDescription() string {
-	if wp.state.Step == wizard.StepPreference {
-		return "How would you like Cercano to work?\n\nThese setups match your connected accounts and this machine. Model assignments remain editable; existing explicit task overrides are preserved."
-	}
-	if wp.state.ResourcePage != 2 {
-		return "Add your cloud providers\n\nConnect Claude, ChatGPT/Codex, DeepInfra, Mistral, or another supported provider. You can add more than one, or continue without one. Existing connections do not need another sign-in.\n\nConnected accounts remain if you cancel setup."
+	if wp.state.Step != wizard.StepPreference {
+		return "Add your cloud providers\n\nConnect Claude, ChatGPT/Codex, DeepInfra, Mistral, or another supported provider. Add as many cloud providers as you want, including additional accounts with the same provider. Extra accounts can be configured as backups in /config.\n\nYou can add another account after signing in, or continue without one. Connected accounts remain if you cancel setup."
 	}
 	var b strings.Builder
-	b.WriteString("Here’s what Cercano can use\n\n")
-	if !wp.routingOK {
-		b.WriteString("Current routing could not be read safely. Recheck resources before continuing.\n\n")
-	}
-	accounts := append(wp.resourceAccounts(true), wp.resourceAccounts(false)...)
-	for _, p := range accounts {
-		fmt.Fprintf(&b, "  • %s — credentials connected\n", p.Name)
-	}
-	if len(accounts) == 0 {
-		b.WriteString("  • No usable cloud credentials connected\n")
+	b.WriteString("How would you like Cercano to work?\n\n")
+	accounts := len(wp.resourceAccounts(true)) + len(wp.resourceAccounts(false))
+	if accounts > 0 {
+		fmt.Fprintf(&b, "  • Cloud: %d selected account(s) with credentials.\n", accounts)
+	} else {
+		b.WriteString("  • Cloud: no connected accounts selected.\n")
 	}
 	ok, why := wp.localResource()
 	if ok {
-		b.WriteString("  • Local models — eligible; downloads may be required\n")
+		fmt.Fprintf(&b, "  • Local models: eligible — %s\n", why)
 	} else {
-		b.WriteString("  • Local models — not available for recommendation\n")
+		fmt.Fprintf(&b, "  • Local models: not offered — %s\n", why)
 	}
-	fmt.Fprintf(&b, "\n%s\n", why)
-	b.WriteString("\nCredentials can expire or exhaust quota; provider access is checked when used.")
+	if !wp.routingOK {
+		b.WriteString("\nCurrent routing could not be read safely. Go back to cloud providers and continue again.")
+	}
 	if len(wp.resourcePreferences()) == 0 {
-		b.WriteString("\n\nConnect an account or resolve local eligibility to continue.")
+		b.WriteString("\nNo configuration is currently available. Go back to connect a cloud provider, or resolve local eligibility before resuming setup.")
+	} else if wp.routingOK {
+		b.WriteString("\nChoose a configuration below. You can customize its models next.")
+	}
+	if ok {
+		b.WriteString("\nLocal eligibility is preliminary; runtime checks still apply.")
 	}
 	return b.String()
 }
@@ -275,21 +271,15 @@ func (wp *wizardPage) selectResourceRow(row wizardRow) (tea.Cmd, bool) {
 	switch row.Key {
 	case "add_provider":
 		return func() tea.Msg { return wizardAddProviderMsg{page: wp} }, false
-	case "local_models":
-		wp.state.Step = wizard.StepOpen
-		wp.state.Preference = ""
-		wp.state.LocusMode = "open_only"
-		wp.autofillTiers()
 	case "resource_next":
-		wp.state.ResourcePage = 2
-	case "preferences":
+		// Discovery is automatic here, not another user-facing setup action.
+		if wp.agent != nil {
+			wp.loadProviders()
+			wp.loadRuntimeCatalog()
+			wp.discoverResources()
+		}
 		wp.state.Step = wizard.StepPreference
-	case "accounts":
 		wp.state.ResourcePage = 0
-	case "recheck":
-		wp.loadProviders()
-		wp.loadRuntimeCatalog()
-		wp.discoverResources()
 	default:
 		return nil, false
 	}

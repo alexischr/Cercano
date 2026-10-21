@@ -161,7 +161,7 @@ func TestWizardEscResumesMidRun(t *testing.T) {
 	p := theme.BuiltinThemes()[0]
 	wp := newWizardPage(nil, p.Palette, theme.NewStyles(p.Palette), 100, 40)
 
-	pressRows(t, wp, "resource_next") // providers → resource summary
+	pressRows(t, wp, "resource_next") // providers → configuration choices
 	if closed := press(t, wp, tea.KeyEscape); closed {
 		t.Fatal("esc on cloud step should go back, not close")
 	}
