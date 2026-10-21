@@ -40,3 +40,14 @@ func TestSessionTierConfirmationIsConcise(t *testing.T) {
 		t.Fatal("explicit /model status lost details")
 	}
 }
+
+func TestSessionTierReplyRendersConciseNotice(t *testing.T) {
+	m := New(nil, false)
+	status := agentclient.SessionModelStatus{Override: &agentclient.SessionModelRoute{Profile: "openai-responses", Model: "gpt-6-astra"}, Note: "Verbose routing internals", Profiles: []agentclient.SessionModelProfile{{Name: "other-account"}}}
+	next, _ := m.Update(sessionModelMsg{convID: m.convID, tier: "premium", status: status})
+	m = next.(Model)
+	entries := m.mainChat().Entries()
+	if len(entries) == 0 || entries[len(entries)-1].Content != "Premium · gpt-6-astra (this session)." {
+		t.Fatalf("actual handler still prints verbose status: %+v", entries[len(entries)-1])
+	}
+}

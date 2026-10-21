@@ -2243,7 +2243,11 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 				m.mainChat().AppendNotice(&Entry{Role: RoleSystem, Content: "Session model: " + msg.err.Error()})
 			}
 		} else if !msg.quiet || msg.status.Override != nil {
-			m.mainChat().AppendNotice(&Entry{Role: RoleSystem, Content: sessionModelText(msg.status, !msg.quiet)})
+			text := sessionModelText(msg.status, !msg.quiet)
+			if msg.tier != "" {
+				text = sessionTierConfirmation(msg.tier, msg.status)
+			}
+			m.mainChat().AppendNotice(&Entry{Role: RoleSystem, Content: text})
 		}
 		m.refreshViewport()
 		if wasPending && msg.err == nil && !m.streaming {
