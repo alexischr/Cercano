@@ -301,10 +301,10 @@ type Model struct {
 	// sent with every turn. Set by /d (development mode); empty = normal.
 	workDirOverride string
 
-	// supportsVision is true when the active provider can accept image
-	// inputs. Fetched once at startup via fetchVisionCmd. Used by
-	// visionNotice to show a dim warning when images are attached but the
-	// model can't see them. Interim until capability-aware routing lands.
+	// supportsVision records affirmative global provider image capability
+	// evidence fetched at startup. False also includes unknown metadata and
+	// lookup failures, and says nothing about a conversation model override.
+	// visionNotice therefore describes inspection rather than denying vision.
 	supportsVision bool
 
 	// openRuntimeStatus is the most recent OpenRuntimeStatusChanged event
@@ -646,8 +646,8 @@ func fetchOpenRuntimeStatusCmd(ag *agentclient.Client) tea.Cmd {
 type visionCapsMsg struct{ supported bool }
 
 // fetchVisionCmd asks the agent whether the active provider accepts image
-// inputs and returns a visionCapsMsg. Errors are treated as unsupported so
-// the warning fires when in doubt.
+// inputs and returns a visionCapsMsg. False also covers unknown capabilities
+// and lookup failures; it must not be presented as proof of no vision support.
 func fetchVisionCmd(ag *agentclient.Client) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -660,13 +660,14 @@ func fetchVisionCmd(ag *agentclient.Client) tea.Cmd {
 	}
 }
 
-// visionNotice returns a dim warning when images are attached but the active
-// model can't accept them. Interim UX until capability-aware routing lands.
+// visionNotice explains the inspection path when image support is unconfirmed.
+// The startup capability lookup is global, not conversation-specific, and its
+// boolean cannot distinguish unsupported from unknown or unavailable metadata.
 func (m Model) visionNotice() string {
 	if len(m.input.Attachments()) == 0 || m.supportsVision {
 		return ""
 	}
-	return m.styles.Muted.Render("⚠ active model can't see images")
+	return m.styles.Muted.Render("Images are read through the image inspector")
 }
 
 // toolsLoadedMsg carries the result of the startup ListTools RPC; populates

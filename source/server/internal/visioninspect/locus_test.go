@@ -210,3 +210,15 @@ func TestLocus_NilSides(t *testing.T) {
 		t.Fatal("no sides wired Inspect must error")
 	}
 }
+
+func TestLocusPreservesBothInspectionFailures(t *testing.T) {
+	local := visionFrom("open:gemma", true)
+	cloud := visionFrom("cloud:astra", true)
+	cloud.err = errors.New("cloud request failed")
+	local.err = errors.New("local memory limit")
+	l := NewLocus(local, cloud, modeFn(locus.CloudPrimary))
+	_, err := l.Inspect(context.Background(), "c1", "img_1", "q?")
+	if !errors.Is(err, cloud.err) || !errors.Is(err, local.err) {
+		t.Fatalf("must preserve both failures, got %v", err)
+	}
+}

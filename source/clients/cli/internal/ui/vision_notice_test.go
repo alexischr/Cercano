@@ -7,13 +7,13 @@ import (
 	"cercano/source/clients/cli/internal/theme"
 )
 
-func TestVisionNoticeShownWhenUnsupportedAndImageAttached(t *testing.T) {
+func TestVisionNoticeDoesNotClaimUnknownModelCannotSeeImages(t *testing.T) {
 	m := newTestModelWithPrompt()
 	m.styles = theme.NewStyles(theme.Cracker())
 	m.supportsVision = false
 	m.input.AddImage([]byte{1}, "image/png", "")
-	if m.visionNotice() == "" {
-		t.Fatal("expected a vision notice when an image is attached and vision is unsupported")
+	if n := m.visionNotice(); !strings.Contains(n, "image inspector") || strings.Contains(n, "can't see") {
+		t.Fatal("expected an inspector notice without claiming the model cannot see images")
 	}
 }
 
@@ -34,5 +34,4 @@ func TestVisionNoticeHiddenWhenNoImage(t *testing.T) {
 	if n := m.visionNotice(); n != "" {
 		t.Fatalf("no notice without an attached image, got %q", n)
 	}
-	_ = strings.TrimSpace
 }

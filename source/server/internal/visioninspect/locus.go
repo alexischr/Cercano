@@ -3,6 +3,7 @@ package visioninspect
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"cercano/source/server/internal/capabilities"
 	"cercano/source/server/internal/locus"
@@ -108,7 +109,14 @@ func (l *LocusInspector) Inspect(ctx context.Context, convID, imageID, question 
 		if !localUsable {
 			return capabilities.VisionAnswer{}, err
 		}
-		return l.local.Inspect(ctx, convID, imageID, question)
+		localAnswer, localErr := l.local.Inspect(ctx, convID, imageID, question)
+		if localErr != nil {
+			return capabilities.VisionAnswer{}, errors.Join(
+				fmt.Errorf("cloud image inspection failed: %w", err),
+				fmt.Errorf("local image inspection fallback failed: %w", localErr),
+			)
+		}
+		return localAnswer, nil
 	}
 
 	if localUsable {

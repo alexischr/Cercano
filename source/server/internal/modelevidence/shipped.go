@@ -55,7 +55,8 @@ func shippedVision(id modelmetadata.Identity) modelmetadata.Vision {
 		case strings.Contains(m, "gpt-3.5"), strings.Contains(m, "text-embedding"):
 			return modelmetadata.VisionUnsupported
 		case strings.Contains(m, "gpt-4o"), strings.Contains(m, "gpt-4.1"),
-			strings.Contains(m, "gpt-5"), strings.Contains(m, "o3"), strings.Contains(m, "o4"):
+			strings.Contains(m, "gpt-5"), m == "gpt-6-astra",
+			strings.Contains(m, "o3"), strings.Contains(m, "o4"):
 			return modelmetadata.VisionSupported
 		}
 	case vendorGemini:
