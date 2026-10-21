@@ -12,6 +12,7 @@ import (
 
 type sessionModelMsg struct {
 	serial uint64
+	tier   string
 	convID string
 	quiet  bool
 	status agentclient.SessionModelStatus
@@ -20,13 +21,17 @@ type sessionModelMsg struct {
 
 func sessionModelCmd(ag *agentclient.Client, convID, workDir, action, profile, model string, quiet bool) tea.Cmd {
 	return func() tea.Msg {
+		tier := ""
+		if action == "tier" {
+			tier = model
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		if ag == nil {
-			return sessionModelMsg{convID: convID, quiet: quiet, err: fmt.Errorf("agent unavailable")}
+			return sessionModelMsg{tier: tier, convID: convID, quiet: quiet, err: fmt.Errorf("agent unavailable")}
 		}
 		status, err := ag.SessionModel(ctx, convID, workDir, action, profile, model)
-		return sessionModelMsg{convID: convID, quiet: quiet, status: status, err: err}
+		return sessionModelMsg{tier: tier, convID: convID, quiet: quiet, status: status, err: err}
 	}
 }
 func sessionModelText(status agentclient.SessionModelStatus, profiles bool) string {
@@ -49,4 +54,20 @@ func sessionModelText(status agentclient.SessionModelStatus, profiles bool) stri
 		}
 	}
 	return text
+}
+
+func sessionTierConfirmation(tier string, status agentclient.SessionModelStatus) string {
+	label := tier
+	switch tier {
+	case "premium":
+		label = "Premium"
+	case "standard":
+		label = "Standard"
+	case "economy":
+		label = "Economy"
+	}
+	if status.Override != nil {
+		return fmt.Sprintf("%s · %s (this session).", label, status.Override.Model)
+	}
+	return label + " selected for this session."
 }

@@ -26,3 +26,17 @@ func TestSessionModelStaleReplyIgnored(t *testing.T) {
 		t.Fatal("stale response changed session")
 	}
 }
+
+func TestSessionTierConfirmationIsConcise(t *testing.T) {
+	status := agentclient.SessionModelStatus{Override: &agentclient.SessionModelRoute{Profile: "private-account", Model: "gpt-6-astra"}, Note: "Verbose routing internals", Profiles: []agentclient.SessionModelProfile{{Name: "other-account"}}}
+	got := sessionTierConfirmation("premium", status)
+	if got != "Premium · gpt-6-astra (this session)." {
+		t.Fatalf("unexpected confirmation: %q", got)
+	}
+	if strings.Contains(got, "\n") || strings.Contains(got, "account") {
+		t.Fatal("tier confirmation leaked status details")
+	}
+	if !strings.Contains(sessionModelText(status, true), "Saved profiles:") {
+		t.Fatal("explicit /model status lost details")
+	}
+}
