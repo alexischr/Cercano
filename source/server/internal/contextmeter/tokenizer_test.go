@@ -76,9 +76,9 @@ func TestModelWindowForGPT6Astra(t *testing.T) {
 	}
 }
 
-// The capacity entry must stay narrow: only the exact gpt-6-astra model gets
+// The Astra capacity entry must stay narrow: unlisted GPT models must not get
 // 1,050,000. Other GPT models keep the unknown-model default path.
-func TestGPTFamilyStaysUnknownExceptAstra(t *testing.T) {
+func TestUnlistedGPTModelsStayUnknown(t *testing.T) {
 	for _, model := range []string{"gpt-6", "gpt-6-astra-preview", "gpt-5.5", "gpt-4o", "gpt-6-astra-mini"} {
 		if got, ok := KnownModelMax(model); ok {
 			t.Errorf("KnownModelMax(%q) = (%d,true), want unknown (false)", model, got)
@@ -207,5 +207,18 @@ func TestKnownModelMaxIgnoresRoutingPrefixes(t *testing.T) {
 	}
 	if got := ModelMax("llama_server:catalog:llama3.1:8b"); got != 131_072 {
 		t.Fatalf("ModelMax runtime-prefixed llama3.1 = %d, want 131072", got)
+	}
+}
+
+func TestSolContextWindowMatchesAstra(t *testing.T) {
+	for _, name := range []string{"gpt-6.1-sol", " GPT-6.1-SOL ", "llama_server:online:gpt-6.1-sol"} {
+		if got := ModelWindowFor(name); got.Tokens != 1_050_000 || !got.Known {
+			t.Errorf("%q window = %+v, want 1050000 known", name, got)
+		}
+	}
+	for _, name := range []string{"gpt-6-sol", "gpt-6-luna", "gpt-6.1-sol-preview", "gpt-6.1-sol-mini"} {
+		if got := ModelWindowFor(name); got.Known || got.Tokens != 128_000 {
+			t.Errorf("%q inherited Sol window: %+v", name, got)
+		}
 	}
 }
