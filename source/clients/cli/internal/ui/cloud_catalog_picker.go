@@ -79,6 +79,10 @@ func (sp *settingsPage) catalogRow() cloudRow {
 // always address the saved profile. Unknown/custom endpoint auth is not guessed.
 func (sp *settingsPage) catalogPrerequisite() (string, string) {
 	d := sp.cloudDraft
+	pendingEdit := "Save pending connection changes to load available models."
+	if sp.cloudSaveFailed {
+		pendingEdit = "Connection changes could not be saved. Retry saving to load available models."
+	}
 	r := sp.catalogRow()
 	subscription := d.Route == "subscription" || d.Route == "chatgpt" || d.Flavor == "responses"
 	if subscription && sp.cloudDraftNew {
@@ -89,12 +93,15 @@ func (sp *settingsPage) catalogPrerequisite() (string, string) {
 		return "Sign in to load available models.", key
 	}
 	if d.apiKeyEdited {
-		return "Retry the failed edit to load available models.", "cloud-retry"
+		return pendingEdit, "cloud-retry"
 	}
 	for _, p := range sp.profiles {
 		if p.Name == d.Name && !sp.cloudDraftNew {
-			if p.Flavor != d.Flavor || p.BaseURL != d.BaseURL || p.Backend != d.Backend || p.Route != d.Route || p.Provider != d.Provider {
-				return "Retry the failed edit to load available models.", "cloud-retry"
+			// ChatGPT's response backend accepts both the canonical empty
+			// route and the older explicit chatgpt route for subscription auth.
+			sameRoute := p.Route == d.Route || (p.Flavor == "responses" && d.Flavor == "responses" && (p.Route == "" || p.Route == "chatgpt") && (d.Route == "" || d.Route == "chatgpt"))
+			if p.Flavor != d.Flavor || p.BaseURL != d.BaseURL || p.Backend != d.Backend || !sameRoute || p.Provider != d.Provider {
+				return pendingEdit, "cloud-retry"
 			}
 		}
 	}
@@ -111,7 +118,10 @@ func (sp *settingsPage) catalogState() overlay.CatalogState {
 	if msg, field := sp.catalogPrerequisite(); msg != "" {
 		label := "Add API key"
 		if field == "cloud-retry" {
-			label = "Retry failed edit"
+			label = "Save changes"
+			if sp.cloudSaveFailed {
+				label = "Retry saving"
+			}
 		} else if field == "cloud-name" {
 			label = "Set account name"
 		} else if strings.HasPrefix(field, "cloud-signin") {

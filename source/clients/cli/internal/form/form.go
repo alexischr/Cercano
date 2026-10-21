@@ -17,6 +17,8 @@ type Section struct {
 	// Header makes the section title keyboard- and mouse-activatable. Hosts
 	// omit body fields when collapsed; the header remains in navigation.
 	Header *ButtonField
+	// HeaderExpanded is host-owned state for directional expansion/collapse.
+	HeaderExpanded bool
 	// ColumnHeadings labels a compact pair table: row label, left value, right value.
 	ColumnHeadings [3]string
 	Fields         []Field
@@ -117,6 +119,22 @@ func (f *Form) Update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return cmd, false
 	}
 
+	if msg.String() == "right" || msg.String() == "left" {
+		for _, section := range f.Sections {
+			if section.Header == nil || cur != section.Header {
+				continue
+			}
+			expand := msg.String() == "right"
+			if expand == section.HeaderExpanded {
+				return nil, false
+			}
+			cmd, committed, val := section.Header.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+			if committed {
+				return f.commit(cur.Key(), val, cmd), false
+			}
+			return cmd, false
+		}
+	}
 	switch msg.String() {
 	case "esc", "q":
 		return nil, true

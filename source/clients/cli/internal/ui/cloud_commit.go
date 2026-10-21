@@ -107,6 +107,15 @@ func cloudCommitNeedsAgent(ca cloudCommitAction, draftNew bool) bool {
 // optional tea.Cmd, and an error. Profile mutations invalidate the cache so the
 // next snapshot re-fetches.
 func (sp *settingsPage) commitCloud(ca cloudCommitAction) (string, tea.Cmd, error) {
+	status, cmd, err := sp.commitCloudAction(ca)
+	switch ca.kind {
+	case cloudCommitDraftEdit, cloudCommitSave, cloudCommitKey:
+		sp.cloudSaveFailed = err != nil && sp.cloudDirty
+	}
+	return status, cmd, err
+}
+
+func (sp *settingsPage) commitCloudAction(ca cloudCommitAction) (string, tea.Cmd, error) {
 	// Fail fast while the connection is down: these RPCs block the update
 	// loop for their full deadline and then fail anyway. The reconnect
 	// watcher already knows the agent is restarting — say so instead.

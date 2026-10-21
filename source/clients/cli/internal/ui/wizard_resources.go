@@ -192,7 +192,7 @@ func (wp *wizardPage) resourceRows() []wizardRow {
 		}
 		rows = append(rows, wizardRow{Key: "connected:" + p.Name, Label: p.Name, Annotation: annotation})
 	}
-	rows = append(rows, wizardRow{Key: "add_provider", Label: "Add provider…", Annotation: "Claude, ChatGPT/Codex, DeepInfra, Mistral, and more"})
+	rows = append(rows, wizardRow{Key: "add_provider", Label: "Add cloud provider…", Annotation: "Claude, ChatGPT/Codex, DeepInfra, Mistral, and more"})
 	label := "Continue"
 	if len(wp.resourceAccounts(true))+len(wp.resourceAccounts(false)) == 0 {
 		label = "Continue without connecting"
@@ -205,7 +205,7 @@ func (wp *wizardPage) resourceDescription() string {
 		return "How would you like Cercano to work?\n\nThese setups match your connected accounts and this machine. Model assignments remain editable; existing explicit task overrides are preserved."
 	}
 	if wp.state.ResourcePage != 2 {
-		return "Add your AI providers\n\nConnect Claude, ChatGPT/Codex, DeepInfra, Mistral, or another supported provider. You can add more than one, or continue without one. Existing connections do not need another sign-in.\n\nConnected accounts remain if you cancel setup."
+		return "Add your cloud providers\n\nConnect Claude, ChatGPT/Codex, DeepInfra, Mistral, or another supported provider. You can add more than one, or continue without one. Existing connections do not need another sign-in.\n\nConnected accounts remain if you cancel setup."
 	}
 	var b strings.Builder
 	b.WriteString("Here’s what Cercano can use\n\n")

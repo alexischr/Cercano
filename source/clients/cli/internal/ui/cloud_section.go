@@ -59,6 +59,7 @@ func (sp *settingsPage) selectCloudRow(rowID string) {
 	sp.cloudModelsExpanded = false
 	sp.cloudDeleteConfirm = false
 	sp.cloudDirty = false
+	sp.cloudSaveFailed = false
 	sp.cloudDraft = cloudDraft{Choices: (&agentclient.CloudModelChoices{}).Clone()}
 	sp.cloudDraftNew = true
 	sp.cloudModels = nil
@@ -277,12 +278,13 @@ func (sp *settingsPage) cloudDetailFields(r cloudRow) []form.Field {
 
 	}
 	out = append(out, form.NewHeading("cloud-actions-heading", ""))
-	if sp.cloudDirty {
-		out = append(out, form.NewButton("cloud-retry", "Retry failed edit", true))
+	if sp.cloudDirty && sp.cloudSaveFailed {
+		out = append(out, form.NewButton("cloud-retry", "Retry saving", true))
 	}
 	if sp.cloudDeleteConfirm {
 		out = append(out, form.NewReadOnly("cloud-delete-warning", "Remove account?", d.Name, "This removes the saved connection"), form.NewButton("cloud-delete-confirm", "Confirm removal", true), form.NewButton("cloud-delete-cancel", "Keep account", true))
 	} else if !sp.cloudDraftNew {
+		out = append(out, form.NewButton("cloud-done", "Done", !sp.pendingCommit))
 		out = append(out, form.NewButton("cloud-add-account", "add account", true), form.NewButton("cloud-delete", "delete account", true))
 	}
 	return out
@@ -325,6 +327,7 @@ func (sp *settingsPage) addCloudAccount() {
 	sp.cloudDraft = cloudDraft{Name: name, Flavor: old.Flavor, Backend: old.Backend, Route: old.Route, BaseURL: old.BaseURL, Provider: old.Provider, Region: old.Region, AWSProfile: old.AWSProfile, Choices: (&agentclient.CloudModelChoices{}).Clone()}
 	sp.cloudDraftNew = true
 	sp.cloudDirty = true
+	sp.cloudSaveFailed = false
 	sp.cloudModels = nil
 	sp.cloudModelsFetched = false
 	sp.cloudModelsError = ""
@@ -348,6 +351,9 @@ func (sp *settingsPage) cloudAccountSignedIn(name, route string) {
 	defer func() {
 		if sp.form != nil {
 			sp.form.Reload()
+			if sp.cloudDraft.Name == name && !sp.cloudDirty {
+				sp.focusCloudField("cloud-done")
+			}
 		}
 	}()
 	sp.profilesLoaded = false
@@ -361,4 +367,14 @@ func (sp *settingsPage) cloudAccountSignedIn(name, route string) {
 	sp.cloudDraftNew = false
 	sp.cloudSelected = "profile:" + name
 	sp.cloudDraft.Route = route
+	if !sp.cloudDirty {
+		sp.cloudSaveFailed = false
+	}
+	if sp.form != nil {
+		if sp.cloudDirty {
+			sp.form.SetStatus("Signed in successfully. Some changes still need saving.")
+		} else {
+			sp.form.SetStatus("Signed in successfully. Choose Done to return.")
+		}
+	}
 }

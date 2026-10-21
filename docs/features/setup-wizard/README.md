@@ -7,7 +7,7 @@ is involved.
 
 ## Your resources
 
-Hardware and account discovery are read-only. Setup has one **Add provider**
+Hardware and account discovery are read-only. Setup has one **Add cloud provider**
 screen for Claude, ChatGPT/Codex, DeepInfra, Mistral, and other supported providers.
 The provider picker starts with an empty search field. Existing accounts with
 stored credentials start selected; they can be deselected without deleting them.
@@ -17,7 +17,15 @@ open their existing editor for reconnection rather than creating duplicate names
 Provider editors show Connection controls first. **Model tiers** and **Advanced
 settings** start collapsed; their section headers expand or collapse the entire
 section. They share consistent label and value columns rather than manual label
-indentation.
+indentation. Right Arrow or Enter expands a focused collapsed section;
+Left Arrow collapses it. Repeated Right Arrow does not toggle it closed.
+
+Successful sign-in replaces the starting status with success feedback and focuses
+**Done**. Done returns from the provider editor to setup; it does not accept the
+wizard's routing changes. Unsaved edits still require an explicit keep/discard
+choice. A new draft is not a failed edit: **Retry saving** appears only after an
+actual save error. ChatGPT's canonical and legacy subscription-route labels do not
+create a false pending-edit warning after successful authentication.
 
 Credential presence is not proof of current entitlement, quota, or token validity.
 The resource summary says **credentials connected**; access is checked when used.

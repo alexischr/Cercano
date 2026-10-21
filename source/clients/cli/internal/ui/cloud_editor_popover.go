@@ -67,6 +67,11 @@ func (sp *settingsPage) buildCloudSections() []form.Section {
 			section := form.Section{Title: title}
 			if !heading {
 				section.Header = field.(*form.ButtonField)
+				if title == "Model tiers" {
+					section.HeaderExpanded = sp.cloudModelsExpanded
+				} else {
+					section.HeaderExpanded = sp.cloudAdvanced
+				}
 			}
 			sections = append(sections, section)
 			continue

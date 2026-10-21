@@ -102,6 +102,7 @@ type settingsPage struct {
 	cloudDraft                   cloudDraft
 	cloudDraftNew                bool
 	cloudDirty                   bool
+	cloudSaveFailed              bool
 	routingDirty                 bool
 	routingDraft                 *agentclient.RoutingAssignments
 	settingsPendingLeave         string
@@ -417,6 +418,20 @@ func (sp *settingsPage) View() string {
 
 // onCommit routes a committed field to its sink.
 func (sp *settingsPage) onCommit(key, value string) (string, tea.Cmd, error) {
+	if key == "cloud-done" {
+		if sp.pendingCommit {
+			return "An edit is still saving; please wait.", nil, nil
+		}
+		if sp.hasUnsavedSettings() {
+			sp.settingsPendingLeave = "__close"
+			sp.settingsNavigationPrompt = true
+			sp.settingsLeaveDiscardSelected = false
+			return "Unsaved changes. Keep editing or discard them before closing.", nil, nil
+		}
+		sp.closeCloudEditor()
+		return "", nil, nil
+	}
+
 	if strings.HasPrefix(key, "routing-") {
 		return sp.commitRouting(key, value)
 	}
@@ -434,7 +449,7 @@ func (sp *settingsPage) onCommit(key, value string) (string, tea.Cmd, error) {
 	}
 	if key == "cloud-auth-switch" {
 		if sp.cloudDraft.apiKeyEdited {
-			return "Retry the failed API key edit before switching authentication.", nil, nil
+			return "Save or discard the pending API key change before switching authentication.", nil, nil
 		}
 		r := sp.catalogRow()
 		if r.Preset == nil {
