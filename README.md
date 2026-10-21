@@ -175,17 +175,25 @@ welcome. See the [developer guide](docs/agent/self-dev.md) to get started, or
 - **Supervisory threads:** The architecture and much of the implementation are
   in place, but the behavior needs polish. Supervisors currently intervene too
   aggressively; tuning when and how they step in would make them more useful.
+  See the [watchdog design](docs/features/agent-capabilities/watchdog/design.md)
+  and [polish plan](docs/features/agent-capabilities/watchdog/polish-plan.md).
 - **Task pane:** Most of the implementation is in place, including a development
   sandbox, but expanding and collapsing tasks needs to be more reliable. Mouse
   events should go to the individual controls rather than the entire panel, and
   task tracking needs better bookkeeping. Longer term, the pane should support
   conversations and edits that stay synchronized with plans and the main thread.
+  See the [interaction-fix spec](efforts/fix-task-panel-scrollbars/spec.md),
+  [debug sandbox plan](efforts/debug-task-pane-controls/plan.md), and
+  [task-model design](docs/features/agent-capabilities/task-model/design.md).
 - **Windows support:** Windows remains under-tested. Testing real workflows,
   reporting reproducible platform-specific bugs, and improving compatibility
-  are especially valuable contributions.
+  are especially valuable contributions. See the
+  [Windows artifact and testing checklist](docs/windows-artifact.md).
 - **IDE plugins:** An older VS Code extension draft needs to be reworked for
   Cercano's current full agent architecture. Infrastructure for a Zed integration
   has also been drafted, but the integration itself is not implemented.
+  Background: [earlier VS Code integration fixes](docs/internal/ide-fixes.md)
+  and [IDE technology stack / Zed scaffold](docs/reference/tech-stack.md#3-ide-integration).
 
 ## Documentation and support
 
