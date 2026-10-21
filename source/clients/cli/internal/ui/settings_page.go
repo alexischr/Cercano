@@ -299,6 +299,9 @@ func (sp *settingsPage) applySpinnerTick() tea.Cmd {
 // handlePaste keeps terminal paste inside the active settings editor rather
 // than dropping it or letting a credential reach the conversation prompt.
 func (sp *settingsPage) handlePaste(content string) bool {
+	if sp.settingsNavigationPrompt {
+		return true
+	}
 	if sp.providerPicker != nil {
 		sp.providerPicker.Paste(content)
 		return true
@@ -392,11 +395,8 @@ func (sp *settingsPage) View() string {
 		body = sp.cloudEditorView(body)
 	}
 	if sp.settingsNavigationPrompt {
-		label := "Cloud"
-		if sp.scope == scopeRouting {
-			label = "Routing"
-		}
-		return "Unsaved " + label + " edits.\n[ Discard and leave ]   [ Keep editing ]\n" + body
+		view, x, y := sp.settingsLeavePopover()
+		return composeOverlay(body, view, x, y)
 	}
 	if sp.providerPicker != nil {
 		w, h := min(sp.width, 72), min(sp.viewportHeight(), 24)
