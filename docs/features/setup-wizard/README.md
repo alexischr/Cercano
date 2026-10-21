@@ -7,13 +7,17 @@ is involved.
 
 ## Your resources
 
-Hardware and account discovery are read-only. Setup asks about Claude/ChatGPT
-first, then other providers such as DeepInfra and Mistral. Existing accounts with
+Hardware and account discovery are read-only. Setup has one **Add provider**
+screen for Claude, ChatGPT/Codex, DeepInfra, Mistral, and other supported providers.
+The provider picker starts with an empty search field. Existing accounts with
 stored credentials start selected; they can be deselected without deleting them.
 Multiple accounts may be connected through the shared configuration popover.
 Subscription connections use its OAuth flow, and disconnected existing accounts
 open their existing editor for reconnection rather than creating duplicate names.
-“Not sure” explains account access without forcing authentication.
+Provider editors show Connection controls first. **Model tiers** and **Advanced
+settings** start collapsed; their section headers expand or collapse the entire
+section. They share consistent label and value columns rather than manual label
+indentation.
 
 Credential presence is not proof of current entitlement, quota, or token validity.
 The resource summary says **credentials connected**; access is checked when used.

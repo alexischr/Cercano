@@ -2,6 +2,7 @@ package ui
 
 import (
 	"cercano/source/clients/cli/internal/form"
+	tea "charm.land/bubbletea/v2"
 	"strings"
 	"testing"
 
@@ -21,7 +22,6 @@ func resourcePreferencesPage(t *testing.T, wp *wizardPage) {
 	if wp.state.Step != wizard.StepResources {
 		t.Fatalf("expected resources first: %+v", wp.state)
 	}
-	pressRows(t, wp, "resource_next")
 	pressRows(t, wp, "resource_next")
 	if wp.state.ResourcePage != 2 {
 		t.Fatal("missing resource summary")
@@ -86,7 +86,6 @@ func TestResourcePreferenceEligibilityMatrix(t *testing.T) {
 				t.Fatal("discovery wrote configuration")
 			}
 			if tc.want == "" {
-				pressRows(t, wp, "resource_next")
 				pressRows(t, wp, "resource_next")
 				if !wp.rows()[0].Disabled {
 					t.Fatal("no-resource setup can continue")
@@ -347,7 +346,6 @@ func TestResourceLocalModelReviewReturnsToDiscovery(t *testing.T) {
 	_, client := newScenario(t)
 	wp := resourceWizard(t, client)
 	pressRows(t, wp, "resource_next")
-	pressRows(t, wp, "resource_next")
 	pressRows(t, wp, "local_models")
 	if wp.state.Step != wizard.StepOpen {
 		t.Fatal("model editor not opened")
@@ -389,5 +387,25 @@ func TestResourceBackupsExcludeDeselectedAndPrimaryAccounts(t *testing.T) {
 	}
 	if err := validateWizardResourceRouting(a, wp.curProfiles); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestResourceLegacyOtherProviderPageResumesUnifiedProviders(t *testing.T) {
+	stub, client := newScenario(t)
+	old := wizard.State{FlowVersion: 2, Step: wizard.StepResources, ResourcePage: 1, CloudProfile: "personal", ExcludedProfiles: []string{"personal"}}
+	if err := wizard.Save(old); err != nil {
+		t.Fatal(err)
+	}
+	wp := resourceWizard(t, client)
+	if wp.state.ResourcePage != 0 || wp.state.CloudProfile != "personal" || !wp.resourceExcluded("personal") {
+		t.Fatalf("bad provider-page resume: %+v", wp.state)
+	}
+	pressRows(t, wp, "resource_next")
+	wp.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if wp.state.Step != wizard.StepResources || wp.state.ResourcePage != 0 {
+		t.Fatal("summary Back should return directly to all providers")
+	}
+	if stub.writeCount() != 0 {
+		t.Fatal("resume or navigation wrote configuration")
 	}
 }

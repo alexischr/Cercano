@@ -25,7 +25,7 @@ func (sp *settingsPage) cloudChoiceFields(row cloudRow) []form.Field {
 		}
 		fields = append(fields, form.NewRow("cloud-pick-cloud-quality-"+quality, strings.ToUpper(quality[:1])+quality[1:], label+"  ›", true))
 		if shouldShowCloudCustomEntry("cloud-quality-" + quality) {
-			fields = append(fields, form.NewText("cloud-custom-"+quality, "  custom "+quality+" ID", current, "empty restores inheritance"))
+			fields = append(fields, form.NewText("cloud-custom-"+quality, "Custom "+quality+" ID", current, "empty restores inheritance"))
 		}
 	}
 	image := choices.ImageModel
@@ -34,11 +34,11 @@ func (sp *settingsPage) cloudChoiceFields(row cloudRow) []form.Field {
 	}
 	fields = append(fields, form.NewRow("cloud-pick-cloud-image", "Image model", sp.catalogChoiceLabel(image)+"  ›", true))
 	if shouldShowCloudCustomEntry("cloud-image") {
-		fields = append(fields, form.NewText("cloud-custom-image", "  custom image ID", choices.ImageModel, "requires confirmed image capability"))
+		fields = append(fields, form.NewText("cloud-custom-image", "Custom image ID", choices.ImageModel, "requires confirmed image capability"))
 	}
 	// One consolidated warning instead of repeating the sentence per tier.
 	if len(missing) > 0 {
-		fields = append(fields, form.NewReadOnly("cloud-recommendation-missing", "  Recommendations", "no provider recommendation for "+strings.Join(missing, ", "), "choose from the picker or enter a custom ID"))
+		fields = append(fields, form.NewReadOnly("cloud-recommendation-missing", "Recommendations", "no provider recommendation for "+strings.Join(missing, ", "), "choose from the picker or enter a custom ID"))
 	}
 	return fields
 }

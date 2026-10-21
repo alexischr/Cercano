@@ -127,7 +127,7 @@ func newWizardPage(ag *agentclient.Client, p theme.Palette, s theme.Styles, w, h
 		st.Step = wizard.StepResources
 		st.ResourcePage = 0
 	}
-	if st.ResourcePage < 0 || st.ResourcePage > 2 {
+	if st.ResourcePage < 0 || st.ResourcePage > 2 || st.ResourcePage == 1 {
 		st.ResourcePage = 0
 	}
 	switch st.Step {
@@ -540,7 +540,7 @@ func (wp *wizardPage) autofillTiers() {
 // recommended mode, everything else on the first selectable row.
 func (wp *wizardPage) defaultCursor() int {
 	rows := wp.rows()
-	if wp.state.Step == wizard.StepResources && wp.state.ResourcePage < 2 && len(wp.resourceAccounts(wp.state.ResourcePage == 0)) > 0 {
+	if wp.state.Step == wizard.StepResources && wp.state.ResourcePage < 2 && len(wp.resourceAccounts(true))+len(wp.resourceAccounts(false)) > 0 {
 		for i, row := range rows {
 			if row.Key == "resource_next" {
 				return i
@@ -674,7 +674,7 @@ func (wp *wizardPage) back() (closed bool) {
 				wp.persist()
 				return true
 			}
-			wp.state.ResourcePage--
+			wp.state.ResourcePage = 0
 		} else if wp.state.Step == wizard.StepOpen && wp.state.Preference == "" {
 			wp.state.Step = wizard.StepResources
 			wp.state.ResourcePage = 2

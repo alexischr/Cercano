@@ -111,6 +111,10 @@ func TestCloudProviderRootMouseAndScroll(t *testing.T) {
 	p := layoutPage()
 	p.selectCloudRow("profile:work-openai")
 	p.form.Reload()
+	layoutClick(t, p, "Model tiers")
+	if !p.cloudModelsExpanded {
+		t.Fatal("section header did not expand models")
+	}
 	p.height = 25
 	p.offset = 8
 	lines := strings.Split(ansi.Strip(p.View()), "\n")

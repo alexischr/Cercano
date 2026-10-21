@@ -21,12 +21,12 @@ func TestCloudAdvancedVisibilityAndDraftPreservation(t *testing.T) {
 			t.Fatalf("advanced field %s visible by default", key)
 		}
 	}
-	for _, key := range []string{"cloud-account", "cloud-key", "cloud-pick-cloud-quality-standard", "cloud-advanced"} {
+	for _, key := range []string{"cloud-account", "cloud-key", "cloud-models", "cloud-advanced"} {
 		if _, ok := keys[key]; !ok {
 			t.Fatalf("missing routine field %s", key)
 		}
 	}
-	if keys["cloud-account"] >= keys["cloud-key"] || keys["cloud-key"] >= keys["cloud-pick-cloud-quality-standard"] || keys["cloud-pick-cloud-quality-standard"] >= keys["cloud-advanced"] {
+	if keys["cloud-account"] >= keys["cloud-key"] || keys["cloud-key"] >= keys["cloud-models"] || keys["cloud-models"] >= keys["cloud-advanced"] {
 		t.Fatal("expected Account -> credentials -> Models -> Advanced")
 	}
 	sp.cloudDraft.apiKey = "pending-secret"

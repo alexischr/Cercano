@@ -27,7 +27,7 @@ type State struct {
 	ReplaceTaskOverrides bool     `yaml:"replace_task_overrides,omitempty"`
 	ExcludedProfiles     []string `yaml:"excluded_profiles,omitempty"`
 	FlowVersion          int      `yaml:"flow_version,omitempty"`
-	ResourcePage         int      `yaml:"resource_page,omitempty"` // frontier, other cloud, resource summary
+	ResourcePage         int      `yaml:"resource_page,omitempty"` // 0: all providers; 2: resource summary; 1: legacy other-provider page
 	Preference           string   `yaml:"preference,omitempty"`
 	SecondaryProfile     string   `yaml:"secondary_profile,omitempty"`
 	UseLocal             bool     `yaml:"use_local,omitempty"`

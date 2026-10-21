@@ -61,6 +61,14 @@ func TestWizardProviderPickerCancelReturnsToSetup(t *testing.T) {
 	if !ok || sp.providerPicker == nil {
 		t.Fatal("shared config picker not opened")
 	}
+	if query := sp.providerPicker.Query(); query != "" {
+		t.Fatalf("provider filter pre-populated: %q", query)
+	}
+	sp.handlePaste("Anthropic")
+	sp.openProviderPicker()
+	if query := sp.providerPicker.Query(); query != "" {
+		t.Fatalf("new picker retained previous filter: %q", query)
+	}
 	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m = next.(Model)
 	if m.content != wp || m.wizardProviderReturn != nil {

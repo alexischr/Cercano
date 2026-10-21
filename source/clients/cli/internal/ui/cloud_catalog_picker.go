@@ -440,6 +440,14 @@ func (sp *settingsPage) focusCloudField(key string) {
 	}
 	index := 0
 	for _, section := range sp.form.Sections {
+		if section.Header != nil {
+			if section.Header.Key() == key {
+				sp.form.SetCursor(index)
+				sp.scrollToFocus()
+				return
+			}
+			index++
+		}
 		for _, field := range section.Fields {
 			if field.Key() == key {
 				sp.form.SetCursor(index)

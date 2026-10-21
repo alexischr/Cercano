@@ -14,6 +14,9 @@ import (
 // ignored and each Group renders as a subheading with its own fields.
 type Section struct {
 	Title string
+	// Header makes the section title keyboard- and mouse-activatable. Hosts
+	// omit body fields when collapsed; the header remains in navigation.
+	Header *ButtonField
 	// ColumnHeadings labels a compact pair table: row label, left value, right value.
 	ColumnHeadings [3]string
 	Fields         []Field
@@ -33,7 +36,9 @@ type Form struct {
 	Sections       []Section
 	HideHelp       bool
 	CompactActions bool
-	hits           []fieldHit
+	// AlignSections shares label/value columns across related editor sections.
+	AlignSections bool
+	hits          []fieldHit
 	// OnCommit fires when a field commits a new value. Optional.
 	OnCommit func(key, value string) (status string, cmd tea.Cmd, err error)
 	// OnReload returns a fresh section snapshot after a successful commit. Optional.
@@ -75,6 +80,9 @@ func (f *Form) FocusedLine() int { return f.focusedLine }
 func (f *Form) flat() []Field {
 	var out []Field
 	for _, sec := range f.Sections {
+		if sec.Header != nil {
+			out = append(out, sec.Header)
+		}
 		if len(sec.Groups) > 0 {
 			for _, grp := range sec.Groups {
 				out = append(out, grp.Fields...)
@@ -256,25 +264,33 @@ func (f *Form) View(width int, palette theme.Palette, styles theme.Styles) strin
 	for _, sec := range f.Sections {
 		// Compact panels are separate editors; unrelated labels must not push
 		// their value columns to the right.
-		if f.CompactActions {
+		if f.CompactActions && !f.AlignSections {
 			labelW = labelWidth([]Section{sec})
 		}
 		var body strings.Builder
-		title := styles.Accent.Render("─ " + sec.Title + " ")
-		// Title line, then an underline rule, then a blank line — written as
-		// explicit lines with the rule sized to the box text width (panelW-4:
-		// border+padding both sides) so lipgloss never wraps them. Wrapping would
-		// desync the focusedLine accounting below, which assumes this fixed
-		// 3-line section header.
+		titleText := "─ " + sec.Title + " "
+		focusedBodyLine := -1
+		if sec.Header != nil {
+			titleText = "─ " + sec.Header.Label() + " "
+			if idx == f.cursor {
+				titleText = "▶ " + sec.Header.Label() + " "
+				focusedBodyLine = 0
+			}
+			base := strings.Count(out.String(), "\n") + 1
+			f.hits = append(f.hits, fieldHit{index: idx, from: base, to: base + 1})
+			idx++
+		}
+		titleText = ansi.Truncate(titleText, max(1, panelW-4), "…")
+		title := styles.Accent.Render(titleText)
+		if focusedBodyLine == 0 {
+			title = styles.Bright.Render(titleText)
+		}
 		body.WriteString(title + "\n")
-		body.WriteString(styles.BorderDim.Render(strings.Repeat("─", max(0, panelW-4))) + "\n")
-		body.WriteString("\n")
-		// bodyLine tracks how many lines have been written into body. The section
-		// header (title, rule, blank) occupies body lines 0-2, so the first field
-		// starts at line 3. We track real line counts (not field index) because a
-		// field can render multiple lines — an open select picker, or any field in
-		// the narrow under-label layout.
-		bodyLine := 3
+		bodyLine := 1
+		if sec.Header == nil || len(sec.Fields) > 0 || len(sec.Groups) > 0 {
+			body.WriteString(styles.BorderDim.Render(strings.Repeat("─", max(0, panelW-4))) + "\n\n")
+			bodyLine = 3
+		}
 		// Compact table headings are decoration, never empty/focusable fields.
 		if sec.ColumnHeadings[0] != "" {
 			valueW := panelW - 4 - (3 + labelW + 2)
@@ -285,7 +301,6 @@ func (f *Form) View(width int, palette theme.Palette, styles theme.Styles) strin
 				bodyLine++
 			}
 		}
-		focusedBodyLine := -1
 		renderField := func(fld Field) {
 			startLine := bodyLine
 			if heading, ok := fld.(*HeadingField); ok {
@@ -408,12 +423,16 @@ func (f *Form) View(width int, palette theme.Palette, styles theme.Styles) strin
 		// Capture base before writing this section's box so focusedLine is a
 		// valid index into strings.Split(View(...), "\n").
 		base := strings.Count(out.String(), "\n")
+		bodyText := body.String()
+		if sec.Header != nil && len(sec.Fields) == 0 && len(sec.Groups) == 0 {
+			bodyText = strings.TrimSuffix(bodyText, "\n")
+		}
 		box := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(palette.Border).
 			Padding(0, 1).
 			Width(panelW).
-			Render(body.String())
+			Render(bodyText)
 		if focusedBodyLine >= 0 {
 			// +1 for the box's top border line above the body.
 			f.focusedLine = base + 1 + focusedBodyLine

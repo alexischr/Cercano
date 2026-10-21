@@ -180,12 +180,8 @@ func (wp *wizardPage) resourceRows() []wizardRow {
 		}
 		return rows
 	}
-	frontier := wp.state.ResourcePage == 0
 	var rows []wizardRow
 	for _, p := range wp.curProfiles {
-		if wizardFrontierProfile(p) != frontier {
-			continue
-		}
 		if !p.HasKey {
 			rows = append(rows, wizardRow{Key: "reconnect:" + p.Name, Label: "Reconnect " + p.Name, Annotation: "credentials unavailable"})
 			continue
@@ -196,13 +192,9 @@ func (wp *wizardPage) resourceRows() []wizardRow {
 		}
 		rows = append(rows, wizardRow{Key: "connected:" + p.Name, Label: p.Name, Annotation: annotation})
 	}
-	if frontier {
-		rows = append(rows, wizardRow{Key: "connect_claude", Label: "Connect Claude…"}, wizardRow{Key: "connect_chatgpt", Label: "Connect ChatGPT…"}, wizardRow{Key: "not_sure", Label: "Not sure what I can connect"})
-	} else {
-		rows = append(rows, wizardRow{Key: "add_provider", Label: "Add another cloud provider…", Annotation: "DeepInfra, Mistral, or another provider"})
-	}
+	rows = append(rows, wizardRow{Key: "add_provider", Label: "Add provider…", Annotation: "Claude, ChatGPT/Codex, DeepInfra, Mistral, and more"})
 	label := "Continue"
-	if len(wp.resourceAccounts(frontier)) == 0 {
+	if len(wp.resourceAccounts(true))+len(wp.resourceAccounts(false)) == 0 {
 		label = "Continue without connecting"
 	}
 	return append(rows, wizardRow{Key: "resource_next", Label: label})
@@ -212,11 +204,8 @@ func (wp *wizardPage) resourceDescription() string {
 	if wp.state.Step == wizard.StepPreference {
 		return "How would you like Cercano to work?\n\nThese setups match your connected accounts and this machine. Model assignments remain editable; existing explicit task overrides are preserved."
 	}
-	switch wp.state.ResourcePage {
-	case 0:
-		return "Do you have a Claude or ChatGPT account?\n\nConnect either or both, or continue without one. Existing connections do not need another sign-in. A subscription must support the access Cercano needs.\n\nConnected accounts remain if you cancel setup."
-	case 1:
-		return "Do you use any other AI providers?\n\nConnect DeepInfra, Mistral, or another supported provider. You can connect more than one. Connected accounts remain if you cancel setup."
+	if wp.state.ResourcePage != 2 {
+		return "Add your AI providers\n\nConnect Claude, ChatGPT/Codex, DeepInfra, Mistral, or another supported provider. You can add more than one, or continue without one. Existing connections do not need another sign-in.\n\nConnected accounts remain if you cancel setup."
 	}
 	var b strings.Builder
 	b.WriteString("Here’s what Cercano can use\n\n")
@@ -284,26 +273,19 @@ func (wp *wizardPage) selectResourceRow(row wizardRow) (tea.Cmd, bool) {
 		}, false
 	}
 	switch row.Key {
-	case "connect_claude":
-		return func() tea.Msg { return wizardAddProviderMsg{page: wp, query: "Anthropic"} }, false
-	case "connect_chatgpt":
-		return func() tea.Msg { return wizardAddProviderMsg{page: wp, query: "OpenAI"} }, false
 	case "add_provider":
 		return func() tea.Msg { return wizardAddProviderMsg{page: wp} }, false
-	case "not_sure":
-		wp.status = "Claude and ChatGPT subscriptions use sign-in. Other provider accounts usually use an API key. You can skip this and connect later."
-		return nil, false
 	case "local_models":
 		wp.state.Step = wizard.StepOpen
 		wp.state.Preference = ""
 		wp.state.LocusMode = "open_only"
 		wp.autofillTiers()
 	case "resource_next":
-		wp.state.ResourcePage++
+		wp.state.ResourcePage = 2
 	case "preferences":
 		wp.state.Step = wizard.StepPreference
 	case "accounts":
-		wp.state.ResourcePage = 1
+		wp.state.ResourcePage = 0
 	case "recheck":
 		wp.loadProviders()
 		wp.loadRuntimeCatalog()

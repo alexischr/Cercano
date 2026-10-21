@@ -56,6 +56,7 @@ func (sp *settingsPage) selectCloudRow(rowID string) {
 	sp.offset = 0
 	sp.cloudSelected = rowID
 	sp.cloudAdvanced = false
+	sp.cloudModelsExpanded = false
 	sp.cloudDeleteConfirm = false
 	sp.cloudDirty = false
 	sp.cloudDraft = cloudDraft{Choices: (&agentclient.CloudModelChoices{}).Clone()}
@@ -146,15 +147,9 @@ func (sp *settingsPage) cloudProviderListSection() form.Section {
 	return form.Section{Title: "Cloud Providers", Fields: fields}
 }
 
-// cloudDetailIndent prefixes detail-field labels so the editor reads as a set of
-// sub-settings nested under the selected provider row, rather than aligning flush
-// with the sibling provider rows below it.
-const cloudDetailIndent = "  "
-
 // cloudDetailFields are shared by the provider editor popover and setup draft.
 func (sp *settingsPage) cloudDetailFields(r cloudRow) []form.Field {
 	d := sp.cloudDraft
-	il := func(s string) string { return cloudDetailIndent + s }
 	var out []form.Field
 	if r.Preset != nil && !sp.cloudDraftNew {
 		var options []form.Option
@@ -167,12 +162,12 @@ func (sp *settingsPage) cloudDetailFields(r cloudRow) []form.Field {
 			}
 		}
 		if len(options) > 1 {
-			out = append(out, form.NewSelect("cloud-account-select", il("Account"), options, sp.cloudSelected))
+			out = append(out, form.NewSelect("cloud-account-select", "Account", options, sp.cloudSelected))
 		}
 	}
 	out = append(out, form.NewHeading("cloud-connection-heading", "Connection"))
 	if sp.cloudDraftNew {
-		out = append(out, form.NewText("cloud-name", il("Account name"), d.Name, "A unique name for this connection"))
+		out = append(out, form.NewText("cloud-name", "Account name", d.Name, "A unique name for this connection"))
 	} else {
 		account := agentclient.CloudProfileInfo{Name: d.Name, Flavor: d.Flavor, Route: d.Route}
 		for _, p := range sp.profiles {
@@ -185,14 +180,14 @@ func (sp *settingsPage) cloudDetailFields(r cloudRow) []form.Field {
 		if account.AccountEmail == "" && account.AccountDisplayName == "" && (account.Route == "subscription" || account.Route == "chatgpt") {
 			hint = "Sign in again to identify this account; existing credentials are unchanged"
 		}
-		out = append(out, form.NewReadOnly("cloud-account", il("Account"), account.AccountDisplayNameLabel(), hint))
+		out = append(out, form.NewReadOnly("cloud-account", "Account", account.AccountDisplayNameLabel(), hint))
 	}
 	// ChatGPT subscription sign-in: the responses flavor can authenticate with
 	// a ChatGPT Plus/Pro subscription via device-code OAuth instead of an API
 	// key. Offer the button on responses rows; the api-key field stays as the
 	// sanctioned fallback one row below.
 	if r.Preset != nil && r.Preset.Flavor == "responses" {
-		out = append(out, form.NewButton("cloud-signin", il("sign in with ChatGPT"), true))
+		out = append(out, form.NewButton("cloud-signin", "sign in with ChatGPT", true))
 	}
 	// Claude subscription sign-in: only show the OAuth action for an existing
 	// subscription profile, or for the bare anthropic template that creates one.
@@ -200,13 +195,13 @@ func (sp *settingsPage) cloudDetailFields(r cloudRow) []form.Field {
 	// auth paths on those rows makes it look like two separate profiles should be
 	// signed into.
 	if sp.shouldShowClaudeSignIn(r, d) {
-		out = append(out, form.NewButton("cloud-signin-claude", il("sign in with Claude (subscription)"), true))
+		out = append(out, form.NewButton("cloud-signin-claude", "sign in with Claude (subscription)", true))
 	}
 	if d.Route == "subscription" {
-		out = append(out, form.NewReadOnly("cloud-route", il("Authentication"), "Subscription sign-in", ""))
+		out = append(out, form.NewReadOnly("cloud-route", "Authentication", "Subscription sign-in", ""))
 	}
 	if d.Route != "subscription" && d.Flavor != "responses" {
-		out = append(out, form.NewMasked("cloud-key", il("API key"), sp.draftHasKey(r)))
+		out = append(out, form.NewMasked("cloud-key", "API key", sp.draftHasKey(r)))
 	}
 	if sp.cloudDraftNew && r.Preset != nil {
 		family := cloudProviderFamily(r.Preset.ID)
@@ -215,23 +210,31 @@ func (sp *settingsPage) cloudDetailFields(r cloudRow) []form.Field {
 			if d.Route != "subscription" && d.Flavor != "responses" {
 				label = "Use subscription sign-in instead"
 			}
-			out = append(out, form.NewButton("cloud-auth-switch", il(label), true))
+			out = append(out, form.NewButton("cloud-auth-switch", label, true))
 		}
 	}
-	out = append(out, form.NewHeading("cloud-model-heading", "Model tiers"))
-	out = append(out, sp.cloudChoiceFields(r)...)
-	state := sp.catalogState()
-	if state.Message != "" {
-		out = append(out, form.NewReadOnly("cloud-catalog-state", il("Model catalog"), state.Message, "Edits save automatically when committed"))
+	modelLabel := "▸ Model tiers"
+	if sp.cloudModelsExpanded {
+		modelLabel = "▾ Model tiers"
 	}
-	if state.Action != 0 {
-		out = append(out, form.NewButton("cloud-catalog-action", il(state.ActionLabel), true))
-	}
-	if r.Preset != nil && r.Preset.ID == "mistral" {
-		out = append(out, sp.mistralProviderCatalogFields()...)
-	}
-	if sp.cloudModelsError != "" {
-		out = append(out, form.NewReadOnly("cloud-model-discovery-error", il("Model catalog"), sp.cloudModelsError, "Existing model IDs are retained; access has not been confirmed"))
+	out = append(out, form.NewButton("cloud-models", modelLabel, true))
+	if sp.cloudModelsExpanded {
+
+		out = append(out, sp.cloudChoiceFields(r)...)
+		state := sp.catalogState()
+		if state.Message != "" {
+			out = append(out, form.NewReadOnly("cloud-catalog-state", "Model catalog", state.Message, "Edits save automatically when committed"))
+		}
+		if state.Action != 0 {
+			out = append(out, form.NewButton("cloud-catalog-action", state.ActionLabel, true))
+		}
+		if r.Preset != nil && r.Preset.ID == "mistral" {
+			out = append(out, sp.mistralProviderCatalogFields()...)
+		}
+		if sp.cloudModelsError != "" {
+			out = append(out, form.NewReadOnly("cloud-model-discovery-error", "Model catalog", sp.cloudModelsError, "Existing model IDs are retained; access has not been confirmed"))
+		}
+
 	}
 	// Advanced is collapsed by default; draft actions follow the editor.
 
@@ -239,19 +242,19 @@ func (sp *settingsPage) cloudDetailFields(r cloudRow) []form.Field {
 	if sp.cloudAdvanced {
 		label = "▾ Advanced settings"
 	}
-	out = append(out, form.NewButton("cloud-advanced", il(label), true))
+	out = append(out, form.NewButton("cloud-advanced", label, true))
 	if sp.cloudAdvanced {
 		if !sp.cloudDraftNew {
-			out = append(out, form.NewReadOnly("cloud-name", il("Profile ID"), d.Name, "Internal identifier"))
+			out = append(out, form.NewReadOnly("cloud-name", "Profile ID", d.Name, "Internal identifier"))
 		}
 		// Custom connections remain editable after the first field creates the profile.
 		if r.ID == "other" || (r.IsProfile && r.Preset == nil) {
 			out = append(out,
-				form.NewSelect("cloud-flavor", il("flavor"), []form.Option{
+				form.NewSelect("cloud-flavor", "flavor", []form.Option{
 					{Label: "chat_completions", Value: "chat_completions"},
 					{Label: "messages", Value: "messages"},
 				}, d.Flavor),
-				form.NewSelect("cloud-backend", il("backend"), []form.Option{
+				form.NewSelect("cloud-backend", "backend", []form.Option{
 					{Label: "default", Value: ""},
 					{Label: "openai", Value: "openai"},
 					{Label: "gemini", Value: "gemini"},
@@ -259,28 +262,28 @@ func (sp *settingsPage) cloudDetailFields(r cloudRow) []form.Field {
 				}, d.Backend),
 			)
 		} else {
-			out = append(out, form.NewReadOnly("cloud-flavor", il("flavor"), d.Flavor, ""))
+			out = append(out, form.NewReadOnly("cloud-flavor", "flavor", d.Flavor, ""))
 			if d.Flavor == "chat_completions" {
 				be := d.Backend
 				if be == "" {
 					be = "default"
 				}
-				out = append(out, form.NewReadOnly("cloud-backend", il("backend"), be, ""))
+				out = append(out, form.NewReadOnly("cloud-backend", "backend", be, ""))
 			}
 		}
 		if d.Route != "subscription" {
-			out = append(out, form.NewText("cloud-base-url", il("base-url"), d.BaseURL, "https://…"))
+			out = append(out, form.NewText("cloud-base-url", "base-url", d.BaseURL, "https://…"))
 		}
 
 	}
 	out = append(out, form.NewHeading("cloud-actions-heading", ""))
 	if sp.cloudDirty {
-		out = append(out, form.NewButton("cloud-retry", il("Retry failed edit"), true))
+		out = append(out, form.NewButton("cloud-retry", "Retry failed edit", true))
 	}
 	if sp.cloudDeleteConfirm {
-		out = append(out, form.NewReadOnly("cloud-delete-warning", il("Remove account?"), d.Name, "This removes the saved connection"), form.NewButton("cloud-delete-confirm", il("Confirm removal"), true), form.NewButton("cloud-delete-cancel", il("Keep account"), true))
+		out = append(out, form.NewReadOnly("cloud-delete-warning", "Remove account?", d.Name, "This removes the saved connection"), form.NewButton("cloud-delete-confirm", "Confirm removal", true), form.NewButton("cloud-delete-cancel", "Keep account", true))
 	} else if !sp.cloudDraftNew {
-		out = append(out, form.NewButton("cloud-add-account", il("add account"), true), form.NewButton("cloud-delete", il("delete account"), true))
+		out = append(out, form.NewButton("cloud-add-account", "add account", true), form.NewButton("cloud-delete", "delete account", true))
 	}
 	return out
 }

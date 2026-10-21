@@ -54,8 +54,9 @@ func (sp *settingsPage) buildCloudSections() []form.Section {
 		switch field.Key() {
 		case "cloud-connection-heading":
 			title = "Connection"
-		case "cloud-model-heading":
+		case "cloud-models":
 			title = "Model tiers"
+			heading = false
 		case "cloud-actions-heading":
 			title = "Actions"
 		case "cloud-advanced":
@@ -63,10 +64,12 @@ func (sp *settingsPage) buildCloudSections() []form.Section {
 			heading = false
 		}
 		if title != "" {
-			sections = append(sections, form.Section{Title: title})
-			if heading {
-				continue
+			section := form.Section{Title: title}
+			if !heading {
+				section.Header = field.(*form.ButtonField)
 			}
+			sections = append(sections, section)
+			continue
 		}
 		last := len(sections) - 1
 		sections[last].Fields = append(sections[last].Fields, field)

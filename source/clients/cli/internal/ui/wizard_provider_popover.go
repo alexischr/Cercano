@@ -7,7 +7,6 @@ import tea "charm.land/bubbletea/v2"
 // and OAuth result handling rather than introducing a second authentication UI.
 type wizardAddProviderMsg struct {
 	page    *wizardPage
-	query   string
 	profile string
 }
 
@@ -23,9 +22,6 @@ func (m Model) openWizardProvider(msg wizardAddProviderMsg) (tea.Model, tea.Cmd)
 		sp.providerPicker = nil
 		sp.selectCloudRow("profile:" + msg.profile)
 		sp.form.Reload()
-	}
-	if msg.query != "" {
-		sp.handlePaste(msg.query)
 	}
 	return m, cmd
 }

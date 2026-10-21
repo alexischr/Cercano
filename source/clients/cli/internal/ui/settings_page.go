@@ -98,6 +98,7 @@ type settingsPage struct {
 	cloudEditorOpen              bool
 	cloudSelected                string
 	cloudAdvanced                bool
+	cloudModelsExpanded          bool
 	cloudDraft                   cloudDraft
 	cloudDraftNew                bool
 	cloudDirty                   bool
@@ -391,6 +392,7 @@ func (sp *settingsPage) scrollToFocus() {
 func (sp *settingsPage) View() string {
 	sp.form.HideHelp = sp.scope == scopeCloud
 	sp.form.CompactActions = sp.scope == scopeCloud
+	sp.form.AlignSections = sp.cloudEditorActive()
 	lines := sp.form.Lines(sp.formWidth(), sp.palette, sp.styles)
 	sp.clampScroll()
 	body := renderScrollable(lines, sp.formHeight(), sp.formWidth()-2, sp.offset, sp.styles)
@@ -459,6 +461,10 @@ func (sp *settingsPage) onCommit(key, value string) (string, tea.Cmd, error) {
 			return "Retry the failed edit before adding a provider.", nil, nil
 		}
 		sp.openProviderPicker()
+		return "", nil, nil
+	}
+	if key == "cloud-models" {
+		sp.cloudModelsExpanded = !sp.cloudModelsExpanded
 		return "", nil, nil
 	}
 	if key == "cloud-advanced" {

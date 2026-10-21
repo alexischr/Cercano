@@ -14,6 +14,12 @@ import (
 func cleanupFieldAt(sp *settingsPage, key string) (form.Field, int) {
 	idx := 0
 	for _, sec := range sp.form.Sections {
+		if sec.Header != nil {
+			if sec.Header.Key() == key {
+				return sec.Header, idx
+			}
+			idx++
+		}
 		for _, f := range sec.Fields {
 			if f.Key() == key {
 				return f, idx
@@ -29,6 +35,12 @@ func cleanupFocusedKey(sp *settingsPage) string {
 	want := sp.form.Cursor()
 	idx := 0
 	for _, sec := range sp.form.Sections {
+		if sec.Header != nil {
+			if idx == want {
+				return sec.Header.Key()
+			}
+			idx++
+		}
 		for _, f := range sec.Fields {
 			if idx == want {
 				return f.Key()
@@ -47,6 +59,7 @@ func cleanupFocusedKey(sp *settingsPage) string {
 func TestCloudCustomEntryHiddenUntilPickerChoosesCustom(t *testing.T) {
 	sp := cloudSamplePage()
 	sp.selectCloudRow("profile:work-openai")
+	sp.cloudModelsExpanded = true
 	sp.form = form.New([]form.Section{sp.buildCloudSection()})
 	sp.form.OnCommit = sp.onCommit
 	sp.form.OnReload = func() []form.Section {
@@ -109,6 +122,9 @@ func TestCloudCustomEntryHiddenUntilPickerChoosesCustom(t *testing.T) {
 		t.Fatalf("cloud-custom-image should be hidden again after discard")
 	}
 
+	// Discard resets expansion; reopen the model section for the quality picker.
+	sp.onCommit("cloud-models", "")
+	sp.form.Reload()
 	// The quality picker follows the same path.
 	if _, idx := cleanupFieldAt(sp, "cloud-pick-cloud-quality-premium"); idx < 0 {
 		t.Fatalf("premium picker button missing")
@@ -139,6 +155,7 @@ func TestCloudChoiceLabelsCompactAndSingleMissingRecommendationWarning(t *testin
 		"premium": "zai-org/GLM-5.3",
 	}
 	sp.selectCloudRow("profile:work-openai")
+	sp.cloudModelsExpanded = true
 	sp.form = form.New([]form.Section{sp.buildCloudSection()})
 
 	for quality, want := range map[string]string{
@@ -164,7 +181,7 @@ func TestCloudChoiceLabelsCompactAndSingleMissingRecommendationWarning(t *testin
 	warnings := 0
 	for _, sec := range sp.form.Sections {
 		for _, f := range sec.Fields {
-			if f.Label() == "  Recommendations" {
+			if f.Label() == "Recommendations" {
 				warnings++
 				if got := f.Display(); got != "no provider recommendation for economy, standard" {
 					t.Fatalf("consolidated warning display = %q", got)
@@ -187,6 +204,7 @@ func TestCloudChoiceLabelsCompactAndSingleMissingRecommendationWarning(t *testin
 func TestCloudAccountActionsWithoutSaveDiscard(t *testing.T) {
 	sp := cloudSamplePage()
 	sp.selectCloudRow("profile:work-openai")
+	sp.cloudModelsExpanded = true
 	sp.form = form.New([]form.Section{sp.buildCloudSection()})
 	for _, key := range []string{"cloud-save", "cloud-discard"} {
 		if _, i := cleanupFieldAt(sp, key); i >= 0 {
