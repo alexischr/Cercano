@@ -123,5 +123,5 @@ func (l *LocusInspector) Inspect(ctx context.Context, convID, imageID, question 
 		return l.local.Inspect(ctx, convID, imageID, question)
 	}
 
-	return capabilities.VisionAnswer{}, errors.New("no vision model is available for the current locus")
+	return capabilities.VisionAnswer{}, errors.New("no confirmed image-capable model is available for the current locus; choose an image model under /config → Cloud → Model tiers, or configure local vision for local-only use")
 }

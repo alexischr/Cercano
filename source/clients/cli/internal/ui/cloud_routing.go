@@ -30,7 +30,7 @@ func (sp *settingsPage) cloudChoiceFields(row cloudRow) []form.Field {
 	}
 	image := choices.ImageModel
 	if image == "" {
-		image = "None"
+		image = "Automatic (chat / provider recommendation)"
 	}
 	fields = append(fields, form.NewRow("cloud-pick-cloud-image", "Image model", sp.catalogChoiceLabel(image)+"  ›", true))
 	if shouldShowCloudCustomEntry("cloud-image") {

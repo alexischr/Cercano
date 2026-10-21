@@ -51,3 +51,24 @@ func TestImageTargetUsesConfirmedOwnBackupBeforeLocal(t *testing.T) {
 		})
 	}
 }
+
+func TestCloudImageInspectionWithoutSetupOverride(t *testing.T) {
+	c := config.Config{ActiveCloudProfile: "p", CloudProfiles: []config.CloudProfile{{Name: "p", TierOverrides: map[config.CostTier]string{config.CostStandard: "chat-image"}}}}
+	raw := &countingProvider{name: "cloud"}
+	chain, err := profilechain.Build(c, config.DestinationPrimary, func(config.CloudProfile) (inference.Provider, error) {
+		return profilechain.GuardVision(raw, func(m string) bool { return m == "chat-image" }), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, service := BuildVision(VisionDeps{CloudTarget: func() (visioninspect.Resolved, bool) { return ResolveCloudVision(chain) }, Mode: func() locus.Mode { return locus.CloudOnly }})
+	t.Cleanup(func() { _ = store.Close() })
+	image := store.Add("conv", "image/png", []byte{0x89, 0x50, 0x4e, 0x47, 1, 2, 3})
+	if image.Attachment == nil {
+		t.Fatal("fixture rejected")
+	}
+	answer, err := service.Inspect(context.Background(), "conv", image.Attachment.ID, "what is shown?")
+	if err != nil || raw.calls != 1 || !strings.Contains(answer.Source, "[p]:chat-image") {
+		t.Fatalf("answer=%+v calls=%d err=%v", answer, raw.calls, err)
+	}
+}

@@ -95,7 +95,7 @@ func BuildPrimary(c config.Config, build Builder, state *CycleState, events ...f
 		if provider == nil {
 			return nil, fmt.Errorf("profile %q has no provider", name)
 		}
-		out.accounts = append(out.accounts, account{name: name, provider: &routeProvider{Provider: provider, profile: name, destination: string(config.DestinationPrimary)}, modelFor: modelFor, blocked: blocked, unavailable: unavailable})
+		out.accounts = append(out.accounts, account{name: name, provider: &routeProvider{Provider: provider, profile: name, destination: string(config.DestinationPrimary)}, modelFor: accountModelFor(c, profile, c.TaskAssignment(config.TaskChat).Quality.CapabilityTier(), provider), blocked: blocked, unavailable: unavailable})
 	}
 	if !usable {
 		return nil, constructionErr

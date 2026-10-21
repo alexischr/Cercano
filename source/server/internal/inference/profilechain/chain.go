@@ -39,7 +39,7 @@ func Build(c config.Config, d config.Destination, build Builder, events ...func(
 	if primary == nil && primaryErr == nil {
 		primaryErr = fmt.Errorf("%s provider unavailable", d)
 	}
-	options := resilience.Options{PrimaryModelFor: modelFor(p)}
+	options := resilience.Options{PrimaryModelFor: accountModelFor(c, p, defaultTier, primary)}
 	if len(events) > 0 {
 		options.OnEvent = events[0]
 	}
@@ -55,7 +55,7 @@ func Build(c config.Config, d config.Destination, build Builder, events ...func(
 			}
 			if provider != nil {
 				options.Backup = &routeProvider{Provider: provider, profile: b.Name, destination: string(d)}
-				options.BackupModelFor = modelFor(b)
+				options.BackupModelFor = accountModelFor(c, b, defaultTier, provider)
 				options.BackupLabel = b.Name
 			}
 		}

@@ -330,11 +330,11 @@ func (sp *settingsPage) pickerEntries() []overlay.CatalogEntry {
 	}
 	special := overlay.CatalogEntry{Name: "Use inherited recommendation", Action: overlay.CatalogInherit, Current: current == ""}
 	if image {
-		special.Name = "No image override"
+		special.Name = "Automatic image model"
 		special.Action = overlay.CatalogNone
 	}
 	if image {
-		special.Details = []overlay.CatalogDetail{{Label: "Effect", Value: "Do not use an account-specific image override"}}
+		special.Details = []overlay.CatalogDetail{{Label: "Effect", Value: "Use the configured chat model when image-capable, otherwise a confirmed image-capable provider recommendation"}}
 	} else {
 		quality := strings.TrimPrefix(sp.catalogField, "cloud-quality-")
 		special.Details = []overlay.CatalogDetail{{Label: "Recommended model", Value: sp.cloudDraft.Effective[quality]}, {Label: "Effect", Value: "Follow the provider recommendation"}}

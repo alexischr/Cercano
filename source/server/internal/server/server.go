@@ -850,6 +850,13 @@ func (s *Server) turnModelEvidence(ctx context.Context, cfg config.Config) model
 				ids = append(ids, modelevidence.IdentityFor(prof, model))
 			}
 		}
+		// Workers resolve inherited image models using the same account-scoped
+		// evidence as the host, including recommendations hidden by text overrides.
+		for _, task := range []config.Task{config.TaskChat, config.TaskDispatch} {
+			for _, model := range cfg.ModelProfiles.CloudImageCandidates(prof, cfg.TaskAssignment(task).Quality.CapabilityTier()) {
+				ids = append(ids, modelevidence.IdentityFor(prof, model))
+			}
+		}
 	}
 	for _, p := range cfg.ReferencedProfiles() {
 		addProfile(p.Name)

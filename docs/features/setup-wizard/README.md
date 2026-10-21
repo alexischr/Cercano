@@ -342,3 +342,19 @@ Regression coverage includes subscription catalog aliases, shared-picker cancell
 Setup headings are bold and task-tier bullets are indented. The final screen is titled **Review your setup**, not “done”: no settings have been applied yet. Its overview shows the selected template, cloud-use boundary, account and task models, grouped local model assignments, and download/readiness information. Shared local artifacts are shown once even if different slots use their ID and display-name aliases.
 
 **View details** exposes the complete assignment/change preview and technical diagnostics. **Customize local models** and **Customize cloud account** open the existing editing paths; **Use this setup** is the explicit apply action. Browsing templates/details and opening customization do not write server configuration. Runtime validation remains deferred and is not implied by the compact presentation.
+
+### Automatic cloud image understanding
+
+Setup does not need to pin a separate image model. An empty image choice means
+**Automatic**: use the account's configured chat-quality model when its image-input
+capability is confirmed, otherwise try that provider's image/default tier
+recommendations with the same capability check. Each backup resolves independently
+using its own account/endpoint evidence. Unknown capability never authorizes an
+image request; transport support alone is insufficient.
+
+An explicit image override remains authoritative and is not silently replaced.
+Clear it with **Automatic image model** in Cloud → Model tiers to restore
+inheritance. These choices are computed at request time, not saved as setup-time
+model pins. If no confirmed candidate is available, select an image-capable model
+there (or configure local vision for local-only use). This policy handles image
+understanding, not image generation, and does not change local-only privacy rules.
