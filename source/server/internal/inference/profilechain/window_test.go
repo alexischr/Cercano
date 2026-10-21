@@ -21,6 +21,8 @@ func TestRouteWindowUsesRequestedModel(t *testing.T) {
 		known          bool
 	}{
 		{"astra without evidence", "gpt-6-astra", 0, 1050000, true},
+		{"sol without evidence", "gpt-6.1-sol", 0, 1050000, true},
+		{"sol provider capacity wins", "gpt-6.1-sol", 262144, 262144, true},
 		{"provider capacity wins", "gpt-6-astra", 262144, 262144, true},
 		{"unknown stays unknown", "unrecognized-model", 0, 128000, false},
 	} {
