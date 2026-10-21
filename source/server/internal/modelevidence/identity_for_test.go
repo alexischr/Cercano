@@ -88,3 +88,26 @@ func TestDifferingIdentities(t *testing.T) {
 		t.Error("Same profile + provider + route + model should be equal")
 	}
 }
+
+func TestIdentityForSubscriptionInferenceBoundaries(t *testing.T) {
+	for _, tc := range []struct{ name, flavor, route, provider, endpoint, want string }{
+		{"chatgpt", "responses", "chatgpt", "", "", "openai"},
+		{"claude", "messages", "subscription", "", "", "anthropic"},
+		{"explicit chatgpt provider", "responses", "chatgpt", "custom", "", "custom"},
+		{"explicit claude provider", "messages", "subscription", "custom", "", "custom"},
+		{"chatgpt gateway", "responses", "chatgpt", "", "https://gateway.example/v1", ""},
+		{"claude gateway", "messages", "subscription", "", "https://gateway.example/v1", ""},
+		{"responses subscription", "responses", "subscription", "", "", ""},
+		{"messages chatgpt", "messages", "chatgpt", "", "", ""},
+		{"missing flavor", "", "chatgpt", "", "", ""},
+		{"missing route", "messages", "", "", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := config.CloudProfile{Name: "account-key", Flavor: tc.flavor, Route: tc.route, Provider: tc.provider, BaseURL: tc.endpoint}
+			want := modelmetadata.Identity{Profile: p.Name, Provider: tc.want, BaseURL: p.BaseURL, Route: p.Route, Model: "model"}
+			if got := modelevidence.IdentityFor(p, "model"); got != want {
+				t.Fatalf("identity=%+v want %+v", got, want)
+			}
+		})
+	}
+}

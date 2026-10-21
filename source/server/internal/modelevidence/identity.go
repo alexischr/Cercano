@@ -12,9 +12,20 @@ import (
 // when the model id is identical. Credentials are deliberately absent — this
 // value is cached and shipped to workers.
 func IdentityFor(p config.CloudProfile, model string) modelmetadata.Identity {
+	provider := p.Provider
+	// Built-in subscription connections omit provider and endpoint metadata.
+	// Infer only these exact pairs; explicit endpoints may be unrelated gateways.
+	if provider == "" && p.BaseURL == "" {
+		switch {
+		case p.Flavor == "responses" && p.Route == "chatgpt":
+			provider = "openai"
+		case p.Flavor == "messages" && p.Route == "subscription":
+			provider = "anthropic"
+		}
+	}
 	return modelmetadata.Identity{
 		Profile:  p.Name,
-		Provider: p.Provider,
+		Provider: provider,
 		BaseURL:  p.BaseURL,
 		Route:    p.Route,
 		Model:    model,

@@ -32,6 +32,7 @@ import (
 	"cercano/source/server/internal/llm"
 	ollamallm "cercano/source/server/internal/llm/ollama"
 	"cercano/source/server/internal/locus"
+	"cercano/source/server/internal/modelevidence"
 	"cercano/source/server/internal/modelmetadata"
 	"cercano/source/server/internal/modelpolicy"
 	"cercano/source/server/internal/ollamacatalog"
@@ -404,7 +405,7 @@ func (w *WorkerServer) buildDeps(ctx context.Context, start *proto.StartTurn, cr
 			if !ok {
 				continue
 			}
-			if ev, found := evidence.Lookup(modelmetadata.Identity{Profile: prof.Name, Provider: prof.Provider, BaseURL: prof.BaseURL, Route: prof.Route, Model: model}); found {
+			if ev, found := evidence.Lookup(modelevidence.IdentityFor(prof, model)); found {
 				return ev
 			}
 		}
@@ -429,7 +430,7 @@ func (w *WorkerServer) buildDeps(ctx context.Context, start *proto.StartTurn, cr
 	} else {
 		var err error
 		provSvc, err = buildWorkerProviders(ctx, cfg, credSource, openProxy, visionConfirmed, func(p pkgcfg.CloudProfile, model string) modelmetadata.Evidence {
-			ev, _ := evidence.Lookup(modelmetadata.Identity{Profile: p.Name, Provider: p.Provider, BaseURL: p.BaseURL, Route: p.Route, Model: model})
+			ev, _ := evidence.Lookup(modelevidence.IdentityFor(p, model))
 			return ev
 		})
 		if err != nil {
