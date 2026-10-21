@@ -35,11 +35,18 @@ type Model struct {
 	Name string `json:"name"`
 }
 
+type TierChoice struct {
+	Tier  string `json:"tier"`
+	Model string `json:"model"`
+}
+
 type Status struct {
-	Models   []Model   `json:"models,omitempty"`
-	Override *Route    `json:"override"`
-	Profiles []Profile `json:"profiles,omitempty"`
-	Note     string    `json:"note"`
+	Effective *Route       `json:"effective,omitempty"`
+	Tiers     []TierChoice `json:"tiers,omitempty"`
+	Models    []Model      `json:"models,omitempty"`
+	Override  *Route       `json:"override"`
+	Profiles  []Profile    `json:"profiles,omitempty"`
+	Note      string       `json:"note"`
 }
 
 type Control func(context.Context, string, Request) (Status, error)

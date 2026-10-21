@@ -181,16 +181,21 @@ type Model struct {
 	// bannerTickActive tracks whether the banner.TickMsg chain is alive — it
 	// serves the splash first, then the scrollback banner. applyResume checks
 	// it to restart the loop when resuming without ever having shown a splash.
-	bannerTickActive   bool
-	lastLatencyMs      int
-	modelMaxTokens     int
-	openModel          string // configured local/open model name, used for the o: header chip
-	lastModel          string // model/provider that served the last completed turn
-	cloudModel         string // cloud model name (from config), used for the c: header chip; empty when no cloud configured
-	activeCloudProfile string // active cloud profile name, used as a fallback when the model is unknown
-	cloudState         string // "" = unknown, "NONE" = absent, "ok" = real cloud configured
-	ctrlCArmed         bool   // first ctrl-c on empty input arms quit; any other key disarms
-	errMsg             string
+	bannerTickActive    bool
+	lastLatencyMs       int
+	modelMaxTokens      int
+	openModel           string // configured local/open model name, used for the o: header chip
+	lastModel           string // model/provider that served the last completed turn
+	sessionTierPicker   *sessionTierPicker
+	sessionModelState   agentclient.SessionModelStatus
+	sessionModelConv    string
+	sessionModelSerial  uint64
+	sessionModelPending bool
+	cloudModel          string // cloud model name (from config), used for the c: header chip; empty when no cloud configured
+	activeCloudProfile  string // active cloud profile name, used as a fallback when the model is unknown
+	cloudState          string // "" = unknown, "NONE" = absent, "ok" = real cloud configured
+	ctrlCArmed          bool   // first ctrl-c on empty input arms quit; any other key disarms
+	errMsg              string
 
 	// Live turn telemetry, surfaced by renderStatus while a turn streams. Reset
 	// when a turn begins; the engine fields fill in on the RouteSelected event.
@@ -1066,6 +1071,9 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 		return m, tea.Batch(tea.ClearScreen, historyCmd)
 
 	case tea.MouseWheelMsg:
+		if m.activeSessionTierPicker() {
+			return m, nil
+		}
 		if m.contentPageActive() {
 			if sp, ok := m.content.(*settingsPage); ok {
 				if sp.providerPicker != nil {
@@ -1121,11 +1129,24 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 		return m, cmd
 
 	case tea.MouseClickMsg:
+		if m.activeSessionTierPicker() {
+			if msg.Mouse().Button == tea.MouseLeft {
+				cmd := m.sessionTierClick(msg.Mouse().X, msg.Mouse().Y)
+				return m, cmd
+			}
+			return m, nil
+		}
 		if m.claudeLoginModal != nil {
 			return m.handleClaudeLoginModalMouse(msg)
 		}
 		// Confirmation gates keyboard input, not mouse selection or navigation.
 		mouse := msg.Mouse()
+		if mouse.Button == tea.MouseLeft && mouse.Y == 0 && m.pendingConfirm == nil && m.authLogin == nil && m.chatgptLoginModal == nil {
+			if left, right, ok := m.cloudChipRange(); ok && mouse.X >= left && mouse.X < right {
+				cmd := m.openSessionTierPicker()
+				return m, cmd
+			}
+		}
 		if mouse.Button == tea.MouseLeft && m.mouseInHeaderTitle(mouse.X, mouse.Y) {
 			m.beginHeaderSelection(mouse.X)
 			return m, nil
@@ -1309,6 +1330,9 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 		return m, nil
 
 	case tea.PasteMsg:
+		if m.activeSessionTierPicker() {
+			return m, nil
+		}
 		if m.claudeLoginModal != nil {
 			// The sign-in modal floats over every surface; a paste while it is
 			// open is the sign-in code, never prompt or page text.
@@ -1355,6 +1379,13 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 		return m, cmd
 
 	case tea.KeyPressMsg:
+		if m.activeSessionTierPicker() {
+			cmd := m.sessionTierKey(msg.String())
+			return m, cmd
+		}
+		if m.sessionModelPending && m.sessionModelConv == m.convID && msg.String() == "enter" && !m.contentPageActive() {
+			return m, nil
+		}
 		if m.authLogin != nil {
 			if msg.String() == "esc" || msg.String() == "ctrl+c" || (m.authLogin.failed && msg.String() == "enter") {
 				return m.cancelAuthentication(m.authLogin.gate)
@@ -1519,7 +1550,7 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 		// touches one in-flight turn at a time).
 		if m.streaming && key.Matches(msg, keys.Back) {
 			m.cancelCurrentStream()
-			if next, ok := m.mainChat().DrainNext(); ok {
+			if next, ok := m.drainQueuedChat(); ok {
 				m.relayout()
 				nm, cmd := m.submit(next.text, next.images)
 				return nm, cmd
@@ -1643,7 +1674,7 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 			text := strings.TrimSpace(m.input.Value())
 			if text == "" {
 				if m.streaming {
-					if next, ok := m.mainChat().DrainNext(); ok {
+					if next, ok := m.drainQueuedChat(); ok {
 						m.cancelCurrentStreamSilently()
 						m.relayout()
 						return m.submit(next.text, next.images)
@@ -2184,8 +2215,31 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 		return m, msg.next
 
 	case sessionModelMsg:
-		if msg.convID != m.convID {
+		if msg.convID != m.convID || (msg.serial != 0 && msg.serial != m.sessionModelSerial) {
 			return m, nil
+		}
+		wasPending := m.sessionModelPending
+		m.sessionModelPending = false
+		if msg.err == nil {
+			m.sessionModelState = msg.status
+			m.sessionModelConv = m.convID
+		}
+		if m.activeSessionTierPicker() {
+			p := m.sessionTierPicker
+			p.loading = false
+			if msg.err != nil {
+				p.err = msg.err.Error()
+			} else if wasPending {
+				m.sessionTierPicker = nil
+			} else {
+				p.status = msg.status
+				for i, tier := range p.status.Tiers {
+					if p.status.Effective != nil && tier.Model == p.status.Effective.Model {
+						p.cursor = i
+						break
+					}
+				}
+			}
 		}
 		if msg.err != nil {
 			if !msg.quiet {
@@ -2195,6 +2249,12 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 			m.mainChat().AppendNotice(&Entry{Role: RoleSystem, Content: sessionModelText(msg.status, !msg.quiet)})
 		}
 		m.refreshViewport()
+		if wasPending && msg.err == nil && !m.streaming {
+			if next, ok := m.drainQueuedChat(); ok {
+				m.relayout()
+				return m.submit(next.text, next.images)
+			}
+		}
 		return m, nil
 	case sessionProfileFetchedMsg:
 		// Startup/resume seed for the footer chip. Apply only if it's still the
@@ -2221,7 +2281,8 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 		case "local_runtime", "open_runtime":
 			m.currentOpenRuntime = msg.value
 		}
-		return m, tea.Batch(msg.next, fetchConfigCmd(m.agent))
+		statusCmd := m.requestSessionModel("status", "", "", true)
+		return m, tea.Batch(msg.next, fetchConfigCmd(m.agent), statusCmd)
 
 	case runtimeInstallStartedMsg:
 		if m.openRuntimeModal == nil {
@@ -2705,7 +2766,7 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 		}
 		done := tea.Batch(pollCmds...)
 		// Drain the next queued message: each completed turn fires the next.
-		if nextMsg, ok := m.mainChat().DrainNext(); ok {
+		if nextMsg, ok := m.drainQueuedChat(); ok {
 			m.relayout()
 			nm, cmd := m.submit(nextMsg.text, nextMsg.images)
 			return nm, tea.Batch(cmd, done)
@@ -3317,7 +3378,8 @@ func (m Model) runSlash(line string) (tea.Model, tea.Cmd) {
 		m.enqueueConfirmation(toolConfirm(tc))
 		m.refreshViewport()
 	case slash.ResultSessionModel:
-		return m, sessionModelCmd(m.agent, m.convID, m.effectiveWorkDir(), res.ModelAction, res.ModelProfile, res.ModelID, false)
+		cmd := m.requestSessionModel(res.ModelAction, res.ModelProfile, res.ModelID, false)
+		return m, cmd
 	case slash.ResultDevMode:
 		kickoff := m.applyDevMode(res.WorkDir)
 		m.refreshViewport()
@@ -4098,7 +4160,7 @@ func (m Model) applyProgressiveResumeEvent(msg resumeViewportStreamMsg) (Model, 
 	case agentclient.ResumeViewportEventHydrationComplete:
 		m.resumeHydrating = false
 		m.errMsg = ""
-		cmds = append(cmds, fetchContextUsage(m.agent, m.convID), fetchSessionProfileCmd(m.agent, m.convID), sessionModelCmd(m.agent, m.convID, m.effectiveWorkDir(), "status", "", "", true), fetchRecap(m.agent, m.convID))
+		cmds = append(cmds, fetchContextUsage(m.agent, m.convID), fetchSessionProfileCmd(m.agent, m.convID), m.requestSessionModel("status", "", "", true), fetchRecap(m.agent, m.convID))
 	}
 	if !m.bannerTickActive {
 		m.bannerTickActive = true
@@ -4173,7 +4235,7 @@ func (m Model) applyResume(conversationID string) (Model, tea.Cmd) {
 		fetchContextUsage(m.agent, m.convID),
 		// Seed the footer mode chip: a resumed conversation may already be in
 		// planning mode, and no broadcast will fire until the next flip.
-		fetchSessionProfileCmd(m.agent, m.convID), sessionModelCmd(m.agent, m.convID, m.effectiveWorkDir(), "status", "", "", true),
+		fetchSessionProfileCmd(m.agent, m.convID), m.requestSessionModel("status", "", "", true),
 	}
 	if !m.bannerTickActive {
 		// The tick chain died before this resume (e.g. launching straight
@@ -5584,6 +5646,10 @@ func (m Model) View() tea.View {
 		box := m.chatgptLoginModal.View(m.styles, m.palette, m.width, m.height)
 		out = composeOverlay(out, box, x, y)
 	}
+	if m.activeSessionTierPicker() {
+		box, x, y := m.sessionTierBox()
+		out = composeOverlay(out, box, x, y)
+	}
 	v := tea.NewView(out)
 	v.AltScreen = true
 	v.BackgroundColor = m.palette.BgDeep // paint our own bg so themes aren't at the mercy of the terminal's
@@ -5847,6 +5913,9 @@ func (m Model) renderHeaderRight(maxWidth int) string {
 		return ""
 	}
 	cloudChip := m.cloudModel
+	if m.sessionModelConv == m.convID && m.sessionModelState.Effective != nil {
+		cloudChip = m.sessionModelState.Effective.Model
+	}
 	if cloudChip == "" {
 		cloudChip = m.activeCloudProfile
 	}

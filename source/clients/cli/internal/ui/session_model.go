@@ -11,6 +11,7 @@ import (
 )
 
 type sessionModelMsg struct {
+	serial uint64
 	convID string
 	quiet  bool
 	status agentclient.SessionModelStatus
