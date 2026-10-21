@@ -2138,6 +2138,17 @@ func (s *Server) UpdateConfig(ctx context.Context, req *proto.UpdateConfigReques
 		}
 	}
 
+	// Dispatch prefers the mode captured in the immutable provider graph over
+	// the live config. Publish a fresh graph after mode updates (including
+	// reapplying the same mode), rather than mixing new policy with old bindings.
+	// Rebuild also publishes the new policy when cloud is unavailable, so
+	// cloud-only fails closed instead of retaining a stale local-only route.
+	if req.LocusMode != "" {
+		if err := s.rebuildCloud(); err != nil {
+			changes = append(changes, "routing refreshed; cloud unavailable: "+err.Error())
+		}
+	}
+
 	return &proto.UpdateConfigResponse{
 		Success: true,
 		Message: fmt.Sprintf("updated: [%s]", strings.Join(changes, ", ")),
