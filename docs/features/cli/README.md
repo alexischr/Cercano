@@ -316,6 +316,23 @@ background routes, and global defaults stay unchanged. `/model clear` works even
 when the selected chat model is unavailable. See [session model overrides](session-model.md)
 for commands, boundaries, and implementation details.
 
+### Session chat quality controls
+
+`/escalate` and `/ultrathink` are equivalent, argument-free commands that pin
+Premium for the next and subsequent main-chat messages in this session. They do
+not send a prompt or alter an in-progress turn. Use `/model clear` to restore
+normal routing.
+
+Click the top-bar `c:model` chip to open a dropdown of Premium, Standard, and
+Economy with the saved account's configured model IDs. The current model is bold;
+the caret shows keyboard focus. Use arrows or Tab/Shift+Tab and Enter/Space, or
+click a row; Escape or an outside click closes the menu. Choices save as session
+model overrides only after the agent acknowledges them. A failed selection keeps
+the old model and displays the error. The menu follows the current override's
+account, otherwise the configured chat account; unavailable tiers are not guessed.
+These overrides persist on resume and do not change dispatch, background tasks,
+or global defaults. A queued next turn waits for a pending selection to complete.
+
 ### Cloud provider setup
 
 The Cloud configuration tab lists only configured providers. **Add provider…**

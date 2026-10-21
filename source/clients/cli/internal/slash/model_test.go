@@ -7,6 +7,8 @@ func TestSessionModelCommands(t *testing.T) {
 	RegisterModel(reg)
 	for _, tc := range []struct{ input, action, profile, model string }{
 		{"/model", "status", "", ""},
+		{"/escalate", "tier", "", "premium"},
+		{"/ultrathink", "tier", "", "premium"},
 		{"/model status", "status", "", ""},
 		{"/model models deepinfra", "models", "deepinfra", ""},
 		{"/model set deepinfra provider/exact-model", "set", "deepinfra", "provider/exact-model"},
@@ -17,7 +19,7 @@ func TestSessionModelCommands(t *testing.T) {
 			t.Fatalf("%s: %+v %v", tc.input, got, ok)
 		}
 	}
-	for _, input := range []string{"/model set", "/model set deepinfra", "/model clear extra", "/model models", "/model unknown"} {
+	for _, input := range []string{"/escalate extra", "/ultrathink do work", "/model set", "/model set deepinfra", "/model clear extra", "/model models", "/model unknown"} {
 		got, ok := reg.Dispatch(input)
 		if !ok || got.Kind != ResultText {
 			t.Fatalf("bad syntax accepted: %s %+v", input, got)

@@ -21,11 +21,18 @@ type SessionModelInfo struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 }
+type SessionModelTier struct {
+	Tier  string `json:"tier"`
+	Model string `json:"model"`
+}
+
 type SessionModelStatus struct {
-	Models   []SessionModelInfo    `json:"models"`
-	Override *SessionModelRoute    `json:"override"`
-	Profiles []SessionModelProfile `json:"profiles"`
-	Note     string                `json:"note"`
+	Effective *SessionModelRoute    `json:"effective"`
+	Tiers     []SessionModelTier    `json:"tiers"`
+	Models    []SessionModelInfo    `json:"models"`
+	Override  *SessionModelRoute    `json:"override"`
+	Profiles  []SessionModelProfile `json:"profiles"`
+	Note      string                `json:"note"`
 }
 
 func (c *Client) SessionModel(ctx context.Context, conversationID, workDir, action, profile, model string) (SessionModelStatus, error) {

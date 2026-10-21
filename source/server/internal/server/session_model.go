@@ -22,6 +22,30 @@ func (s *Server) sessionModel(ctx context.Context, convID string, req chatroute.
 	if req.Action == "" {
 		req.Action = "status"
 	}
+	// Tier choices are resolved on the server, never guessed by the client.
+	if req.Action == "tier" {
+		quality := config.CostTier(req.Model)
+		if quality != config.CostPremium && quality != config.CostStandard && quality != config.CostEconomy {
+			return chatroute.Status{}, fmt.Errorf("unknown chat quality %q", req.Model)
+		}
+		current, err := store.ChatRoute(ctx, convID)
+		if err != nil {
+			return chatroute.Status{}, err
+		}
+		route := sessionTierRoute(s.cfgSvc.Get(), current)
+		if req.Profile != "" {
+			route.Profile = req.Profile
+		}
+		profile, ok := s.cfgSvc.Get().Profile(route.Profile)
+		if !ok {
+			return chatroute.Status{}, fmt.Errorf("no saved cloud profile for session tier")
+		}
+		model := s.cfgSvc.Get().ModelProfiles.ResolveCloudModelForTier(profile, quality.CapabilityTier())
+		if model == "" {
+			return chatroute.Status{}, fmt.Errorf("%s tier has no configured model for %s", quality, profile.Name)
+		}
+		req = chatroute.Request{Action: "set", Profile: profile.Name, Model: model}
+	}
 	switch req.Action {
 	case "models":
 		if strings.TrimSpace(req.Profile) == "" || req.Model != "" {
@@ -34,11 +58,11 @@ func (s *Server) sessionModel(ctx context.Context, convID string, req chatroute.
 		if catalog.GetError() != "" {
 			return chatroute.Status{}, fmt.Errorf("model catalog: %s", catalog.GetError())
 		}
-		route, err := store.ChatRoute(ctx, convID)
+		result, err := s.sessionModel(ctx, convID, chatroute.Request{Action: "status"})
 		if err != nil {
 			return chatroute.Status{}, err
 		}
-		result := chatroute.Status{Override: route, Note: "Available model IDs for " + req.Profile + ". No routing changes made."}
+		result.Note = "Available model IDs for " + req.Profile + ". No routing changes made."
 		for _, m := range catalog.Models {
 			result.Models = append(result.Models, chatroute.Model{ID: m.GetId(), Name: m.GetDisplayName()})
 		}
@@ -68,7 +92,7 @@ func (s *Server) sessionModel(ctx context.Context, convID string, req chatroute.
 			}
 		}
 	default:
-		return chatroute.Status{}, fmt.Errorf("unknown session model action %q (want status, models, set, clear)", req.Action)
+		return chatroute.Status{}, fmt.Errorf("unknown session model action %q (want status, models, set, tier, clear)", req.Action)
 	}
 	route, err := store.ChatRoute(ctx, convID)
 	if err != nil {
@@ -79,6 +103,13 @@ func (s *Server) sessionModel(ctx context.Context, convID string, req chatroute.
 		result.Note = "Session main-chat override; applies to the next message and persists on resume. No fallback. Delegation and background routing are unchanged. Model availability is checked by the provider on the next request."
 	}
 	cfg := s.cfgSvc.Get()
+	effective := sessionTierRoute(cfg, route)
+	if p, ok := cfg.Profile(effective.Profile); ok {
+		result.Effective = &effective
+		for _, q := range []config.CostTier{config.CostPremium, config.CostStandard, config.CostEconomy} {
+			result.Tiers = append(result.Tiers, chatroute.TierChoice{Tier: string(q), Model: cfg.ModelProfiles.ResolveCloudModelForTier(p, q.CapabilityTier())})
+		}
+	}
 	for _, p := range cfg.CloudProfiles {
 		result.Profiles = append(result.Profiles, chatroute.Profile{Name: p.Name, Provider: p.Provider, Model: cfg.ModelProfiles.ResolveCloudModelForTier(p, cfg.TaskAssignment(config.TaskChat).Quality.CapabilityTier())})
 	}
@@ -95,7 +126,7 @@ func (s *Server) SessionModel(ctx context.Context, req *proto.SessionModelReques
 	if req.GetConversationId() == "" {
 		return nil, fmt.Errorf("conversation id required")
 	}
-	if req.GetAction() == "set" {
+	if req.GetAction() == "set" || req.GetAction() == "tier" {
 		if err := s.persistSvc.Store().EnsureConversation(ctx, req.GetConversationId(), req.GetWorkDir(), ""); err != nil {
 			return nil, err
 		}
@@ -109,4 +140,20 @@ func (s *Server) SessionModel(ctx context.Context, req *proto.SessionModelReques
 		return nil, err
 	}
 	return &proto.SessionModelResponse{ResultJson: data}, nil
+}
+
+func sessionTierRoute(cfg config.Config, override *chatroute.Route) chatroute.Route {
+	if override != nil {
+		return *override
+	}
+	assignment := cfg.TaskAssignment(config.TaskChat)
+	name, _ := cfg.DestinationProfiles(assignment.Destination)
+	if name == "" {
+		name = cfg.ActiveCloudProfile
+	}
+	p, ok := cfg.Profile(name)
+	if !ok {
+		return chatroute.Route{}
+	}
+	return chatroute.Route{Profile: name, Model: cfg.ModelProfiles.ResolveCloudModelForTier(p, assignment.Quality.CapabilityTier())}
 }

@@ -109,11 +109,23 @@
       "status": "untested",
       "models": [
         {
+          "id": "gpt-6-luna",
+          "label": "gpt-6-luna",
+          "qualities": [
+            "economy"
+          ]
+        },
+        {
+          "id": "gpt-6.1-sol",
+          "label": "gpt-6.1-sol",
+          "qualities": [
+            "standard"
+          ]
+        },
+        {
           "id": "gpt-6-astra",
           "label": "gpt-6-astra",
           "qualities": [
-            "economy",
-            "standard",
             "premium"
           ]
         }
@@ -129,18 +141,25 @@
       "status": "untested",
       "models": [
         {
-          "id": "gpt-5-mini",
-          "label": "gpt-5-mini",
+          "id": "gpt-6-luna",
+          "label": "gpt-6-luna",
           "qualities": [
             "economy"
+          ]
+        },
+        {
+          "id": "gpt-6.1-sol",
+          "label": "gpt-6.1-sol",
+          "qualities": [
+            "standard"
           ]
         },
         {
           "id": "gpt-6-astra",
           "label": "gpt-6-astra",
           "qualities": [
-            "standard",
-            "premium"
+            "premium",
+            "standard"
           ]
         },
         {
