@@ -164,6 +164,29 @@ suitable hardware and model downloads. Model quality, latency, and cost depend
 on your configuration; delegation is not a guarantee of savings. See each
 feature page for controls and limitations.
 
+## Known issues
+
+Looking for a place to contribute? These are great areas to jump in. Some already
+have substantial foundations but need testing, tuning, or user-experience polish.
+Bug reports, reproducible examples, design feedback, and pull requests are all
+welcome. See the [developer guide](docs/agent/self-dev.md) to get started, or
+[open an issue](https://github.com/cercano-ai/Cercano/issues) to discuss an idea.
+
+- **Supervisory threads:** The architecture and much of the implementation are
+  in place, but the behavior needs polish. Supervisors currently intervene too
+  aggressively; tuning when and how they step in would make them more useful.
+- **Task pane:** Most of the implementation is in place, including a development
+  sandbox, but expanding and collapsing tasks needs to be more reliable. Mouse
+  events should go to the individual controls rather than the entire panel, and
+  task tracking needs better bookkeeping. Longer term, the pane should support
+  conversations and edits that stay synchronized with plans and the main thread.
+- **Windows support:** Windows remains under-tested. Testing real workflows,
+  reporting reproducible platform-specific bugs, and improving compatibility
+  are especially valuable contributions.
+- **IDE plugins:** An older VS Code extension draft needs to be reworked for
+  Cercano's current full agent architecture. Infrastructure for a Zed integration
+  has also been drafted, but the integration itself is not implemented.
+
 ## Documentation and support
 
 - [Feature guide](docs/agent/features/README.md): what each differentiator does and why it matters.
