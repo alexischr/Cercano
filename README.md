@@ -260,6 +260,10 @@ welcome. See the [developer guide](docs/agent/self-dev.md) to get started, or
 - **IDE plugins:** An older VS Code extension draft needs to be reworked for
   Cercano's current full agent architecture. Infrastructure for a Zed integration
   has also been drafted, but the integration itself is not implemented.
+  One approach to evaluate is implementing Agent Client Protocol (ACP) to connect
+  compatible editors to Cercano's existing agent. This could cover much of IDE
+  integration and reduce bespoke plugin work, depending on each editor's ACP
+  support and capabilities.
   Background: [earlier VS Code integration fixes](docs/internal/ide-fixes.md)
   and [IDE technology stack / Zed scaffold](docs/reference/tech-stack.md#3-ide-integration).
 
