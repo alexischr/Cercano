@@ -185,8 +185,10 @@ welcome. See the [developer guide](docs/agent/self-dev.md) to get started, or
   See the [interaction-fix spec](efforts/fix-task-panel-scrollbars/spec.md),
   [debug sandbox plan](efforts/debug-task-pane-controls/plan.md), and
   [task-model design](docs/features/agent-capabilities/task-model/design.md).
-- **Skills:** We should support skills; the right balance between the Codex and
-  Claude approaches remains an open design question.
+- **Skills:** Cercano supports built-in workflow protocols via `get_protocol`
+  and organization-assigned text skills via `get_shared_skill`. General discovery
+  and loading of user or third-party `SKILL.md` packages is not yet supported;
+  skills sync only exports skills for other agents.
 - **Windows support:** Windows remains under-tested. Testing real workflows,
   reporting reproducible platform-specific bugs, and improving compatibility
   are especially valuable contributions. See the
