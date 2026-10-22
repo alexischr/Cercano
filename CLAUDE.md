@@ -23,6 +23,9 @@ cd source/server && go test ./... -count=1
 # Standalone terminal client (separate Go module)
 cd source/clients/cli && go build -o bin/cercano-cli .
 cd source/clients/cli && go test ./... -count=1
+
+# Terminal end-to-end tests (real binaries in a PTY via @microsoft/tui-test; see test/e2e/README.md)
+cd test/e2e && npm ci && npm run build && npm test
 ```
 
 Cercano builds as **two binaries**: `cercano` (the agent gRPC server / MCP host —
