@@ -475,7 +475,7 @@ func (c *chatView) resolveStaleInProgressTools() {
 			// A routine task row left in-progress at teardown means the
 			// foreground turn was canceled while polling — not a genuine task
 			// error. Mark it as task activity so quiet mode keeps hiding it
-			// (real task errors stay visible); full debug still shows it.
+			// (real task errors stay visible); non-main diagnostic views retain it.
 			if routineTaskTool(e.Tool.ToolName) {
 				e.TaskActivity = true
 			}

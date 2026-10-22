@@ -49,7 +49,7 @@ func TestRoutineTaskActivityVisibility(t *testing.T) {
 			c.rebuild()
 			// Dev mode is still the main chat's ordinary presentation: routine
 			// successful polls and their running-progress notes stay hidden
-			// there too (interrupted/stale rows and genuine failures remain).
+			// there too (only genuine failures remain visible).
 			if strings.Contains(ansi.Strip(chatLayoutContent(c)), name) {
 				t.Fatal("debug leaked routine poll")
 			}

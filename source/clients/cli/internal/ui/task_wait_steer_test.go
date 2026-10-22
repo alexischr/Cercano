@@ -15,6 +15,7 @@ import (
 // second empty Enter to steer, leaving the session feeling dead.
 func TestWaitOnlyFirstEnterSubmitsWithoutSecondPress(t *testing.T) {
 	m := New(nil, false)
+	m.workDirOverride = t.TempDir() // dev-mode main chat must also stay quiet
 	m = send(t, m, tea.WindowSizeMsg{Width: 80, Height: 24})
 	canceled := false
 	m.cancelStream = func() { canceled = true }
@@ -36,6 +37,10 @@ func TestWaitOnlyFirstEnterSubmitsWithoutSecondPress(t *testing.T) {
 	}
 	if got := strings.TrimSpace(m.input.Value()); got != "" {
 		t.Errorf("input should clear after submitting, got %q", got)
+	}
+	m.mainChat().rebuild()
+	if text := ansi.Strip(chatLayoutContent(m.mainChat())); strings.Contains(text, "task_wait") {
+		t.Fatalf("first-Enter cancellation exposed observer failure: %q", text)
 	}
 	var userTurns []string
 	for _, e := range m.mainChat().Entries() {
@@ -122,10 +127,39 @@ func TestInterruptedWaitRowHiddenQuietVisibleInDebug(t *testing.T) {
 		t.Fatalf("canceled task_wait row leaked into quiet mode: %q", quiet)
 	}
 
-	c.setTaskVisibility(true, true) // all visible debug
+	c.setTaskVisibility(true, true) // dev mode is still ordinary main chat
+	c.rebuild()
+	if text := ansi.Strip(chatLayoutContent(c)); strings.Contains(text, "task_wait") {
+		t.Fatalf("canceled task_wait leaked into dev-mode main chat: %q", text)
+	}
+	if indices := c.toolEntryIndices(); len(indices) != 0 {
+		t.Fatalf("hidden interrupted poll is keyboard navigable: %v", indices)
+	}
+
+	c.setTaskVisibility(true, false) // diagnostic/child view retains evidence
 	c.rebuild()
 	debug := ansi.Strip(chatLayoutContent(c))
 	if !strings.Contains(debug, "task_wait") || !strings.Contains(debug, "interrupted") {
 		t.Fatalf("debug output must keep the interrupted task_wait row, got %q", debug)
+	}
+}
+
+// A real failed poll (even one whose message says interrupted) and an
+// interrupted non-observer tool must remain actionable in either main mode.
+func TestQuietMainPreservesGenuineErrors(t *testing.T) {
+	for _, debug := range []bool{false, true} {
+		c := newTestChatView(100, 30)
+		c.setTaskVisibility(debug, true)
+		c.Apply(toolEntryStartMsg{id: "failed", name: "task_wait"})
+		c.Apply(toolEntryExecCompleteMsg{id: "failed", isError: true, summary: "interrupted"})
+		c.Apply(toolEntryStartMsg{id: "work", name: "bash"})
+		c.resolveStaleInProgressTools()
+		c.rebuild()
+		text := ansi.Strip(chatLayoutContent(c))
+		for _, name := range []string{"task_wait", "Bash"} {
+			if !strings.Contains(text, name) {
+				t.Fatalf("debug=%v: genuine error hidden: %q", debug, text)
+			}
+		}
 	}
 }
