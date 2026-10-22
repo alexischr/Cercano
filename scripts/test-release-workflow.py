@@ -44,6 +44,42 @@ def bash_executable():
     return str(Path(executable).absolute())
 
 
+# Test-only bridge for Git Bash, which provides sha256sum but not shasum.
+# Production publication remains unchanged on macOS. Accept only the exact
+# invocation used by that step, and propagate the real verifier's exit status.
+CHECKSUM_COMPAT = r"""
+if ! command -v shasum >/dev/null 2>&1; then
+  command -v sha256sum >/dev/null 2>&1 || {
+    echo "sha256sum is required when shasum is unavailable" >&2
+    exit 1
+  }
+  shasum() {
+    if [[ "$#" != 4 || "$1" != -a || "$2" != 256 || "$3" != -c || "$4" != - ]]; then
+      echo "unsupported test shasum arguments" >&2
+      return 2
+    fi
+    sha256sum -c -
+  }
+fi
+"""
+
+# Resolve the real tools in Bash (including Git Bash's own path syntax), then
+# hide all PATH executables. Functions retain only the two dependencies used
+# by the publication probe. This exercises actual absence, not a fake verifier.
+WITHOUT_SHASUM = r"""
+checksum_tool="$(command -v sha256sum)" || exit 1
+grep_tool="$(command -v grep)" || exit 1
+sha256sum() { "$checksum_tool" "$@"; }
+grep() { "$grep_tool" "$@"; }
+PATH=""
+hash -r
+if command -v shasum >/dev/null 2>&1; then
+  echo "test setup failed: shasum is still available" >&2
+  exit 1
+fi
+"""
+
+
 def load_workflow_file(path):
     """Parse a workflow, falling back to Ruby when PyYAML is absent.
 
@@ -142,6 +178,31 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertIs(step["with"]["overwrite_files"], False)
 
     def test_publication_shell_rejects_changed_bytes_and_existing_assets(self):
+        self.check_publication_shell()
+
+    def test_publication_shell_without_shasum(self):
+        self.check_publication_shell(WITHOUT_SHASUM)
+
+    def test_checksum_fallback_rejects_unsupported_arguments(self):
+        for args in ("", "-a 512 -c -", "-a 256 -c", "-a 256 -c - extra",
+                     "-a 256 archive", "-x 256 -c -", "-a 256 -x -",
+                     "-a 256 -c archive"):
+            with self.subTest(args=args):
+                result = subprocess.run(
+                    [bash_executable(), "-c",
+                     WITHOUT_SHASUM + CHECKSUM_COMPAT + "shasum " + args],
+                    capture_output=True, text=True)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn("unsupported test shasum arguments", result.stderr)
+
+    def test_checksum_adapter_fails_without_a_verifier(self):
+        result = subprocess.run(
+            [bash_executable(), "-c", 'PATH=""; hash -r\n' + CHECKSUM_COMPAT],
+            capture_output=True, text=True)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("sha256sum is required", result.stderr)
+
+    def check_publication_shell(self, environment=""):
         script = self.step("build", "refuse to replace")["run"]
         names = ["cercano-1.2.3-darwin-arm64.tar.gz",
                  "cercano-1.2.3-windows-x64.zip", "cercano-1.2.3-linux-x64.tar.gz"]
@@ -167,12 +228,14 @@ class ReleaseWorkflowTest(unittest.TestCase):
                     '  fi\n'
                     '}\n'
                 )
-                return subprocess.run([bash_executable(), "-c", prefix + script],
+                return subprocess.run([bash_executable(), "-c", environment + CHECKSUM_COMPAT + prefix + script],
                                       cwd=directory, capture_output=True, text=True)
             for name in names:
                 (dist / name).write_bytes(b"verified archive")
             result = run()
             self.assertEqual(result.returncode, 0, result.stderr)
+            for name in names:
+                self.assertIn(name + ": OK", result.stdout)
             # Only a successful, complete enumeration proves absence. Do not
             # call release view in that case (the stub would fail if called).
             for tags in ("", "v0.9.0\nv2.0.0"):
@@ -193,7 +256,13 @@ class ReleaseWorkflowTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             for name in names:
                 (dist / name).write_bytes(b"changed after verification")
-                self.assertNotEqual(run().returncode, 0, name)
+                result = run()
+                self.assertNotEqual(result.returncode, 0, name)
+                self.assertIn(name + ": FAILED", result.stdout)
+                (dist / name).unlink()
+                result = run()
+                self.assertNotEqual(result.returncode, 0, name)
+                self.assertIn(name, result.stderr)
                 (dist / name).write_bytes(b"verified archive")
                 for asset in (name, name + ".sha256"):
                     result = run(asset)
