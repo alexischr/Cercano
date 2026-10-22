@@ -115,7 +115,9 @@ base URL, label tier).
 - `deepseek` — backend default — `https://api.deepseek.com`
 - `cerebras` — backend default — `https://api.cerebras.ai/v1` (added later; the
   settings page lists it as `(untested)` and its catalog comes from the live
-  authenticated `/models` endpoint rather than a shipped cost table)
+  authenticated `/models` endpoint. The shipped Economy default is
+  `gpt-oss-120b` (fast/light tiers); Standard and Premium remain unset. Explicit
+  tier overrides take precedence)
 
 **Coming soon (flavor not built; labeled `(coming soon)`, activate blocked):**
 - `bedrock` — flavor `bedrock`

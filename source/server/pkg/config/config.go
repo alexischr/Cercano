@@ -674,6 +674,11 @@ func Defaults() Config {
 						Standard: CostTierModel{Model: "mistral-large-4"},
 						Premium:  CostTierModel{Model: "zai-glm-5-3"},
 					},
+					// Approved Cerebras Economy default; Standard and Premium remain
+					// unset for live discovery or explicit user choices.
+					"cerebras": {
+						Economy: CostTierModel{Model: "gpt-oss-120b"},
+					},
 					// DeepInfra hosts many vendors' open-weight models rather
 					// than publishing its own, so these are chosen for the
 					// agent loop's actual requirement — tool calling — and

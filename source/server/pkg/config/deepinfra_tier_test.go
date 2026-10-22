@@ -138,17 +138,29 @@ func containsSlash(s string) bool {
 	return false
 }
 
-// TestResolveCloudModelForTier_CerebrasNoInventedLineup: the catalog carries
-// Cerebras as an untested backend-less provider, but no Cerebras cost table is
-// shipped — no model ids, capabilities, or pricing are invented on its behalf
-// (the live catalog is discovered at runtime instead). Every tier must resolve
-// to nothing rather than to some foreign vendor's id.
-func TestResolveCloudModelForTier_CerebrasNoInventedLineup(t *testing.T) {
+// Cerebras ships only the approved Economy model; other tiers stay unset.
+func TestResolveCloudModelForTier_CerebrasDefaults(t *testing.T) {
 	cfg := Defaults()
 	p := CloudProfile{Name: "cerebras", Flavor: "chat_completions", BaseURL: "https://api.cerebras.ai/v1"}
-	for _, tier := range []Tier{TierMostCapable, TierEveryday, TierFastLight, TierFastLightText} {
-		if got := cfg.ModelProfiles.ResolveCloudModelForTier(p, tier); got != "" {
-			t.Errorf("tier %s invented model %q for a vendor with no shipped lineup", tier, got)
+	for _, tc := range []struct {
+		tier Tier
+		want string
+	}{
+		{TierMostCapable, ""}, {TierEveryday, ""}, {TierFastLight, "gpt-oss-120b"}, {TierFastLightText, "gpt-oss-120b"},
+	} {
+		if got := cfg.ModelProfiles.ResolveCloudModelForTier(p, tc.tier); got != tc.want {
+			t.Errorf("tier %s = %q, want %q", tc.tier, got, tc.want)
+		}
+	}
+	p.TierOverrides = map[CostTier]string{CostEconomy: "custom-economy", CostStandard: "custom-standard", CostPremium: "custom-premium"}
+	for _, tc := range []struct {
+		tier Tier
+		want string
+	}{
+		{TierFastLight, "custom-economy"}, {TierFastLightText, "custom-economy"}, {TierEveryday, "custom-standard"}, {TierMostCapable, "custom-premium"},
+	} {
+		if got := cfg.ModelProfiles.ResolveCloudModelForTier(p, tc.tier); got != tc.want {
+			t.Errorf("override tier %s = %q, want %q", tc.tier, got, tc.want)
 		}
 	}
 }
