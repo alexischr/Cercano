@@ -55,7 +55,15 @@ func TestAllCloudTemplateRecommendationsWithoutCredentials(t *testing.T) {
 			fields := p.cloudChoiceFields(p.catalogRow())
 			for _, q := range []config.CostTier{config.CostEconomy, config.CostStandard, config.CostPremium} {
 				want := config.Defaults().ModelProfiles.ResolveCloudModelForTier(profile, q.CapabilityTier())
-				if (want != "") != expected[provider.ID] {
+				hasDefault := expected[provider.ID]
+				if provider.ID == "cerebras" {
+					// Only Economy is approved; do not invent higher-tier defaults.
+					hasDefault = q == config.CostEconomy
+					if hasDefault && want != "gpt-oss-120b" {
+						t.Fatalf("Cerebras Economy = %q, want gpt-oss-120b", want)
+					}
+				}
+				if (want != "") != hasDefault {
 					t.Fatalf("unexpected default coverage: %s = %q", q, want)
 				}
 				if got := p.cloudDraft.Effective[string(q)]; got != want {
