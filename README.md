@@ -134,16 +134,26 @@ still carry costs.
 
 ## Get started
 
-Standalone release publishing is in progress. For now, follow the
-[source build instructions](docs/agent/self-dev.md#layout--build) and the
-[agent setup guide](docs/agent/README.md). The server and terminal client are
-separate Go modules; the development launcher handles building both.
-
-Once the launcher is installed:
+**macOS 12 (Monterey) or later, Apple Silicon:** install with
+[Homebrew](https://brew.sh) and launch the terminal client:
 
 ```bash
-cercano
+brew install cercano-ai/cercano/cercano
+cercano-cli
 ```
+
+The client starts the agent (`cercano`) automatically; you do not need to start
+it separately. Intel Macs are not supported by this release.
+
+To upgrade:
+
+```bash
+brew upgrade cercano
+```
+
+See the [macOS installation guide](docs/installation-macos.md) for first-run
+setup, upgrade troubleshooting, and development-launcher PATH conflicts.
+For development, use the [source build instructions](docs/agent/self-dev.md#layout--build).
 
 Open `/config` to configure models, routing, and permissions. Then try a bounded,
 read-only task in a repository you know:
@@ -151,7 +161,11 @@ read-only task in a repository you know:
 > Find where this project loads its configuration. Delegate the code search to
 > a read-only subagent, then explain the result with file references. Do not edit files.
 
-**Linux:** there is also an experimental, explicitly **unsigned** Linux x86_64 tarball built natively on `ubuntu-24.04` by the same pipeline. Linux is **not a supported platform yet**; see [docs/linux-artifact.md](docs/linux-artifact.md).
+[GitHub Releases](https://github.com/cercano-ai/Cercano/releases) also provides
+standalone downloads: a signed and notarized macOS Apple Silicon tarball,
+an experimental **unsigned** [Linux x86_64 tarball](docs/linux-artifact.md),
+and an experimental **unsigned** [Windows x64 ZIP](docs/windows-artifact.md).
+Linux and Windows are **not supported platforms yet**.
 
 For scripts and automation:
 
