@@ -3,6 +3,7 @@ package taskrun
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sync"
 	"testing"
 
@@ -44,6 +45,9 @@ func TestConcurrentStopAndCompletionRetainEvidenceAndReleaseExecution(t *testing
 	stops.Wait()
 	for _, task := range tasks {
 		final, err := manager.Wait(ctx, "parent", task.ID)
+		for errors.Is(err, conversation.ErrTaskWaitInterrupted) {
+			final, err = manager.Wait(ctx, "parent", task.ID)
+		}
 		if err != nil {
 			t.Fatal(err)
 		}

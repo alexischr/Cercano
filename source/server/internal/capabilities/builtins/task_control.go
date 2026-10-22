@@ -31,7 +31,7 @@ func (c taskControl) Description() string {
 	case "inspect":
 		return "Inspect this chat's task status, saved result, and bounded recent execution evidence. Inspect before reporting progress; distinguish child-authored claims from recorded tool outcomes. Missing results do not prove execution, and silence does not prove a stall."
 	case "wait":
-		return "Wait up to timeout_seconds (default 30, maximum 300) for this chat's task. Timeout or cancellation stops waiting, not execution."
+		return "Wait up to timeout_seconds (default 30, maximum 300) for this chat's task. Timeout or cancellation stops waiting, not execution. If another task in this chat finishes first, the wait returns early with this task's current status so that outcome can be delivered."
 	default:
 		return "Request cancellation of this chat's task. This does not dismiss its tab; inspect or wait for the terminal outcome."
 	}
@@ -92,6 +92,26 @@ func (c taskControl) Execute(ctx context.Context, call *capabilities.Call) (*cap
 			// the deadline state with context.Canceled.
 			waitExpired := waitCtx.Err() == context.DeadlineExceeded
 			cancel()
+			if err != nil && errors.Is(err, conversation.ErrTaskWaitInterrupted) {
+				// Another task in this chat finished while the foreground turn
+				// was blocked in task_wait. The waiter returns early with the
+				// waited task's nonterminal record; end the current reply so
+				// the host's completion boundary can deliver the finished
+				// task's outcome, then wait again if needed. The waited task
+				// keeps running; nothing here consumes or acknowledges the
+				// sibling completion.
+				value, err = call.Svc.Tasks.Inspect(ctx, call.ConversationID, args.ID)
+				if err == nil {
+					if rec, ok := value.(conversation.TaskRecord); ok && !rec.Terminal() {
+						note := fmt.Sprintf("\n(wait interrupted: another task in this chat finished while this turn was waiting; task still %s and running independently — end this reply so the finished task's outcome can be delivered, then wait again if needed)", rec.Status)
+						data, mErr := json.Marshal(value)
+						if mErr != nil {
+							return nil, mErr
+						}
+						return capabilities.NewTextResult(string(data) + note), nil
+					}
+				}
+			}
 			if err != nil && waitExpired && errors.Is(err, context.DeadlineExceeded) {
 				// A wait deadline is a normal bounded-wait outcome, not a task
 				// error: the tool contract says timeout stops waiting, not

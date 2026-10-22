@@ -31,8 +31,14 @@ type Manager struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
 	active  map[string]*execution
-	closed  bool
-	wg      sync.WaitGroup
+	// waitWake holds one edge-triggered wake channel per registered Wait on a
+	// still-running task, keyed by the waiter's parent conversation. Only a
+	// completion signaled AFTER registration can wake a waiter, so
+	// notifications already pending when the wait began never replay into a
+	// busy loop.
+	waitWake map[string][]chan struct{}
+	closed   bool
+	wg       sync.WaitGroup
 	// Notify is nonblocking host scheduling, not a turn-scoped progress callback.
 	notify func(string)
 }
@@ -52,7 +58,7 @@ func New(store conversation.TaskStore, execute Executor, notify func(string)) (*
 		cancel()
 		return nil, err
 	}
-	return &Manager{store: store, execute: execute, ctx: ctx, cancel: cancel, active: make(map[string]*execution), notify: notify}, nil
+	return &Manager{store: store, execute: execute, ctx: ctx, cancel: cancel, active: make(map[string]*execution), waitWake: make(map[string][]chan struct{}), notify: notify}, nil
 }
 
 func (m *Manager) Launch(ctx context.Context, spec dispatch.Spec) (conversation.TaskRecord, error) {
@@ -128,6 +134,13 @@ func (m *Manager) run(ctx context.Context, t conversation.TaskRecord, spec dispa
 	persistCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	_, e.persistErr = m.store.FinishTask(persistCtx, t)
 	cancel()
+	// Wake task_wait callers blocked in this same conversation: their
+	// foreground turn must yield to the completion boundary so this
+	// completion is delivered promptly instead of waiting out the wait
+	// deadline. Waiters on other conversations are not touched.
+	if e.persistErr == nil {
+		m.signalWaitWakeLocked(t.ParentID)
+	}
 	close(e.done)
 	// Keep failed persistence visible to Wait rather than pretending completion
 	// was durably saved. Successful entries need no retained goroutine state.
@@ -167,9 +180,23 @@ func (m *Manager) Stop(ctx context.Context, parent, id string) (conversation.Tas
 	return t, nil
 }
 
-// Wait observes; canceling its context never cancels the task itself.
+// Wait observes; canceling its context never cancels the task itself. When
+// another task in the SAME conversation finishes while this wait is
+// registered, Wait returns early with conversation.ErrTaskWaitInterrupted and
+// the waited task's current nonterminal record, so a foreground turn blocked
+// in task_wait can yield to the host's normal completion-boundary machinery
+// instead of deferring the sibling completion until the wait deadline or user
+// input. The wake is edge-triggered per registration: completions that
+// predate the wait stay pending for the turn boundary and never replay into a
+// busy loop. The waited task is never touched by this early return.
 func (m *Manager) Wait(ctx context.Context, parent, id string) (conversation.TaskRecord, error) {
 	m.mu.Lock()
+	// Register the wake before reading task state: run() signals waiters under
+	// the same lock, so any completion whose bookkeeping happens after this
+	// point is guaranteed to wake this waiter, even when it races the reads
+	// below.
+	wake := m.registerWaitWakeLocked(parent)
+	defer m.unregisterWaitWake(parent, wake)
 	t, err := m.store.GetTask(ctx, parent, id)
 	if err != nil {
 		m.mu.Unlock()
@@ -181,6 +208,28 @@ func (m *Manager) Wait(ctx context.Context, parent, id string) (conversation.Tas
 		select {
 		case <-ctx.Done():
 			return t, ctx.Err()
+		case <-wake:
+			// A sibling wake can race the target's failed terminal write.
+			// Preserve that failure regardless of which ready channel won.
+			select {
+			case <-e.done:
+				if e.persistErr != nil {
+					return t, fmt.Errorf("persist task outcome: %w", e.persistErr)
+				}
+			default:
+			}
+			// A same-chat sibling finished while this wait was registered.
+			// Re-read the record so the caller sees an accurate status. If the
+			// waited task itself finished in the same window, return its real
+			// terminal record with no error.
+			current, gerr := m.store.GetTask(ctx, parent, id)
+			if gerr != nil {
+				return t, gerr
+			}
+			if current.Terminal() {
+				return current, nil
+			}
+			return current, conversation.ErrTaskWaitInterrupted
 		case <-e.done:
 		}
 		if e.persistErr != nil {
@@ -188,6 +237,50 @@ func (m *Manager) Wait(ctx context.Context, parent, id string) (conversation.Tas
 		}
 	}
 	return m.store.GetTask(ctx, parent, id)
+}
+
+// registerWaitWakeLocked adds a one-shot wake channel for parent and returns
+// it. Callers must hold m.mu.
+func (m *Manager) registerWaitWakeLocked(parent string) chan struct{} {
+	wake := make(chan struct{}, 1)
+	if parent != "" {
+		m.waitWake[parent] = append(m.waitWake[parent], wake)
+	}
+	return wake
+}
+
+// unregisterWaitWake removes a wake registration once its wait returns.
+func (m *Manager) unregisterWaitWake(parent string, wake chan struct{}) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if parent == "" {
+		return
+	}
+	chans := m.waitWake[parent]
+	for i, ch := range chans {
+		if ch == wake {
+			m.waitWake[parent] = append(chans[:i], chans[i+1:]...)
+			break
+		}
+	}
+	if len(m.waitWake[parent]) == 0 {
+		delete(m.waitWake, parent)
+	}
+}
+
+// signalWaitWakeLocked wakes every waiter registered for parent. The buffered
+// one-shot channels keep this nonblocking; each waiter observes at most one
+// completion per registration. Callers must hold m.mu.
+func (m *Manager) signalWaitWakeLocked(parent string) {
+	for _, wake := range m.waitWake[parent] {
+		select {
+		case wake <- struct{}{}:
+		default:
+		}
+	}
+	if _, ok := m.waitWake[parent]; ok {
+		m.waitWake[parent] = nil
+	}
 }
 
 // Close stops host-owned execution; it does not replay or wait without bounds.
