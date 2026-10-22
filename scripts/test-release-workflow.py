@@ -136,6 +136,11 @@ class ReleaseWorkflowTest(unittest.TestCase):
             for builder in ("build-macos-release", "build-windows-release", "build-linux-release"):
                 self.assertNotIn(builder, step.get("run", ""))
 
+    def test_release_action_explicitly_disables_asset_overwrite(self):
+        step = self.step("build", "Publish release")
+        self.assertEqual(step["uses"], "softprops/action-gh-release@v2")
+        self.assertIs(step["with"]["overwrite_files"], False)
+
     def test_publication_shell_rejects_changed_bytes_and_existing_assets(self):
         script = self.step("build", "refuse to replace")["run"]
         names = ["cercano-1.2.3-darwin-arm64.tar.gz",
@@ -147,14 +152,44 @@ class ReleaseWorkflowTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             dist = Path(directory) / "dist"
             dist.mkdir()
-            def run(existing=""):
+            def run(existing="", tags="v1.2.3", failure="", status=1):
                 # Local stub only: no GitHub/network access or publication.
-                prefix = 'VERSION=1.2.3\ngh() { printf "%s\\n" "' + existing + '"; }\n'
+                # Simulate errors even after partial output from pagination.
+                prefix = (
+                    'VERSION=1.2.3\ngh() {\n'
+                    '  if [[ "$1" == api ]]; then\n'
+                    '    [[ "$*" == *--paginate* ]] || return 99\n'
+                    f'    printf "%s\\n" "{tags}"\n'
+                    f'    [[ "{failure}" != api ]] || {{ echo "HTTP error" >&2; return {status}; }}\n'
+                    '  else\n'
+                    f'    printf "%s\\n" "{existing}"\n'
+                    f'    [[ "{failure}" != release ]] || {{ echo "lookup failed" >&2; return {status}; }}\n'
+                    '  fi\n'
+                    '}\n'
+                )
                 return subprocess.run([bash_executable(), "-c", prefix + script],
                                       cwd=directory, capture_output=True, text=True)
             for name in names:
                 (dist / name).write_bytes(b"verified archive")
             result = run()
+            self.assertEqual(result.returncode, 0, result.stderr)
+            # Only a successful, complete enumeration proves absence. Do not
+            # call release view in that case (the stub would fail if called).
+            for tags in ("", "v0.9.0\nv2.0.0"):
+                result = run(tags=tags, failure="release")
+                self.assertEqual(result.returncode, 0, result.stderr)
+            for lookup in ("api", "release"):
+                for status in (1, 4):  # API/network error and gh authentication error
+                    result = run(failure=lookup, status=status)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("Cannot enumerate", result.stdout)
+                    self.assertNotIn(": OK", result.stdout)
+            result = run(tags="", failure="api")  # failed lookup is not absence
+            self.assertNotEqual(result.returncode, 0)
+            result = run(names[0], tags="v0.9.0\nv1.2.3")
+            self.assertNotEqual(result.returncode, 0)  # release on a later page
+            # Asset names are literal, not grep regex patterns.
+            result = run(names[0].replace(".", "X"))
             self.assertEqual(result.returncode, 0, result.stderr)
             for name in names:
                 (dist / name).write_bytes(b"changed after verification")

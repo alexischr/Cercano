@@ -241,14 +241,24 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
+          # Enumerate successfully before deciding a release is absent. A 404
+          # from a tag lookup can also mean missing repository access, not absence.
+          # --paginate includes older releases and drafts visible to this token.
+          RELEASE_TAGS="$(gh api --paginate 'repos/{owner}/{repo}/releases?per_page=100' \
+            --jq '.[].tag_name')" \
+            || { echo "::error::Cannot enumerate releases; refusing publication."; exit 1; }
+          ASSETS=""
+          if grep -Fxq "v$VERSION" <<< "$RELEASE_TAGS"; then
+            ASSETS="$(gh release view "v$VERSION" --json assets --jq '.assets[].name')" \
+              || { echo "::error::Cannot enumerate release assets; refusing publication."; exit 1; }
+          fi
           for ASSET in "cercano-$VERSION-darwin-arm64.tar.gz" \
                        "cercano-$VERSION-darwin-arm64.tar.gz.sha256" \
                        "cercano-$VERSION-windows-x64.zip" \
                        "cercano-$VERSION-windows-x64.zip.sha256" \
                        "cercano-$VERSION-linux-x64.tar.gz" \
                        "cercano-$VERSION-linux-x64.tar.gz.sha256"; do
-            if gh release view "v$VERSION" --json assets \
-                 --jq '.assets[].name' 2>/dev/null | grep -qx "$ASSET"; then
+            if grep -Fxq "$ASSET" <<< "$ASSETS"; then
               echo "::error::$ASSET is already published on v$VERSION. Publish a new version instead of replacing it."
               exit 1
             fi
@@ -265,6 +275,8 @@ jobs:
           tag_name: v${{ inputs.version }}
           generate_release_notes: true
           fail_on_unmatched_files: true
+          # action-gh-release v2/action.yml defaults overwrite_files to true.
+          overwrite_files: false
           files: |
             dist/cercano-${{ inputs.version }}-darwin-arm64.tar.gz
             dist/cercano-${{ inputs.version }}-darwin-arm64.tar.gz.sha256
