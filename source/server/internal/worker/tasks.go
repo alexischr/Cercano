@@ -74,6 +74,13 @@ func handleTaskControl(ctx context.Context, tasks capabilities.Tasks, parent str
 		response.ResultJson, err = json.Marshal(result)
 	}
 	if err != nil {
+		// The wire cannot carry Go error identity. Normalize the sentinel to
+		// its exact text so the worker-side bridge can translate it back for
+		// the foreground tool contract; see streamTasks.call.
+		if errors.Is(err, conversation.ErrTaskWaitInterrupted) {
+			response.Error = conversation.ErrTaskWaitInterrupted.Error()
+			return response
+		}
 		response.Error = err.Error()
 		response.NotFound = errors.Is(err, conversation.ErrTaskNotFound)
 		response.ResultJson = nil
@@ -116,6 +123,12 @@ func (p *streamTasks) call(ctx context.Context, parent string, req *proto.TaskCo
 			return conversation.ErrTaskNotFound
 		}
 		if response.GetError() != "" {
+			// Exact-text match with the host-side normalization in
+			// handleTaskControl restores Go error identity for the sentinel
+			// that a same-chat sibling finished during the wait.
+			if response.GetError() == conversation.ErrTaskWaitInterrupted.Error() {
+				return conversation.ErrTaskWaitInterrupted
+			}
 			return errors.New(response.GetError())
 		}
 		return json.Unmarshal(response.GetResultJson(), out)

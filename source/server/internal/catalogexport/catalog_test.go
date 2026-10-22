@@ -28,6 +28,12 @@ func TestSnapshotAndSubscriptionIdentity(t *testing.T) {
 	for _, p := range d.Providers {
 		providers[p.ID] = p
 	}
+	// Cerebras has one approved Economy default, not an all-tier fallback.
+	cerebras := providers["cerebras"]
+	if len(cerebras.Models) != 1 || cerebras.Models[0].ID != "gpt-oss-120b" ||
+		len(cerebras.Models[0].Qualities) != 1 || cerebras.Models[0].Qualities[0] != "economy" {
+		t.Fatalf("wrong Cerebras recommendations: %+v", cerebras.Models)
+	}
 	subscription := providers["openai-responses"]
 	if subscription.Endpoint != "https://chatgpt.com/backend-api/codex" || subscription.Authentication != "subscription" {
 		t.Fatalf("wrong subscription identity: %+v", subscription)

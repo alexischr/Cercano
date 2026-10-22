@@ -205,15 +205,15 @@ func (wp *wizardPage) resourceDescription() string {
 	b.WriteString("How would you like Cercano to work?\n\n")
 	accounts := len(wp.resourceAccounts(true)) + len(wp.resourceAccounts(false))
 	if accounts > 0 {
-		fmt.Fprintf(&b, "  • Cloud: %d selected account(s) with credentials.\n", accounts)
+		fmt.Fprintf(&b, "* **Cloud** - %d selected account(s) with credentials.\n", accounts)
 	} else {
-		b.WriteString("  • Cloud: no connected accounts selected.\n")
+		b.WriteString("* **Cloud** - no connected accounts selected.\n")
 	}
 	ok, why := wp.localResource()
 	if ok {
-		fmt.Fprintf(&b, "  • Local models: eligible — %s\n", why)
+		fmt.Fprintf(&b, "* **Local models** - Eligible: %s\n", why)
 	} else {
-		fmt.Fprintf(&b, "  • Local models: not offered — %s\n", why)
+		fmt.Fprintf(&b, "* **Local models** - Not offered: %s\n", why)
 	}
 	if !wp.routingOK {
 		b.WriteString("\nCurrent routing could not be read safely. Go back to cloud providers and continue again.")

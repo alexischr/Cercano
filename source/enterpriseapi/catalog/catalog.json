@@ -338,7 +338,15 @@
       "placement": "external",
       "authentication": "api_key",
       "status": "untested",
-      "models": []
+      "models": [
+        {
+          "id": "gpt-oss-120b",
+          "label": "gpt-oss-120b",
+          "qualities": [
+            "economy"
+          ]
+        }
+      ]
     },
     {
       "id": "bedrock",

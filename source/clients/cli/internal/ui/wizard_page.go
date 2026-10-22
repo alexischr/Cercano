@@ -9,7 +9,6 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/x/ansi"
 
 	"cercano/source/clients/cli/internal/overlay"
 	"cercano/source/clients/cli/internal/theme"
@@ -1378,11 +1377,7 @@ func (wp *wizardPage) View() string {
 			if rest, ok := strings.CutPrefix(line, "* **"); ok {
 				name, description, found := strings.Cut(rest, "** - ")
 				if found {
-					rendered := wp.styles.Primary.Render("  * ") + wp.styles.Bright.Bold(true).Render(name) + wp.styles.Primary.Render(" - "+description)
-					if wp.width > 0 {
-						rendered = ansi.Wrap(rendered, wp.width, "")
-					}
-					b.WriteString(rendered)
+					b.WriteString(wp.renderWizardBullet(name, description))
 					continue
 				}
 			}
@@ -1399,29 +1394,7 @@ func (wp *wizardPage) View() string {
 		}
 		b.WriteString("\n\n")
 	}
-	for i, r := range wp.rows() {
-		caret := "  "
-		label := r.Label
-		switch {
-		case r.Disabled:
-			label = wp.styles.Muted.Render(label)
-		case i == wp.cursor:
-			caret = wp.styles.SelectionCaret.Render("▶ ")
-			label = wp.styles.Bright.Render(label)
-		default:
-			label = wp.styles.Primary.Render(label)
-		}
-		b.WriteString(caret + padRight(r.Label, label, 28))
-		if r.Annotation != "" {
-			for j, ln := range wrapWords(r.Annotation, wp.width-wizardAnnotationCol) {
-				if j > 0 {
-					b.WriteString("\n" + strings.Repeat(" ", wizardAnnotationCol))
-				}
-				b.WriteString(wp.styles.Info.Render(ln))
-			}
-		}
-		b.WriteString("\n")
-	}
+	b.WriteString(wp.renderWizardRows())
 	b.WriteString("\n")
 	b.WriteString(wp.styles.Muted.Render("↑/↓ move · enter select · esc back · q abandon"))
 	if wp.status != "" {
@@ -1438,11 +1411,6 @@ func padRight(plain, styled string, width int) string {
 	}
 	return styled + " "
 }
-
-// wizardAnnotationCol is the column where a row's annotation begins: 2 for
-// the caret plus the 28-wide label pad in padRight. Wrapped continuation
-// lines indent to it so a long annotation reads as one aligned block.
-const wizardAnnotationCol = 30
 
 // wrapWords splits s into lines no wider than width runes, breaking only at
 // spaces; a word longer than width stands alone on its line. width < 1

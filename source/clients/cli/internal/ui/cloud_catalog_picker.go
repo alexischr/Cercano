@@ -182,7 +182,7 @@ func (sp *settingsPage) startCatalog(force, browse bool) tea.Cmd {
 		if browse {
 			cat, err := client.ListRuntimeModels(ctx)
 			if err != nil {
-				out.err = "Discovery unavailable"
+				out.err = err.Error()
 			} else {
 				out.catalog = &cat
 			}
@@ -191,7 +191,7 @@ func (sp *settingsPage) startCatalog(force, browse bool) tea.Cmd {
 			out.models = models
 			out.err = problem
 			if err != nil {
-				out.err = "Discovery unavailable"
+				out.err = err.Error()
 			}
 		}
 		return out

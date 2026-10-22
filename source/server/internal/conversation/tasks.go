@@ -75,6 +75,16 @@ func (s *sqliteStore) InsertTask(ctx context.Context, t TaskRecord) error {
 
 var ErrTaskNotFound = errors.New("task not found in this conversation")
 
+// ErrTaskWaitInterrupted reports that a Wait returned early because another
+// task in the SAME conversation finished while the caller held the foreground
+// turn. The waited task was not touched and is still running; its current
+// record accompanies the error. The pending sibling completion is left for the
+// host's normal completion-boundary machinery — this signal only releases the
+// blocked wait and consumes nothing. The error text is also a stable wire
+// marker for the worker task-control bridge, which cannot transport Go error
+// identity across the process boundary.
+var ErrTaskWaitInterrupted = errors.New("task wait interrupted: another task in this conversation completed; the waited task is still running")
+
 func scanTask(row interface{ Scan(...any) error }) (TaskRecord, error) {
 	var t TaskRecord
 	var created, updated int64

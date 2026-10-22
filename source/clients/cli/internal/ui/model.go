@@ -245,8 +245,9 @@ type Model struct {
 	// cleared by /clear and /resume).
 	wdRef *struct{ dir string }
 
-	openHistoryOnStart bool // -r flag → open the history picker after first WindowSizeMsg
-	openWizardOnStart  bool // -s/-setup, first run, or wizard resume → open the setup wizard after first WindowSizeMsg
+	openHistoryOnStart   bool // -r flag → open the history picker after first WindowSizeMsg
+	wizardWelcomeOnClose bool // only startup setup owns the initial welcome reveal
+	openWizardOnStart    bool // -s/-setup, first run, or wizard resume → open the setup wizard after first WindowSizeMsg
 
 	// promptBorderColor is the color of the lines immediately above and
 	// below the input row. Defaults to the palette's accent (lime). /color
@@ -528,6 +529,7 @@ func (m Model) SeedAssistantMarkdown(doc string) Model {
 // SeedAssistantMarkdown; splash handling mirrors openHistoryOnStart.
 func (m Model) OpenWizardOnStart() Model {
 	m.openWizardOnStart = true
+	m.wizardWelcomeOnClose = true
 	m.splashShown = false
 	return m
 }
@@ -1518,6 +1520,17 @@ func (m Model) Update(msg tea.Msg) (nextModel tea.Model, nextCmd tea.Cmd) {
 					return m, fetchConfigCmd(m.agent)
 				}
 				if pageID == contentPageWizard {
+					showWelcome := m.wizardWelcomeOnClose
+					m.wizardWelcomeOnClose = false
+					if m.mainChat().HasBanner() {
+						m.splashShown = false
+					}
+					if !showWelcome || m.mainChat().HasBanner() {
+						// /setup is an editor rerun, not a fresh application launch.
+						// Keep the existing chat/banner and its animation epoch.
+						m.relayout()
+						return m, fetchConfigCmd(m.agent)
+					}
 					// OpenWizardOnStart suppressed the splash so the wordmark
 					// didn't sit above the setup steps. Reveal it on finish and
 					// replay the shimmer, so completing setup lands on the CERCANO
@@ -3262,6 +3275,7 @@ func (m Model) runSlash(line string) (tea.Model, tea.Cmd) {
 	case slash.ResultOpenContextView:
 		return m, m.openConfigSurface(configTabContext)
 	case slash.ResultOpenWizard:
+		m.wizardWelcomeOnClose = false
 		m.content = newWizardPage(m.agent, m.palette, m.styles, m.width, m.height)
 	case slash.ResultOpenTrajectoryExport:
 		ev, _ := newTrajectoryExportView(m.agent, m.palette, m.styles, m.width, m.height, m.convID, res.Text)
