@@ -244,3 +244,11 @@ func TestGitLandSafeVerdictLands(t *testing.T) {
 		t.Fatal("feature must be ancestor of main after safe verdict land")
 	}
 }
+
+func TestGitLandDescriptionPostLandCleanup(t *testing.T) {
+	for _, want := range []string{"After success", "worktree-first protocol", "containment and cleanliness", "by default", "without force or implicit branch deletion", "retained path and reason", "Cleanup is not performed by this tool"} {
+		if !strings.Contains(GitLand().Description(), want) {
+			t.Errorf("git_land description missing %q", want)
+		}
+	}
+}

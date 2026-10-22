@@ -1,23 +1,30 @@
 ---
 name: worktree-first
-description: Isolate every feature branch in its own worktree; never share the root workspace.
+description: Use a separate worktree for substantial work; keep tiny, explicit current-branch edits lightweight and safe.
 ---
 
 # Worktree-First Protocol
 
 ## When This Applies
 
-Any time you're about to start a new feature or fix that needs its own
-branch. If your next step is `git checkout -b <newbranch>` in a shared
-workspace, this protocol is mandatory.
+Any time you're about to decide where a change should happen.
+
+Use a separate worktree for substantial work: new features, risky fixes,
+logic changes, multi-file edits, or anything likely to take more than a
+quick pass.
+
+For tiny, explicit edits — a typo, label rename, comment fix, or one-line
+copy tweak — it is okay to stay on the current branch when that is clearly
+what the user wants. If it is not clear, ask: "Do you want this done here
+or in a separate workspace?"
 
 ## The Rule
 
-**Create a worktree; never share the root workspace.** The root worktree
-(the top-level repository directory) is a shared physical checkout —
-multiple concurrent sessions read from it and write to it. If you check
-out a feature branch in the root, every commit any other session makes
-in the root goes onto **your** branch, not the trunk.
+**Match the workspace to the risk.** The root worktree (the top-level
+repository directory) is a shared physical checkout — multiple concurrent
+sessions read from it and write to it. For substantial work, create an
+isolated worktree. For tiny current-branch work, do not scoop up unrelated
+local changes: checkpoint only the explicit paths you touched.
 
 ## Steps
 
@@ -44,6 +51,40 @@ in the root goes onto **your** branch, not the trunk.
    feature is active. If you need to look at trunk state, do it in the
    root (which is already on trunk). If you need to look at your branch,
    do it in the worktree.
+
+## After Successful Landing onto Main/Trunk
+
+After an authorized land succeeds, remove the landed feature's linked worktree
+by default unless the user explicitly asked to retain it. This is an agent
+follow-through step, not automatic cleanup inside git_land. A checkpoint,
+failed land, paused conflict resolution, or review/test failure is not a land.
+
+1. Identify the exact feature worktree and target trunk with
+   `git worktree list --porcelain`. Never remove the primary/root worktree,
+   the current shared trunk checkout, any worktree holding main/trunk, or
+   unrelated worktrees. If identity is uncertain, retain it and report why.
+2. Verify the landed commits are contained in trunk: capture the post-reconcile
+   feature tip (after any rebase) and require
+   `git merge-base --is-ancestor <landed-tip> <trunk>` to succeed. Also require
+   the candidate worktree's current HEAD to be contained in trunk; do not
+   remove a worktree with newer unlanded commits. A successful tool response
+   alone is not this verification.
+3. Verify the worktree is clean with
+   `git -C <feature-path> status --porcelain --untracked-files=all` (empty
+   output required). Check for ignored files worth preserving as well; do
+   not discard them. Confirm no active session/process is using the worktree
+   and it is not locked. If dirty, in use, locked, or checks fail or are
+   uncertain, leave it intact and report the remaining path and reason.
+4. Move your own command/session working directory outside the candidate,
+   to a retained checkout. Recheck identity, containment, and cleanliness
+   immediately before running `git -C <retained-checkout> worktree remove <feature-path>`.
+   Never force removal: no --force, recursive directory deletion, reset,
+   clean, or automatic stash to bypass a refusal. If removal fails, preserve
+   the worktree and report the remaining path and reason rather than discard work.
+5. Report the landed branch/SHA and whether its worktree was removed or retained
+   (with the remaining path and reason). Do not delete the feature branch
+   implicitly; branch deletion requires separate explicit authorization.
+   Never push as part of this cleanup.
 
 ## Why This Exists
 
@@ -76,24 +117,21 @@ now trades minutes for hours of rebase conflict resolution later.
 - "How did I end up with 14 commits I don't recognize?" investigations
   mid-rebase
 
-## Fast Path for Trivial Changes
+## Fast Path for Tiny Current-Branch Changes
 
-For genuinely trivial changes — a typo, a label rename, a comment fix,
-a one-line copy tweak — the worktree ceremony is disproportionate. The
-fast path is:
+For genuinely tiny changes — a typo, a label rename, a comment fix, or a
+one-line copy tweak — the worktree ceremony is disproportionate. The fast
+path is:
 
-- Applies to changes ≤ 5 lines across ≤ 2 files with no logic changes.
-- **Create a feature branch in the root** with `git checkout -b fix/<slug>`.
-  The worktree-first watchdog check is expected to fire here; overriding
-  it is the fast-path escape valve, and the user is asked to authorize.
-- **Stage only your intended files** with an explicit path list.
-  Root may have other sessions' in-progress edits — never `git add -A`.
-- **Commit via the checkpoint tool.**
-- **Land via `git_land`.** The test gate and safety refs still run —
-  the fast path saves worktree ceremony, not the safety guarantees.
-- **Delete the branch** after landing.
+- Applies to small edits with no logic changes.
+- Stay on the current branch when the user clearly wants a quick edit here.
+- If it is not clear, ask whether to work here or in a separate workspace.
+- Checkpoint with explicit `paths` and, when the current branch is trunk,
+  explicit `allow_trunk`. This stages only the files you name and leaves
+  unrelated local work alone.
+- Never use raw `git add -A` for current-branch quick edits.
 
-The fast path is deliberately narrow. Anything with a logic change, a
-new file, or touching more than a couple of files goes through the
-full worktree flow. When in doubt: use the worktree.
+The fast path is deliberately narrow. Anything with a logic change, a new
+file, or touching more than a couple of files goes through the full
+worktree flow. When in doubt, ask the user which workspace they want.
 

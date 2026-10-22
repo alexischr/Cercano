@@ -490,3 +490,30 @@ func TestPlanningModeTriggerDefaultsToDirectExecution(t *testing.T) {
 		}
 	}
 }
+
+func TestWorktreeFirstPostLandCleanupContract(t *testing.T) {
+	p, _ := Get("worktree-first")
+	for _, want := range []string{
+		"After an authorized land succeeds", "by default unless the user explicitly asked to retain it",
+		"not automatic cleanup inside git_land", "failed land",
+		"git worktree list --porcelain", "primary/root worktree", "current shared trunk checkout",
+		"any worktree holding main/trunk", "unrelated worktrees",
+		"post-reconcile", "git merge-base --is-ancestor <landed-tip> <trunk>",
+		"current HEAD to be contained in trunk", "--untracked-files=all", "ignored files",
+		"active session/process", "dirty, in use, locked", "remaining path and reason",
+		"working directory outside the candidate", "Recheck identity, containment, and cleanliness",
+		"git -C <retained-checkout> worktree remove <feature-path>", "Never force removal",
+		"If removal fails", "Do not delete the feature branch", "separate explicit authorization",
+	} {
+		if !strings.Contains(p.Body, want) {
+			t.Errorf("post-land cleanup contract missing %q", want)
+		}
+	}
+	if !strings.Contains(p.Trigger, "After successful landing") {
+		t.Fatal("steering must surface cleanup after landing")
+	}
+	delegation, _ := Get("delegate-git-plumbing")
+	if !strings.Contains(delegation.Body, "report worktree cleanup status") {
+		t.Fatal("delegated land must report cleanup outcome")
+	}
+}

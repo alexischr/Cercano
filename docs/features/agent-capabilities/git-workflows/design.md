@@ -125,8 +125,20 @@ All steps are decisions in code:
    or the floor trips → **pause for human eyes** before the fast-forward. Review clean and
    floor not tripped → continue. Clean lands (no conflicts) skip this entirely.
 8. **`merge --ff-only`** onto trunk — clean by construction.
-9. **Stop. Report "ready to push"** with the command. Never push.
-10. **Offer** worktree teardown + merged-branch delete (do not auto-do it).
+9. **Agent post-land cleanup:** after successful landing, remove only the landed
+   feature's linked worktree by default, following the `worktree-first` protocol
+   (unless the user requested retention). Verify the post-reconcile landed tip
+   and current worktree HEAD are contained in trunk, and the worktree is clean
+   including untracked files; preserve ignored files of value. Never remove the
+   primary/root or current shared trunk checkout, a main/trunk worktree, or
+   unrelated worktrees. Leave dirty, locked, in-use, or uncertain worktrees intact.
+   Run non-forced `git worktree remove` from a retained checkout only after these
+   checks. Never force removal or discard work to make cleanup succeed.
+   This is protocol guidance, not automatic behavior inside `git_land`.
+10. **Report "ready to push"** with the command and cleanup outcome. Never push.
+    If cleanup is skipped or fails, report the remaining path and reason.
+    Do not delete the feature branch implicitly; require separate explicit
+    authorization for branch deletion.
 
 ### Why the LLM resolving conflicts is safe here
 

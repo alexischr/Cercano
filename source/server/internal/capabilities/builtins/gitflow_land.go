@@ -25,7 +25,7 @@ func (gitLandCap) Surfaces() capabilities.Surface {
 	return capabilities.SurfaceAgent | capabilities.SurfaceMCP
 }
 func (gitLandCap) Description() string {
-	return "Land a feature branch onto trunk: reconcile (rebase or merge), run the test gate, review any conflict resolution, then fast-forward trunk. Never pushes. Args: {feature?: string, trunk?: string, strategy?: \"rebase\"|\"merge\", continue?: bool, cwd?: string}."
+	return "Land a feature branch onto trunk: reconcile (rebase or merge), run the test gate, review any conflict resolution, then fast-forward trunk. Never pushes. After success, the agent should follow the worktree-first protocol to verify containment and cleanliness and remove only the landed feature linked worktree by default, without force or implicit branch deletion; report any retained path and reason. Cleanup is not performed by this tool. Args: {feature?: string, trunk?: string, strategy?: \"rebase\"|\"merge\", continue?: bool, cwd?: string}."
 }
 func (gitLandCap) Schema() capabilities.Schema {
 	return capabilities.Schema(`{

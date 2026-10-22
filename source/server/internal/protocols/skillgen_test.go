@@ -32,3 +32,17 @@ func TestWriteSkillFiles(t *testing.T) {
 		t.Fatalf(".claude mirror missing: %v", err)
 	}
 }
+
+func TestWorktreeFirstCheckedInSkillsMatchProtocol(t *testing.T) {
+	p, _ := Get("worktree-first")
+	for _, tree := range skillTrees {
+		path := filepath.Join("../../../..", tree, p.Name, "SKILL.md")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(data) != SkillContent(p) {
+			t.Errorf("%s differs from canonical worktree-first protocol", path)
+		}
+	}
+}

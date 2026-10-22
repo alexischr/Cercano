@@ -281,7 +281,7 @@ If you can't answer these, you don't understand the system well enough to simula
 		Name:        "worktree-first",
 		Description: "Use a separate worktree for substantial work; keep tiny, explicit current-branch edits lightweight and safe.",
 		Domain:      DomainCore,
-		Trigger:     "Before creating a new feature branch → use the `git_worktree` tool for substantial work; for tiny current-branch edits, ask when unsure and checkpoint only explicit paths.",
+		Trigger:     "Before creating a new feature branch → use the `git_worktree` tool for substantial work; for tiny current-branch edits, ask when unsure and checkpoint only explicit paths. After successful landing onto main/trunk, follow this protocol to remove the landed feature worktree safely by default.",
 		Body: `# Worktree-First Protocol
 
 ## When This Applies
@@ -330,6 +330,40 @@ local changes: checkpoint only the explicit paths you touched.
    feature is active. If you need to look at trunk state, do it in the
    root (which is already on trunk). If you need to look at your branch,
    do it in the worktree.
+
+## After Successful Landing onto Main/Trunk
+
+After an authorized land succeeds, remove the landed feature's linked worktree
+by default unless the user explicitly asked to retain it. This is an agent
+follow-through step, not automatic cleanup inside git_land. A checkpoint,
+failed land, paused conflict resolution, or review/test failure is not a land.
+
+1. Identify the exact feature worktree and target trunk with
+   ` + "`" + `git worktree list --porcelain` + "`" + `. Never remove the primary/root worktree,
+   the current shared trunk checkout, any worktree holding main/trunk, or
+   unrelated worktrees. If identity is uncertain, retain it and report why.
+2. Verify the landed commits are contained in trunk: capture the post-reconcile
+   feature tip (after any rebase) and require
+   ` + "`" + `git merge-base --is-ancestor <landed-tip> <trunk>` + "`" + ` to succeed. Also require
+   the candidate worktree's current HEAD to be contained in trunk; do not
+   remove a worktree with newer unlanded commits. A successful tool response
+   alone is not this verification.
+3. Verify the worktree is clean with
+   ` + "`" + `git -C <feature-path> status --porcelain --untracked-files=all` + "`" + ` (empty
+   output required). Check for ignored files worth preserving as well; do
+   not discard them. Confirm no active session/process is using the worktree
+   and it is not locked. If dirty, in use, locked, or checks fail or are
+   uncertain, leave it intact and report the remaining path and reason.
+4. Move your own command/session working directory outside the candidate,
+   to a retained checkout. Recheck identity, containment, and cleanliness
+   immediately before running ` + "`" + `git -C <retained-checkout> worktree remove <feature-path>` + "`" + `.
+   Never force removal: no --force, recursive directory deletion, reset,
+   clean, or automatic stash to bypass a refusal. If removal fails, preserve
+   the worktree and report the remaining path and reason rather than discard work.
+5. Report the landed branch/SHA and whether its worktree was removed or retained
+   (with the remaining path and reason). Do not delete the feature branch
+   implicitly; branch deletion requires separate explicit authorization.
+   Never push as part of this cleanup.
 
 ## Why This Exists
 
@@ -385,7 +419,7 @@ worktree flow. When in doubt, ask the user which workspace they want.
 		Name:        "delegate-git-plumbing",
 		Description: "Delegate noisy git plumbing to a sub-agent so its churn stays out of the main context.",
 		Domain:      DomainCore,
-		Trigger:     "Before running git plumbing (worktree, rebase, status/diff, fast-forward, land, bisect) inline → delegate it to a sub-agent via the `dispatch` tool (aka `workflow`), whose completed result should contain just the branch and SHA; inspect or wait on the returned task handle so porcelain and diffs stay out of the main context.",
+		Trigger:     "Before running git plumbing (worktree, rebase, status/diff, fast-forward, land, bisect) inline → delegate it to a sub-agent via the `dispatch` tool (aka `workflow`), whose completed result should contain the branch and SHA plus post-land worktree cleanup status (remaining path and reason if retained); inspect or wait on the returned task handle so porcelain and diffs stay out of the main context.",
 		Body: `# Delegate Git Plumbing Protocol
 
 Git plumbing is noisy and its output has no lasting value once the operation
@@ -399,7 +433,9 @@ When the work is noisy git mechanics — creating a worktree, rebasing,
 inspecting status or diff, fast-forwarding, running a land's test-gate, or
 bisecting — hand it to a sub-agent via the ` + "`dispatch`" + ` capability (its
 ` + "`workflow`" + ` alias works too). The sub-agent does the churn and returns one
-line: the resulting branch and short SHA, or "conflict at <file>".
+line: the resulting branch and short SHA, or "conflict at <file>". After a
+land, also report worktree cleanup status; if retained, include its path and
+reason. Follow the worktree-first post-land cleanup protocol.
 
 The public launch returns task_id and child_id immediately, not that result.
 Use task_inspect or task_wait to obtain the completed outcome before relying on
