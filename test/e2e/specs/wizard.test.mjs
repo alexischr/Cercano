@@ -1,16 +1,16 @@
 import { test } from "node:test";
 import { withCli, ready } from "../helpers/cli.mjs";
 
-const WELCOME = "Setup — how to run Cercano";
-const CLOUD = "Setup — cloud provider";
+const WELCOME = "Setup — cloud providers";
+const PREFERENCE = "Setup — configure Cercano";
 const ABANDON_ARMED = "abandon setup?";
 
 test("a missing config.yaml opens the setup wizard", async (t) => {
   await withCli(t, { seedConfig: false }, async ({ term }) => {
     await term.getByText(WELCOME).expect();
-    await term.getByText("Welcome to Cercano.").expect();
-    await term.getByText("▶ Review recommended setup").expect();
-    await term.getByText("Customize setup").expect();
+    await term.getByText("Add your cloud providers").expect();
+    await term.getByText("▶ Add cloud provider…").expect();
+    await term.getByText("Continue without connecting").expect();
     await term.getByText("↑/↓ move · enter select · esc back · q abandon").expect();
   });
 });
@@ -18,20 +18,22 @@ test("a missing config.yaml opens the setup wizard", async (t) => {
 test("Enter advances the wizard and Esc steps back", async (t) => {
   await withCli(t, { seedConfig: false }, async ({ term }) => {
     await term.getByText(WELCOME).expect();
+    await term.press("Down");
+    await term.getByText("▶ Continue without connecting").expect();
     await term.press("Enter");
-    await term.getByText(CLOUD).expect();
-    await term.getByText("+ Add cloud provider…").expect();
+    await term.getByText(PREFERENCE).expect();
+    await term.getByText("How would you like Cercano to work?").expect();
     await term.press("Escape");
     await term.getByText(WELCOME).expect();
   });
 });
 
-test("Down moves the selection to Customize setup", async (t) => {
+test("Down selects Continue without connecting", async (t) => {
   await withCli(t, { seedConfig: false }, async ({ term }) => {
     await term.getByText(WELCOME).expect();
     await term.press("Down");
-    await term.getByText("▶ Customize setup").expect();
-    await term.getByText("▶ Review recommended setup").expect({ not: true });
+    await term.getByText("▶ Continue without connecting").expect();
+    await term.getByText("▶ Add cloud provider…").expect({ not: true });
   });
 });
 

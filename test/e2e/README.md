@@ -12,7 +12,8 @@ npm run build   # builds .bin/cercano and .bin/cercano-cli side by side
 npm test
 ```
 
-Requires Go (for the build) and Node 20+. Runs on macOS and Linux.
+Requires Go (for the build), Node 20+, and `lsof`/`ps` (for auto-launch
+cleanup). Runs on macOS and Linux. CI uses Node 22.13.0.
 
 Run one file or one test:
 
@@ -39,7 +40,14 @@ Each test gets a sandbox (`helpers/sandbox.mjs`), so the suite never touches
 
 Most specs start `cercano agent` themselves (`helpers/agent.mjs`) and stop its
 whole process group afterwards. `server-discovery.test.mjs` covers the CLI's
-own auto-launch path.
+own auto-launch path. Its fallback cleanup (`helpers/owned-agent.mjs`) treats
+port listeners only as candidates: it verifies the exact agent command, sandbox
+HOME/TMPDIR/port, and auto-launch marker before signalling. It sends SIGTERM,
+waits up to five seconds, then rechecks ownership and process start time before
+SIGKILL. Unverifiable or unrelated processes are never signalled; an unsupported
+ownership probe can therefore leave a failed run's agent for manual inspection.
+Regression tests cover ownership rejection, escalation, identity changes, and a
+real sandbox agent.
 
 ## Writing a spec
 
