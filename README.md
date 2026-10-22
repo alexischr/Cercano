@@ -134,6 +134,8 @@ still carry costs.
 
 ## Get started
 
+### macOS (supported)
+
 **macOS 12 (Monterey) or later, Apple Silicon:** install with
 [Homebrew](https://brew.sh) and launch the terminal client:
 
@@ -153,6 +155,55 @@ brew upgrade cercano
 
 See the [macOS installation guide](docs/installation-macos.md) for first-run
 setup, upgrade troubleshooting, and development-launcher PATH conflicts.
+
+### Linux x86_64 (experimental, unsigned)
+
+Download and unpack the published release, verify its checksum, then launch
+from the extracted directory (requires `curl`, `sha256sum`, and `tar`):
+
+```bash
+version=0.24.0
+archive="cercano-$version-linux-x64.tar.gz"
+url="https://github.com/cercano-ai/Cercano/releases/download/v$version"
+curl -fLO "$url/$archive" &&
+curl -fLO "$url/$archive.sha256" &&
+sha256sum -c "$archive.sha256" &&
+tar -xzf "$archive" &&
+"./cercano-$version-linux-x64/bin/cercano-cli"
+```
+
+See the [Linux artifact guide](docs/linux-artifact.md) for limitations,
+including credential storage requiring a desktop Secret Service/KWallet.
+
+### Windows x64 (experimental, unsigned)
+
+In PowerShell, download, verify, extract, and launch the published release:
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$version = '0.24.0'
+$archive = "cercano-$version-windows-x64.zip"
+$url = "https://github.com/cercano-ai/Cercano/releases/download/v$version"
+Invoke-WebRequest "$url/$archive" -OutFile $archive
+Invoke-WebRequest "$url/$archive.sha256" -OutFile "$archive.sha256"
+$expected = ((Get-Content "$archive.sha256" -Raw).Trim() -split '\s+')[0]
+if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne $expected) { throw 'Checksum mismatch' }
+Expand-Archive -Path $archive -DestinationPath .
+& ".\cercano-$version-windows-x64\bin\cercano-cli.exe"
+```
+
+Windows may show an unknown-publisher warning. See the
+[Windows artifact guide](docs/windows-artifact.md) for limitations and testing.
+
+These examples use release **0.24.0** and leave both binaries together in the
+extracted `bin` directory; no administrator access or PATH changes are needed.
+Linux and Windows remain **experimental, not supported releases**. The current
+website lists apt and Chocolatey as coming soon, not available install methods.
+Checksums verify download integrity, not publisher identity.
+
+### First run
+
+The terminal client starts the agent automatically on all three platforms.
 For development, use the [source build instructions](docs/agent/self-dev.md#layout--build).
 
 Open `/config` to configure models, routing, and permissions. Then try a bounded,
@@ -161,13 +212,12 @@ read-only task in a repository you know:
 > Find where this project loads its configuration. Delegate the code search to
 > a read-only subagent, then explain the result with file references. Do not edit files.
 
-[GitHub Releases](https://github.com/cercano-ai/Cercano/releases) also provides
-standalone downloads: a signed and notarized macOS Apple Silicon tarball,
-an experimental **unsigned** [Linux x86_64 tarball](docs/linux-artifact.md),
-and an experimental **unsigned** [Windows x64 ZIP](docs/windows-artifact.md).
-Linux and Windows are **not supported platforms yet**.
+[GitHub Releases](https://github.com/cercano-ai/Cercano/releases) provides the
+archives and checksums above, plus a signed and notarized macOS Apple Silicon
+tarball.
 
-For scripts and automation:
+For scripts and automation (on Linux/Windows, use the extracted
+`bin/cercano` or `bin\cercano.exe` path instead of the bare command):
 
 ```bash
 cercano run "Explain this repository's top-level structure without editing files"
