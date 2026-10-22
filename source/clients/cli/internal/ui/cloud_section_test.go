@@ -189,8 +189,8 @@ func TestCloudSectionSubscriptionProfileIsOAuthOnly(t *testing.T) {
 	for _, f := range sec.Fields {
 		keys[f.Key()] = true
 	}
-	if !keys["cloud-route"] {
-		t.Fatalf("subscription profile should show auth route: %v", keys)
+	if keys["cloud-route"] || !keys["cloud-signin-claude"] {
+		t.Fatalf("subscription profile should explain authentication through its sign-in action, without a duplicate route row: %v", keys)
 	}
 	if keys["cloud-key"] {
 		t.Fatalf("subscription profile must not show an API-key field: %v", keys)

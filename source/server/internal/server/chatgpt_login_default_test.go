@@ -68,11 +68,14 @@ func runTestChatGPTLogin(t *testing.T, s *Server, flow chatgptauth.Flow) config.
 	return config.CloudProfile{}
 }
 
-func TestChatGPTLoginDefaultsEveryTierToLatestCatalogModel(t *testing.T) {
+func TestChatGPTLoginPreservesDistinctConfiguredTierDefaults(t *testing.T) {
 	s, _ := newTestServer()
-	var sawAuth string
+	c := s.cfgSvc.Get()
+	c.ModelProfiles = config.Defaults().ModelProfiles
+	s.cfgSvc.Set(c)
+	var asked bool
 	flow := chatgptLoginFixture(t, s, func(w http.ResponseWriter, r *http.Request) {
-		sawAuth = r.Header.Get("Authorization")
+		asked = true
 		w.Write([]byte(`{"models":[
 			{"slug":"gpt-6-astra","display_name":"GPT-6-Astra","visibility":"list","priority":2},
 			{"slug":"internal-preview","display_name":"preview","visibility":"hide","priority":0},
@@ -82,17 +85,45 @@ func TestChatGPTLoginDefaultsEveryTierToLatestCatalogModel(t *testing.T) {
 
 	p := runTestChatGPTLogin(t, s, flow)
 
-	if sawAuth != "Bearer synthetic-access" {
-		t.Errorf("catalog auth: got %q want the freshly issued bearer", sawAuth)
+	if len(p.TierOverrides) != 0 {
+		t.Errorf("login invented tier overrides: %v", p.TierOverrides)
 	}
-	for _, tier := range []config.CostTier{config.CostEconomy, config.CostStandard, config.CostPremium} {
-		if got := p.TierOverrides[tier]; got != "gpt-6.1-sol" {
-			t.Errorf("tier %s: got %q want latest catalog model gpt-6.1-sol", tier, got)
+	defaults := s.cfgSvc.Get().ModelProfiles
+	base := config.CloudProfile{Flavor: "responses", Route: "chatgpt"}
+	seen := map[string]bool{}
+	for _, tier := range []config.Tier{config.TierFastLight, config.TierEveryday, config.TierMostCapable} {
+		want := defaults.ResolveCloudModelForTier(base, tier)
+		got := defaults.ResolveCloudModelForTier(p, tier)
+		if got != want {
+			t.Errorf("%s resolved to %s, want configured default %s", tier, got, want)
+		}
+		seen[want] = true
+	}
+	if len(seen) != 3 {
+		t.Fatalf("fixture must exercise distinct defaults: %v", seen)
+	}
+	if asked {
+		t.Fatal("authentication should not query a catalog to rewrite tier assignments")
+	}
+	reply, err := s.GetCloudProfiles(t.Context(), &proto.GetCloudProfilesRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, info := range reply.Profiles {
+		if info.Name == p.Name {
+			for quality, tier := range map[string]config.Tier{"economy": config.TierFastLight, "standard": config.TierEveryday, "premium": config.TierMostCapable} {
+				if got, want := info.EffectiveQualityModels[quality], defaults.ResolveCloudModelForTier(base, tier); got != want {
+					t.Errorf("wire %s=%s, want %s", quality, got, want)
+				}
+			}
+			return
 		}
 	}
+	t.Fatal("profile missing from account RPC")
+
 }
 
-func TestChatGPTLoginKeepsBakedDefaultWhenCatalogFails(t *testing.T) {
+func TestChatGPTLoginDoesNotDependOnModelCatalog(t *testing.T) {
 	s, _ := newTestServer()
 	var asked bool
 	flow := chatgptLoginFixture(t, s, func(w http.ResponseWriter, r *http.Request) {
@@ -102,8 +133,8 @@ func TestChatGPTLoginKeepsBakedDefaultWhenCatalogFails(t *testing.T) {
 
 	p := runTestChatGPTLogin(t, s, flow)
 
-	if !asked {
-		t.Fatal("login never asked the catalog, so the fallback path was not exercised")
+	if asked {
+		t.Fatal("login unexpectedly depended on the model catalog")
 	}
 	if len(p.TierOverrides) != 0 {
 		t.Errorf("catalog failure wrote tier overrides: %v", p.TierOverrides)
@@ -176,4 +207,50 @@ func TestSavingFirstCloudKeyWithoutSetupMakesMainProviderAvailable(t *testing.T)
 	if err != nil || provider == nil || !cloud {
 		t.Fatalf("prompt unavailable after key save: cloud=%v err=%v", cloud, err)
 	}
+}
+
+func TestChatGPTLoginUsesConfiguredInsteadOfHardcodedTierModels(t *testing.T) {
+	s, _ := newTestServer()
+	c := s.cfgSvc.Get()
+	c.ModelProfiles = config.Defaults().ModelProfiles
+	c.ModelProfiles.Cloud.Providers["openai-chatgpt"] = config.VendorCostTiers{Economy: config.CostTierModel{Model: "configured-economy"}, Standard: config.CostTierModel{Model: "configured-standard"}, Premium: config.CostTierModel{Model: "configured-premium"}}
+	s.cfgSvc.Set(c)
+	flow := chatgptLoginFixture(t, s, func(w http.ResponseWriter, r *http.Request) { t.Error("login unexpectedly fetched model catalog") })
+	p := runTestChatGPTLogin(t, s, flow)
+	for tier, want := range map[config.Tier]string{config.TierFastLight: "configured-economy", config.TierEveryday: "configured-standard", config.TierMostCapable: "configured-premium"} {
+		if got := s.cfgSvc.Get().ModelProfiles.ResolveCloudModelForTier(p, tier); got != want {
+			t.Fatalf("%s resolved to %s, want %s", tier, got, want)
+		}
+	}
+}
+
+func TestChatGPTReauthenticationPreservesExplicitQualityOverrides(t *testing.T) {
+	s, _ := newTestServer()
+	c := s.cfgSvc.Get()
+	c.ModelProfiles = config.Defaults().ModelProfiles
+	before := config.CloudProfile{Name: "chatgpt", Flavor: "responses", Route: "chatgpt", TierOverrides: map[config.CostTier]string{config.CostEconomy: "user-economy", config.CostStandard: "gpt-6.1-sol", config.CostPremium: "user-premium"}}
+	c.CloudProfiles = []config.CloudProfile{before.Clone()}
+	s.cfgSvc.Set(c)
+	flow := chatgptLoginFixture(t, s, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("reauthentication fetched catalog to choose models")
+	})
+	stream := &chatgptLoginTestStream{ctx: t.Context()}
+	if err := s.runChatGPTLogin(&proto.StartChatGPTLoginRequest{ProfileName: "chatgpt"}, stream, true, flow); err != nil {
+		t.Fatal(err)
+	}
+	last := stream.events[len(stream.events)-1]
+	if !last.Ok {
+		t.Fatal(last.Error)
+	}
+	for _, p := range s.cfgSvc.Get().CloudProfiles {
+		if p.Name == "chatgpt" {
+			for tier, want := range before.TierOverrides {
+				if p.TierOverrides[tier] != want {
+					t.Fatalf("reauthentication changed %s", tier)
+				}
+			}
+			return
+		}
+	}
+	t.Fatal("account disappeared")
 }

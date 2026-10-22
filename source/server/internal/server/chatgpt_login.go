@@ -11,8 +11,6 @@
 package server
 
 import (
-	"context"
-	"log"
 	"strings"
 
 	"cercano/source/server/internal/chatgptauth"
@@ -92,10 +90,8 @@ func (s *Server) runChatGPTLogin(req *proto.StartChatGPTLoginRequest, stream pro
 	}
 	isActive := result.Active
 	np = result.Profile
-	if strings.TrimSpace(req.GetModel()) == "" {
-		// The login attempt's context ends at Commit; the RPC stream's does not.
-		np = s.defaultChatGPTTiersToLatest(stream.Context(), np, ts.Access, ts.AccountID)
-	}
+	// Authentication must not manufacture quality overrides. Unset tiers
+	// continue to resolve through the configured per-tier model defaults.
 
 	if isActive {
 		if err := s.rebuildCloud(); err != nil {
@@ -106,44 +102,6 @@ func (s *Server) runChatGPTLogin(req *proto.StartChatGPTLoginRequest, stream pro
 	}
 	s.persistConfig()
 	return sendChatGPTLoginResult(stream, true, profile, ts.AccountID, "")
-}
-
-// defaultChatGPTTiersToLatest points every cost tier the profile has not
-// explicitly overridden at the newest model the account's codex catalog
-// offers (its highest-priority picker entry), so a fresh sign-in starts on
-// what the subscription actually serves rather than a baked default that can
-// lag the account. Best effort: if the catalog is unreachable the baked
-// vendor default stays in effect and the sign-in still succeeds.
-func (s *Server) defaultChatGPTTiersToLatest(ctx context.Context, p config.CloudProfile, access, accountID string) config.CloudProfile {
-	models, err := s.fetchChatGPTCatalog(ctx, access, accountID)
-	if err != nil || len(models) == 0 {
-		log.Printf("[chatgpt] keeping default models for %s: catalog unavailable: %v", p.Name, err)
-		return p
-	}
-	latest := models[0].Slug
-	updated := p
-	err = s.cfgSvc.Mutate(func(c *config.Config) {
-		for i := range c.CloudProfiles {
-			prof := &c.CloudProfiles[i]
-			if prof.Name != p.Name {
-				continue
-			}
-			if prof.TierOverrides == nil {
-				prof.TierOverrides = map[config.CostTier]string{}
-			}
-			for _, tier := range []config.CostTier{config.CostEconomy, config.CostStandard, config.CostPremium} {
-				if prof.TierOverrides[tier] == "" {
-					prof.TierOverrides[tier] = latest
-				}
-			}
-			updated = prof.Clone()
-		}
-	})
-	if err != nil {
-		log.Printf("[chatgpt] keeping default models for %s: %v", p.Name, err)
-		return p
-	}
-	return updated
 }
 
 // sendChatGPTLoginResult emits the terminal frame of the sign-in stream.

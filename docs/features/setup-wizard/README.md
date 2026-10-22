@@ -358,3 +358,22 @@ inheritance. These choices are computed at request time, not saved as setup-time
 model pins. If no confirmed candidate is available, select an image-capable model
 there (or configure local vision for local-only use). This policy handles image
 understanding, not image generation, and does not change local-only privacy rules.
+
+## Rendering and account defaults
+
+Subscription sign-in and API-key-switch actions explain the authentication mode;
+the provider editor does not repeat a separate Authentication / Subscription
+sign-in row when those actions are present. Capability bullets use bold,
+accent-colored labels with hanging descriptions. Setup choices and actions use
+aligned name/description columns, with stacked rows on narrow terminals.
+
+ChatGPT sign-in does not choose one catalog model for every quality tier. Unset
+Economy, Standard, and Premium slots inherit the configured per-tier defaults.
+Reauthentication preserves explicit overrides. An account affected by older
+all-SOL defaulting can be corrected by choosing **Use inherited recommendation**
+in each of its three Model tiers menus. This clears those explicit quality
+overrides without reauthenticating or changing image choices or credentials.
+
+Rerunning `/setup` returns to the existing chat without replaying the opening
+animation above its existing banner. Startup setup still reveals one welcome
+when it closes.

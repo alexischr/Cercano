@@ -198,7 +198,7 @@ func (sp *settingsPage) cloudDetailFields(r cloudRow) []form.Field {
 	if sp.shouldShowClaudeSignIn(r, d) {
 		out = append(out, form.NewButton("cloud-signin-claude", "sign in with Claude (subscription)", true))
 	}
-	if d.Route == "subscription" {
+	if d.Route == "subscription" && !sp.shouldShowClaudeSignIn(r, d) {
 		out = append(out, form.NewReadOnly("cloud-route", "Authentication", "Subscription sign-in", ""))
 	}
 	if d.Route != "subscription" && d.Flavor != "responses" {
