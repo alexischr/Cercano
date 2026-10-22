@@ -14,7 +14,7 @@ the intended next deliverable; this artifact is its first build-and-smoke-test m
 ## What is produced
 
 `cercano-<version>-windows-x64.zip` and its `.sha256` checksum, attached to the
-GitHub release only when `publish=true` is explicitly selected.
+GitHub release when `publish=true` (the default; `false` is an optional dry run).
 
 ```
 cercano-<version>-windows-x64/
@@ -50,8 +50,8 @@ The `build-windows` job of [release-macos.yml](../.github/workflows/release-maco
 - runs the Windows-native, hermetic helper tests
   (`localruntime/llamaserver` registry/PATH unit tests);
 - verifies the archive layout and integrity before upload;
-- publishes only under the explicit `publish=true` opt-in, after **all three**
-  build jobs (macOS, Windows, Linux) succeed, and refuses to replace any already
+- publishes with `publish=true` (the default), after **all three**
+  platform verification gates (macOS, Windows, Linux) pass, and refuses to replace any already
   published asset (macOS, Windows or Linux).
 
 The smoke test exercises **only** `--version` on both binaries. It does not
@@ -76,7 +76,7 @@ host coverage is part of the support checklist below.
   Windows signing at all — see the checklist.
 - The workflow remains manual-dispatch only; there is no push/tag/PR trigger,
   so no untrusted code can start it.
-- Publication remains a separate explicit opt-in (`publish=true`) guarded by
+- Publication defaults to `publish=true` in the same run, guarded by
   the protected `release` environment, and it never overwrites an existing
   asset.
 - The successful, immutable `v0.20.0` macOS release is untouched by this

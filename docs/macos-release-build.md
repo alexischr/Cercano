@@ -48,8 +48,9 @@ The script fails closed, and a refused build leaves no archive behind:
 
 The script **does not notarize**. A built archive is signed but not yet
 distributable: run `scripts/notarize-macos-local.py` (or the release workflow)
-against the staged `bin` directory, and complete the clean-Mac rehearsal,
-before promoting anything to the tap. It also does not push, publish, tag, or
+against the staged `bin` directory and verify the finished archive before
+promoting anything to the tap. A separate clean-Mac rehearsal is optional.
+It also does not push, publish, tag, or
 touch the tap, and it bundles no models, runtimes, or credentials.
 
 ## Verifying a finished archive
@@ -92,31 +93,35 @@ verification time, since Apple's ticket contents are captured at submission.
 
 ## Release workflow (GitHub Actions)
 
-`.github/workflows/release-macos.yml` runs the whole pipeline on an Apple
-Silicon runner: test gate, signing-identity import, build and sign, notarize,
-verify the finished archive, render the formula, and upload artifacts for
-review.
+`.github/workflows/release-macos.yml` is a **single-run release**. Dispatch it
+from the exact commit tagged `v<version>`, with the stable version without `v`.
+Leave **publish enabled (the default)** for a release. No prior rehearsal run
+or second dispatch is required.
 
-**It is manually triggered only.** There is no push, tag or pull_request
-trigger, so untrusted code can never reach the signing credentials. An operator
-starts each run from the Actions tab with a version, and publication is a
-separate checkbox that defaults to off — a rehearsal stops at reviewable
-artifacts.
+1. The secret-free Windows and Linux jobs build and smoke-test their archives.
+2. Once both succeed, approve the protected `release` environment **once**.
+   This approval authorizes signing **and publication**, not just a rehearsal.
+3. The protected Apple Silicon job runs its test gate, builds/signs once,
+   notarizes, verifies the finished archive, renders the formula, and destroys
+   its temporary signing keychain. It retains the verified artifacts.
+4. In that same job, publication automatically downloads this run's three
+   artifacts, checks their SHA-256 digests against the recorded build outputs,
+   refuses existing release assets, and publishes those exact bytes. It does
+   not rebuild. The tap update follows successful publication, using the same
+   archive digest and environment-protected tap token. No further approval is
+   requested in this normal path.
 
-> The previous tag-triggered `release.yml` was removed. It published unsigned,
-> cross-compiled binaries automatically on any `v*` tag, which would have raced
-> this pipeline and attached unsigned macOS artifacts to the same release.
-> Nothing publishes without an explicit operator-initiated run. If Linux or
-> Docker artifacts are wanted again, they need their own workflow under the
-> same no-automatic-publish rule.
+**Optional dry run:** set `publish=false` (uncheck publish). All builds,
+signing, notarization, verification and artifact retention still run, but no
+release or tap is written. This is not a prerequisite for a release. A later
+new dispatch is a new build, not promotion of a previous dry run's artifacts.
 
-### Selecting the rehearsal source
-
-Dispatch the workflow from a ref resolving to the exact commit tagged
-`v<version>`. Both workflow validation and the release builder reject a tag
-that exists on a different commit; an old release tag must never label a build
-of the current branch. Start with `publish` unchecked. Creating/pushing the
-ref and configuring the protected environment are separate operator steps.
+**Manual-only:** no push, tag or pull-request trigger exists. The selected
+workflow ref must resolve to the exact tagged commit; validation rejects a tag
+on a different commit. Creating/pushing the tag and configuring the protected
+environment are separate operator actions. Review the selected source before
+approving; keep required reviewers and environment deployment restrictions.
+The removed automatic, unsigned `release.yml` must not be restored.
 
 ### Required configuration
 
@@ -136,8 +141,10 @@ The workflow creates a temporary keychain, resolves the signing identity from
 it (failing if absent or ambiguous rather than trusting a configured string),
 and **destroys the keychain and all decoded key material on every path**,
 including failure and cancellation. Default permissions are read-only; write
-access is scoped to the publish job alone. Publication refuses to replace an
-asset already attached to the tag and re-checks the artifact digest before
+access is scoped to the single protected release job (GitHub permissions are
+job-scoped, not step-scoped); unsigned platform jobs stay read-only and
+secret-free. Checkout does not persist the release job token. Publication
+refuses to replace an asset already attached to the tag and re-checks the artifact digest before
 uploading.
 
 **Passwordless certificates:** If your Developer ID certificate was exported
@@ -192,12 +199,12 @@ workflow publishes on push or tag.
 
 None of these prove that a real toolchain, a real Developer ID signature, real
 notarization, or an actual Actions run succeeds; those need the real build, a
-networked Gatekeeper assessment, and the clean-Mac rehearsal.
+networked notarization, and optionally a clean-Mac rehearsal.
 
 ## Automatic tap update after publication
 
-Publication-enabled runs now finish with **Update Homebrew tap**. This job runs
-only after the release publication job succeeds; rehearsals (`publish=false`)
+Publication-enabled runs finish with **Publish verified formula to tap** in
+the same protected job, only after publication succeeds; dry runs (`publish=false`)
 never write to the tap. It updates only `Formula/cercano.rb` on
 `cercano-ai/homebrew-cercano`'s `main`, with no pull request or approval prompt.
 
@@ -224,18 +231,21 @@ Add it to Cercano's `release` environment as **HOMEBREW_TAP_TOKEN**:
 <https://github.com/cercano-ai/Cercano/settings/environments>.
 Enter it directly in GitHub, not chat, source, or a command-line argument.
 The workflow supplies it only to the formula-update step. It uses the normal
-read-only Actions token for release metadata and no credentials for public
+Actions token for read-only release metadata requests and no credentials for public
 artifact downloads. Authenticated API redirects are refused.
 
 ### Recovery
 
 A missing/expired token, unavailable artifact, or concurrent conflicting change
-fails the tap job **after** the release is already published. The release stays
-published; do not delete/recreate its assets. Correct the issue and use Actions'
-**Re-run failed jobs** (only the tap job should have failed), or rerun that
-individual job. Build output digests and artifacts belong to the same workflow
-run; retention is 14 days, so recover promptly. Do not rerun all jobs to repair
-a tap-only failure: publication deliberately refuses replacing existing assets.
+fails the tap step **after** the release is already published. The release stays
+published; do not delete/recreate its assets or rerun the consolidated release
+job (that would rebuild and then refuse to overwrite). Correct the issue and
+use the **tap-only recovery workflow** below with the original release run ID.
+Its provenance gate accepts a completed consolidated run only if verification,
+artifact upload, publication and both platform jobs succeeded, even if the tap
+step failed. It also supports the earlier separate-job release layout. Artifacts
+are retained for 14 days, so recover promptly. The recovery workflow has its own
+protected approval; that is an exceptional recovery, not a normal release gate.
 
 A downgrade refusal means a newer release already reached the tap. Leave it
 alone. Same-version formula changes require deliberate manual review rather
@@ -249,8 +259,9 @@ such as v0.20.3, nor has a live cross-repository write been verified by offline 
 
 ### Tap-only update for an already-published release
 
-For a release that predates automatic tap updates, run the dedicated recovery
-workflow on current `main`, supplying its successful release run ID:
+For a published release whose tap update failed (or predates automatic tap
+updates), run the dedicated recovery workflow on current `main`, supplying the
+original release run ID:
 
 ```bash
 gh workflow run update-homebrew.yml --repo cercano-ai/Cercano --ref main \
@@ -258,9 +269,10 @@ gh workflow run update-homebrew.yml --repo cercano-ai/Cercano --ref main \
 ```
 
 This checks the published tag's commit against the completed release workflow,
-requires successful macOS signing and publication jobs, and downloads the macOS
+requires successful verification/publication steps and platform jobs (or the
+legacy signing/publication jobs), and downloads the macOS
 artifact from that exact run. It then performs the same checksum/template/public
 asset verification and guarded tap update. It does not build, sign, retag,
 republish assets, or update Windows/Linux packages. The source Actions artifact
 must still be within its retention period. This workflow shares the automatic
-tap job's concurrency group and uses the same narrow token.
+release job's concurrency group and uses the same narrow token.

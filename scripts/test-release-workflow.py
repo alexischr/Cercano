@@ -10,10 +10,12 @@ unsigned Windows and Linux jobs: they must stay manual-only, secret-free and
 outside the protected environment, and publication must wait for all three
 builds and verify all three checksums.
 
-This validates structure only. It does not run the workflow, contact GitHub or
+These checks validate structure and locally probe the publication guard with a
+stub GitHub CLI. They do not run the workflow, contact GitHub or
 Apple, or prove that a real signed release succeeds.
 """
 
+import hashlib
 import json
 import shutil
 import tempfile
@@ -89,31 +91,79 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertEqual(list(self.triggers), ["workflow_dispatch"])
         inputs = self.triggers["workflow_dispatch"]["inputs"]
         self.assertTrue(inputs["version"]["required"])
-        self.assertIs(inputs["publish"]["default"], False)
+        self.assertIs(inputs["publish"]["default"], True)
 
     def test_default_permissions_are_read_only(self):
         self.assertEqual(self.workflow["permissions"], {"contents": "read"})
-        self.assertNotIn("permissions", self.jobs["build"])
+        self.assertEqual(self.jobs["build"]["permissions"], {"contents": "write"})
 
-    def test_write_permission_is_scoped_to_the_publish_job(self):
-        self.assertEqual(self.jobs["publish"]["permissions"], {"contents": "write"})
-        for job in ("build", "build-windows", "build-linux"):
+    def test_write_permission_is_scoped_to_the_protected_release_job(self):
+        self.assertEqual(self.jobs["build"]["permissions"], {"contents": "write"})
+        for job in ("build-windows", "build-linux"):
             self.assertNotIn("permissions", self.jobs[job], job)
 
     def test_credentialed_jobs_use_the_protected_environment(self):
-        for job in ("build", "publish"):
-            self.assertEqual(self.jobs[job]["environment"], "release", job)
+        protected = [name for name, job in self.jobs.items() if "environment" in job]
+        self.assertEqual(protected, ["build"])
+        self.assertEqual(self.jobs["build"]["environment"], "release")
 
     def test_build_runs_on_apple_silicon(self):
         self.assertEqual(self.jobs["build"]["runs-on"], "macos-14")
 
-    def test_publication_requires_explicit_opt_in(self):
-        self.assertEqual(self.jobs["publish"]["if"], "inputs.publish")
-        # Publication waits for ALL THREE build jobs: an unsigned Windows or
-        # Linux archive must not attach to a release whose macOS build failed
-        # (or vice versa).
-        self.assertEqual(self.jobs["publish"]["needs"],
-                         ["build", "build-windows", "build-linux"])
+    def test_publication_waits_for_all_platforms_and_supports_dry_run(self):
+        self.assertEqual(self.jobs["build"]["needs"], ["build-windows", "build-linux"])
+        self.assertNotIn("if", self.jobs["build"])
+        steps = self.jobs["build"]["steps"]
+        publication = steps.index(self.step("build", "refuse to replace"))
+        for step in steps[publication:]:
+            # Implicit success() must remain: never always() or failure().
+            self.assertEqual(step["if"], "inputs.publish")
+        names = [step.get("name", "") for step in steps]
+        self.assertLess(names.index("Verify finished archive"), publication)
+        self.assertLess(names.index("Destroy signing keychain"), publication)
+        self.assertLess(publication, names.index("Publish release"))
+        self.assertLess(names.index("Publish release"), names.index("Publish verified formula to tap"))
+
+    def test_publication_uses_only_this_runs_artifacts_without_rebuilding(self):
+        steps = self.jobs["build"]["steps"]
+        upload = steps.index(self.step("build", "Upload artifacts for review"))
+        downloads = [s for s in steps[upload:] if s.get("uses", "").startswith("actions/download-artifact@")]
+        self.assertEqual(len(downloads), 3)
+        for step in downloads:
+            self.assertEqual(set(step["with"]), {"name", "path"})
+            self.assertEqual(step["if"], "inputs.publish")
+        for step in steps[upload:]:
+            for builder in ("build-macos-release", "build-windows-release", "build-linux-release"):
+                self.assertNotIn(builder, step.get("run", ""))
+
+    def test_publication_shell_rejects_changed_bytes_and_existing_assets(self):
+        script = self.step("build", "refuse to replace")["run"]
+        names = ["cercano-1.2.3-darwin-arm64.tar.gz",
+                 "cercano-1.2.3-windows-x64.zip", "cercano-1.2.3-linux-x64.tar.gz"]
+        digest = hashlib.sha256(b"verified archive").hexdigest()
+        for expression in ("steps.build.outputs.sha256", "needs.build-windows.outputs.sha256",
+                           "needs.build-linux.outputs.sha256"):
+            script = script.replace("${{ " + expression + " }}", digest)
+        with tempfile.TemporaryDirectory() as directory:
+            dist = Path(directory) / "dist"
+            dist.mkdir()
+            def run(existing=""):
+                # Local stub only: no GitHub/network access or publication.
+                prefix = 'VERSION=1.2.3\ngh() { printf "%s\\n" "' + existing + '"; }\n'
+                return subprocess.run([bash_executable(), "-c", prefix + script],
+                                      cwd=directory, capture_output=True, text=True)
+            for name in names:
+                (dist / name).write_bytes(b"verified archive")
+            result = run()
+            self.assertEqual(result.returncode, 0, result.stderr)
+            for name in names:
+                (dist / name).write_bytes(b"changed after verification")
+                self.assertNotEqual(run().returncode, 0, name)
+                (dist / name).write_bytes(b"verified archive")
+                for asset in (name, name + ".sha256"):
+                    result = run(asset)
+                    self.assertNotEqual(result.returncode, 0, asset)
+                    self.assertIn("already published", result.stdout)
 
     def test_notarization_diagnostics_upload_is_failure_only_and_sanitized(self):
         """A failed notarization must explain itself without leaking secrets.
@@ -210,7 +260,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertNotIn("base64 --decode", run)
 
     def test_publish_refuses_to_replace_existing_artifacts(self):
-        run = self.step("publish", "refuse to replace")["run"]
+        run = self.step("build", "refuse to replace")["run"]
         self.assertIn("gh release view", run)
         self.assertIn("exit 1", run)
         # Every platform's assets are protected: an already-published Windows
@@ -223,12 +273,12 @@ class ReleaseWorkflowTest(unittest.TestCase):
         # The published bytes must match the digest the build recorded.
         self.assertIn("shasum -a 256 -c -", run)
         # Digests from ALL THREE build jobs are verified before publication.
-        self.assertIn("needs.build.outputs.sha256", run)
+        self.assertIn("steps.build.outputs.sha256", run)
         self.assertIn("needs.build-windows.outputs.sha256", run)
         self.assertIn("needs.build-linux.outputs.sha256", run)
 
     def test_publish_attaches_both_platforms_artifacts(self):
-        run = self.step("publish", "publish release")
+        run = self.step("build", "publish release")
         files = run["with"]["files"]
         for asset in ("darwin-arm64.tar.gz", "darwin-arm64.tar.gz.sha256",
                       "windows-x64.zip", "windows-x64.zip.sha256",
@@ -455,11 +505,8 @@ class ReleaseWorkflowTest(unittest.TestCase):
         # Check that security import still uses the password variable (which may be empty)
         self.assertIn('security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "$CERTIFICATE_PASSWORD"', run_script)
 
-    def test_tap_job_requires_publication_and_has_readonly_default_token(self):
-        job = self.jobs["update-homebrew"]
-        self.assertEqual(job["if"], "inputs.publish")
-        self.assertEqual(set(job["needs"]), {"build", "publish"})
-        self.assertEqual(job["permissions"], {"contents": "read"})
+    def test_tap_credentials_stay_in_the_single_protected_job(self):
+        job = self.jobs["build"]
         self.assertEqual(job["environment"], "release")
         self.assertEqual(job["concurrency"]["group"], "cercano-homebrew-tap")
         self.assertIs(job["concurrency"]["cancel-in-progress"], False)
@@ -469,7 +516,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertEqual(len(holders), 1)
         step = holders[0]
         self.assertEqual(step["env"]["HOMEBREW_TAP_TOKEN"], "${{ secrets.HOMEBREW_TAP_TOKEN }}")
-        self.assertEqual(step["env"]["EXPECTED_SHA256"], "${{ needs.build.outputs.sha256 }}")
+        self.assertEqual(step["env"]["EXPECTED_SHA256"], "${{ steps.build.outputs.sha256 }}")
         self.assertIn("update_tap.py", step["run"])
         self.assertNotIn("--skip", step["run"])
         self.assertNotIn("gh release", step["run"])

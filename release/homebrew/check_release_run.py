@@ -28,10 +28,27 @@ def check(version, run_id):
     data = api('GET', BASE + 'actions/runs/' + run_id + '/jobs?filter=latest&per_page=100', token)
     require(data.get('total_count', 0) <= 100, 'Unexpected job count')
     jobs = data.get('jobs', [])
-    for name in ('Build, sign, notarize and verify', 'Publish to GitHub Releases'):
+    consolidated = [j for j in jobs if j.get('name') ==
+                    'Build, sign, notarize, verify and release']
+    if consolidated:
+        require(len(consolidated) == 1, 'Ambiguous release job')
+        # A tap failure must not force a rebuild or replacement of released bytes.
+        # Require the actual verification, artifact retention and publication
+        # steps to have succeeded, not the overall job (which includes the tap).
+        for name in ('Verify finished archive', 'Upload artifacts for review',
+                     'Refuse to replace an existing published artifact', 'Publish release'):
+            matches = [s for s in consolidated[0].get('steps', []) if s.get('name') == name]
+            require(len(matches) == 1 and matches[0].get('conclusion') == 'success',
+                    'Successful verification and publication steps are required')
+        required_jobs = ('Build unsigned experimental Windows x64 archive',
+                         'Build unsigned experimental Linux x86_64 archive')
+    else:
+        # Backward-compatible recovery for releases made before consolidation.
+        required_jobs = ('Build, sign, notarize and verify', 'Publish to GitHub Releases')
+    for name in required_jobs:
         matches = [j for j in jobs if j.get('name') == name]
         require(len(matches) == 1 and matches[0].get('conclusion') == 'success',
-                'Successful signing and publication jobs are required')
+                'Successful release prerequisite jobs are required')
     return commit['sha']
 
 

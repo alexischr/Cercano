@@ -27,6 +27,33 @@ class ProvenanceTest(unittest.TestCase):
         self.jobs['total_count'] = 3
         self.assertEqual(self.execute(), 'source')
 
+    def consolidated_jobs(self):
+        self.run['conclusion'] = 'failure'
+        self.jobs = {'total_count': 3, 'jobs': [
+            {'name': 'Build, sign, notarize, verify and release', 'conclusion': 'failure',
+             'steps': [{'name': name, 'conclusion': 'success'} for name in (
+                 'Verify finished archive', 'Upload artifacts for review',
+                 'Refuse to replace an existing published artifact', 'Publish release')] +
+                 [{'name': 'Publish verified formula to tap', 'conclusion': 'failure'}]},
+            {'name': 'Build unsigned experimental Windows x64 archive', 'conclusion': 'success'},
+            {'name': 'Build unsigned experimental Linux x86_64 archive', 'conclusion': 'success'}]}
+
+    def test_consolidated_tap_failure_can_recover_without_rebuilding(self):
+        self.consolidated_jobs()
+        self.assertEqual(self.execute(), 'source')
+
+    def test_consolidated_recovery_requires_every_gate(self):
+        for index in range(4):
+            for conclusion in ('failure', 'skipped', 'cancelled'):
+                self.consolidated_jobs()
+                self.jobs['jobs'][0]['steps'][index]['conclusion'] = conclusion
+                with self.subTest(index=index, conclusion=conclusion), self.assertRaises(c.Failure):
+                    self.execute()
+        for index in (1, 2):
+            self.consolidated_jobs()
+            self.jobs['jobs'][index]['conclusion'] = 'failure'
+            with self.assertRaises(c.Failure): self.execute()
+
     def test_unpublished_release_refused(self):
         self.release['draft'] = True
         with self.assertRaises(c.Failure): self.execute()

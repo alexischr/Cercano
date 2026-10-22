@@ -15,7 +15,7 @@ build-and-smoke-test milestone, not a support commitment.
 ## What is produced
 
 `cercano-<version>-linux-x64.tar.gz` and its `.sha256` checksum, attached to
-the GitHub release only when `publish=true` is explicitly selected.
+the GitHub release when `publish=true` (the default; `false` is an optional dry run).
 
 ```
 cercano-<version>-linux-x64/
@@ -62,8 +62,8 @@ The `build-linux` job of [release-macos.yml](../.github/workflows/release-macos.
   state is read or written (stray writes fail the job);
 - runs the Linux-safe hermetic native tests (`procx` unix process-group
   tests, which spawn and reap throwaway `/bin/sh` children only);
-- publishes only under the explicit `publish=true` opt-in, after **all three**
-  build jobs (macOS, Windows, Linux) succeed, verifies the Linux checksum
+- publishes with `publish=true` (the default), after **all three**
+  platform verification gates (macOS, Windows, Linux) pass, verifies the Linux checksum
   against the digest the build recorded, and refuses to replace any already
   published asset.
 
@@ -89,7 +89,7 @@ coverage is part of the support checklist below.
   the checklist.
 - The workflow remains manual-dispatch only; there is no push/tag/PR trigger,
   so no untrusted code can start it.
-- Publication remains a separate explicit opt-in (`publish=true`) guarded by
+- Publication defaults to `publish=true` in the same run, guarded by
   the protected `release` environment, and it never overwrites an existing
   asset.
 - Existing releases are untouched by this pipeline; a Linux asset is only
