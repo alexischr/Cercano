@@ -73,7 +73,7 @@ https://github.com/user-attachments/assets/82c65acd-6b7f-4d6e-8a56-dbe0d3133d8c
 ### Local models, less assembly required
 
 **Use your hardware without building an inference stack first.** Cercano's
-managed local mdoel runtime brings open-weight models into the same workflow as your
+managed local model runtime brings open-weight models into the same workflow as your
 cloud providers. Configure a suitable model and let Cercano manage the runtime.
 
 [Explore the integrated runtime →](docs/agent/features/integrated-local-runtime.md)
@@ -134,24 +134,31 @@ still carry costs.
 
 ## Get started
 
-Standalone release publishing is in progress. For now, follow the
-[source build instructions](docs/agent/self-dev.md#layout--build) and the
-[agent setup guide](docs/agent/README.md). The server and terminal client are
-separate Go modules; the development launcher handles building both.
-
-Once the launcher is installed:
+Cercano is distributed for **Apple Silicon Macs running macOS 12 (Monterey) or
+later**:
 
 ```bash
-cercano
+brew install cercano-ai/cercano/cercano
 ```
 
-Open `/config` to configure models, routing, and permissions. Then try a bounded,
-read-only task in a repository you know:
+This installs two binaries: `cercano` (the agent, which does the work) and
+`cercano-cli` (the terminal client you interact with). Start the client:
+
+```bash
+cercano-cli
+```
+
+The client launches the agent automatically — nothing runs at login, and no
+background service is installed. See the
+[macOS installation guide](docs/installation-macos.md) for details.
+
+Open `/config` to configure models, routing, and permissions. Cercano ships no
+models and no credentials, so you will need at least one cloud provider or
+local runtime configured. Then try a bounded, read-only task in a repository
+you know:
 
 > Find where this project loads its configuration. Delegate the code search to
 > a read-only subagent, then explain the result with file references. Do not edit files.
-
-**Linux:** there is also an experimental, explicitly **unsigned** Linux x86_64 tarball built natively on `ubuntu-24.04` by the same pipeline. Linux is **not a supported platform yet**; see [docs/linux-artifact.md](docs/linux-artifact.md).
 
 For scripts and automation:
 
@@ -163,6 +170,22 @@ Cloud routes require the relevant provider credentials. Local routes require
 suitable hardware and model downloads. Model quality, latency, and cost depend
 on your configuration; delegation is not a guarantee of savings. See each
 feature page for controls and limitations.
+
+### Other platforms
+
+The release pipeline also builds experimental, explicitly **unsigned**
+`linux-x64` and `windows-x64` artifacts. Neither is a supported platform yet,
+and neither has an installer or package-manager story — see
+[docs/linux-artifact.md](docs/linux-artifact.md) and
+[docs/windows-artifact.md](docs/windows-artifact.md).
+
+### Building from source
+
+To work on Cercano itself, follow the
+[source build instructions](docs/agent/self-dev.md#layout--build) and the
+[agent setup guide](docs/agent/README.md). The server and terminal client are
+separate Go modules; the development launcher builds both and installs a
+`cercano` entry point that rebuilds and relaunches them as needed.
 
 ## Known issues
 
