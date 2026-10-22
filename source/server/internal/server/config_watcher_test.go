@@ -10,10 +10,19 @@ import (
 	"cercano/source/server/pkg/config"
 )
 
+// Keep routing services wired: a locus reload must publish a fresh graph even
+// when no cloud profile is configured. Isolate diagnostic files from the host.
+func newConfigWatcherTestServer(t *testing.T) *Server {
+	t.Helper()
+	dir := t.TempDir()
+	return newServerWithLogs(nil, &fakeRouter{}, nil, nil, nil,
+		filepath.Join(dir, "routing.jsonl"), filepath.Join(dir, "failures.jsonl"))
+}
+
 // reloadConfigFromDisk picks up an out-of-band edit, applies hot-reloadable
 // fields through UpdateConfig, and broadcasts a ConfigChanged event per
-// applied field. We use locus_mode because it routes through UpdateConfig
-// without needing a openProvider / coordinator / cloudFactory.
+// applied field. Locus changes also rebuild the provider graph, so the fixture
+// uses production service wiring with a fake router and no cloud credentials.
 func TestReloadConfigFromDisk_AppliesAndBroadcasts(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
@@ -34,7 +43,7 @@ func TestReloadConfigFromDisk_AppliesAndBroadcasts(t *testing.T) {
 		t.Fatalf("normalize seed: %v", err)
 	}
 
-	srv := &Server{events: newEventHub(), cfgSvc: cfgsvc.New("", config.Config{}, nil)}
+	srv := newConfigWatcherTestServer(t)
 	srv.SetConfigPersistence(path, initial)
 
 	ch, unsub := srv.events.subscribe()
@@ -49,6 +58,10 @@ func TestReloadConfigFromDisk_AppliesAndBroadcasts(t *testing.T) {
 
 	srv.reloadConfigFromDisk(context.Background())
 
+	if got := string(srv.DispatchCandidates().Mode); got != "open_primary" {
+		t.Errorf("dispatch mode = %q, want open_primary", got)
+	}
+
 	if got := srv.cfgSvc.Get().LocusMode; got != "open_primary" {
 		t.Errorf("cfgSvc.Get().LocusMode = %q, want open_primary", got)
 	}
@@ -60,7 +73,7 @@ func TestReloadConfigFromDisk_AppliesAndBroadcasts(t *testing.T) {
 			t.Fatalf("expected ConfigChanged event, got %T", ev.Event)
 		}
 		if cc.Field != "locus_mode" || cc.Value != "open_primary" {
-			t.Errorf("event = {field:%q value:%q}, want {locus_mode local_primary}", cc.Field, cc.Value)
+			t.Errorf("event = {field:%q value:%q}, want {locus_mode open_primary}", cc.Field, cc.Value)
 		}
 	case <-time.After(time.Second):
 		t.Fatalf("expected ConfigChanged event, none received")
@@ -85,7 +98,7 @@ func TestReloadConfigFromDisk_NoChangeNoBroadcast(t *testing.T) {
 		t.Fatalf("normalize seed: %v", err)
 	}
 
-	srv := &Server{events: newEventHub(), cfgSvc: cfgsvc.New("", config.Config{}, nil)}
+	srv := newConfigWatcherTestServer(t)
 	srv.SetConfigPersistence(path, cfg)
 
 	ch, unsub := srv.events.subscribe()
@@ -129,7 +142,7 @@ func TestStartConfigWatcher_EndToEnd(t *testing.T) {
 		t.Fatalf("normalize seed: %v", err)
 	}
 
-	srv := &Server{events: newEventHub(), cfgSvc: cfgsvc.New("", config.Config{}, nil)}
+	srv := newConfigWatcherTestServer(t)
 	srv.SetConfigPersistence(path, cfg)
 
 	ctx, cancel := context.WithCancel(context.Background())
