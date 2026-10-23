@@ -83,9 +83,9 @@ There is no permanent “effective” row. A note such as **Redirected to Primar
 
 In **Model tiers**, account selections, order changes, and redirects save immediately when committed. Unchanged selections send no update; a failed save reports an error and restores the previous selection. These saves do not apply pending task edits. In **Task routing**, **Save routing** applies task edits atomically and **Discard routing** restores saved task assignments without undoing model-tier changes. The page distinguishes **Unsaved changes** from saved overrides. Selecting an unchanged value or undoing edits back to the saved state does not mark the page unsaved. Save/Discard are disabled when there are no pending changes. Failed saves and disconnected-agent errors preserve edits.
 
-In **Cloud**, edit profile credentials, quality and image choices using the separate profile Save/Discard actions. Cloud no longer displays Primary/backup routing badges or supports the obsolete activation/backup actions; authentication and account identity annotations remain. Routing is the sole owner of tier bindings and backups.
+In **Cloud**, committed profile fields, quality and image choices save immediately. Save/Retry and Discard support recovery from failed edits and account setup. Cloud no longer displays Primary/backup routing badges or supports the obsolete activation/backup actions; authentication and account identity annotations remain. Routing is the sole owner of tier bindings and backups.
 
-Cloud model-choice edits and task-routing edits remain drafts, including choices on existing profiles. Cancelling a picker keeps the original value. Unsaved edits prompt before leaving their page or changing profiles; cancelling navigation preserves the draft. Cloud and Routing save/discard operations do not apply or clear each other's draft. Authentication and API-key operations remain separate actions.
+Task-routing edits remain drafts until Save routing. Cloud picker edits remain local until committed, then attempt an immediate profile save, including on existing profiles; failed saves retain the edited draft for retry or discard. Cancelling a picker keeps the original value. Unsaved edits prompt before leaving their page or changing profiles; cancelling navigation preserves the draft. Cloud and Routing save/discard operations do not apply or clear each other's draft. Authentication and API-key operations remain separate actions.
 
 Activating a profile does not silently make the previous Primary its backup. If the requested Primary is already the Primary backup, use **Move up** to promote it; the order saves atomically instead of creating a self-loop.
 
@@ -103,7 +103,7 @@ Each destination fails over only within its own configured chain. Credentials ar
 
 Per-attempt metadata records the actual profile/model and its context evidence, including backup requests. Identical model IDs on different endpoints do not make their capacity or image evidence interchangeable. Unknown context retains the conventional unverified fallback rather than borrowing another endpoint's evidence.
 
-Automatic whole-turn retries and cross-destination fallback stop once visible text or tool execution begins. An interrupted response is reported rather than replaying output or tool side effects. Eligible failures before that boundary retain existing retry behavior.
+Automatic whole-turn retries and cross-destination fallback stop once visible text or tool execution begins. Eligible failures before that boundary retain existing retry behavior. Separately, the provider stream can restart the same request on the same provider once after a retryable interruption of visible text, before message completion. It explicitly narrates that restart; interrupted text can remain visible. This is not a whole-turn replay or cross-destination fallback. Non-retryable failures, completed messages, or an already-used retry surface the interruption instead.
 
 ## YAML example
 
@@ -138,6 +138,6 @@ To add backups, define their profiles and set `backup_cloud_profiles` (ordered l
 
 ## Setup wizard and verification limits
 
-Wizard recommendations shown automatically remain inherited. Only explicit picker edits become profile overrides, and those edit markers survive wizard resume. Rollback snapshots preserve quality/image choices and provider/AWS metadata without capturing credentials. Older snapshots do not clear metadata they never recorded or restore retired profile-wide pins.
+Wizard recommendations shown automatically remain inherited. Only explicit picker edits become profile overrides, and those edit markers survive wizard resume. Cancelling setup discards unconfirmed selections and clears resume state; completed account connections remain and can be managed in /config. Legacy non-secret baseline snapshots remain readable but are not used for rollback; cancellation does not restore overwritten credentials or remove connected accounts.
 
 The implementation is verified with synthetic profiles, loopback HTTP/gRPC fixtures, real worker-process tests, and automated CLI form/transcript checks. Live paid inference and manual terminal visual inspection are separate deployment checks; no reliability or pricing claim follows from the fixtures. Restart the agent and its workers together after rebuilding the changed interfaces.
