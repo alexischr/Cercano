@@ -57,21 +57,12 @@ Saved reports only; no new source investigation. The
   routing and worker conversation checks. This closes the former broad selection
   gap, not exhaustive delegated/background isolation or crash durability.
 
-### Exact remaining source-evidence gaps
+### Final disposition of the two carried-forward gaps
 
-The former list included details not explicitly established by the control
-report's saved citations/dispositions. Retain only these narrower questions:
-
-- Autonomous completion **decline behavior**, distinct from the compared
-  one-confirmation completion action and preservation of existing decisions.
-- Session-model **transition/rollback details beyond the compared validated
-  set/clear and next-message/resume behavior**. The control report does not
-  establish a separate rollback guarantee.
-
-These are carried-forward assertion-level evidence gaps, not findings of broken
-implementation. Do not infer either closure or a new rollback promise from the
-whole-section disposition. All other former broad open families are closed only
-to the recorded assertions or inherited exclusions, not exhaustive branches.
+Superseded by the fresh bounded evidence below: autonomous completion decline
+is source-supported; a separate session-model transition/rollback guarantee is
+not asserted by the README and is out of scope. No remaining actionable source
+evidence gap is identified for these two maintained-claim checks.
 
 ## Inherited work and runtime exclusions
 
@@ -111,3 +102,51 @@ Saved-report reconciliation only; no guide/source edits or runtime checks.
 Scoped whitespace and offline local-link results are recorded in the shared
 [remaining ledger](audit-core-remaining.md). Historical checks above belong to
 that earlier finalization and were not rerun against the README here.
+
+## Final two-gap source closure — 2026-10-23
+
+Fresh scope: only the two carried-forward questions, with README assertions read
+before source comparison. This continuation owns this report and the three
+shared ledgers, not the README or application files. Six inspection calls total
+(including one failed command); no further source inspection.
+
+- **Autonomous completion decline — maintained claim closed.**
+  `docs/agent/README.md:325–338` says declining completion leaves the run active.
+  `source/server/internal/agent/permissions.go:54–78` preserves human-handoff
+  gating in bypass and lists `request_autonomous_exit`; the action is X-tier
+  (`source/server/internal/capabilities/builtins/autonomous.go:213–222`).
+  `source/server/internal/agent/toolloop.go:1110–1157` shows the actual gate
+  (including preauthorization/watchdog exceptions): a denied permission records
+  an error result and returns before Execute at line 1163. Thus that declined
+  action does not write completion or change profile. The mutations are inside
+  Execute, at `autonomous.go:245–278`, after active-run validation. This closes
+  decline behavior, not universal prompting, UI delivery or model compliance.
+- **Session-model transition/rollback — no separate maintained guarantee.**
+  `docs/agent/README.md:401–409` asserts inspect/set/clear of a durable main-chat
+  override and next-turn behavior; it does not assert transactional switching or
+  rollback. The rollback text at lines 334–338 concerns autonomous completion,
+  not session models. A separate session-model rollback requirement is therefore
+  **out of scope**, not a missing feature or evidence gap.
+- **Exact set/clear handler error path compared.**
+  `source/server/internal/server/session_model.go:70–99` trims set arguments,
+  requires a resolver, runs Mistral-selection validation and route resolution
+  before `SetChatRoute`; each validation/storage error returns immediately.
+  Clear rejects profile/model arguments and calls `SetChatRoute` with nil;
+  its storage error also returns immediately. Both then read back `ChatRoute`;
+  a read-back failure returns an error after the write, with no compensating
+  rollback in this handler. Lines 101–103 state next-message/resume semantics,
+  not provider availability. RPC lines 129–140 propagate conversation creation,
+  handler and serialization errors. No claim of storage atomicity or rollback
+  on every error follows from this comparison.
+
+**README disposition:** unchanged; no concrete assertion/source mismatch found.
+All prior runtime/external exclusions remain. No broad tracing, application
+edits, runtime/network checks, tests or builds were performed.
+
+**Publication checks:** scoped `git diff --check`, trailing-whitespace and offline
+relative filesystem-link checks cover only the four owned audit documents;
+external URLs and fragment validation excluded. Results recorded by the save
+command below; checkpoint explicitly restricted to those four files.
+
+- Final checks passed: scoped diff whitespace, four-file trailing whitespace,
+  and 41 offline relative filesystem-link targets; zero missing targets.

@@ -215,3 +215,25 @@ behavior remain unverified exclusions, not newly discovered source defects.
 Source comparison and publication checks are distinct from runtime/external
 acceptance. No new source investigation, tests/builds, network, guide/application
 edits, push or merge in this reconciliation.
+
+## Final two-gap closure — 2026-10-23
+
+Supersedes the immediately preceding closure entry's two carried-forward
+questions. Fresh bounded README/source comparison is recorded in the
+[final README report](audit-readme-final-closure.md#final-two-gap-source-closure--2026-10-23).
+Autonomous completion decline is supported: permission denial returns before
+Execute, leaving that action's run/profile unchanged (`agent/toolloop.go:1110–1163`,
+`capabilities/builtins/autonomous.go:213–278`, under `source/server/internal/`).
+The README's session-model paragraph (`docs/agent/README.md:401–409`) does not
+claim transition atomicity or rollback; that extra requirement is out of scope.
+Exact set/clear validation, storage-error propagation and post-write read-back
+error paths were compared (`source/server/internal/server/session_model.go:70–103,129–140`).
+No concrete README mismatch found; README unchanged. **No remaining actionable
+source-evidence gaps for these two maintained-claim checks.** This does not
+reopen or certify other guide families, runtime/UI behavior, model compliance,
+provider availability, storage atomicity or crash durability.
+
+Publication checks cover only this ledger and the other three owned audit
+reports: scoped whitespace and offline relative filesystem links (no fetching
+or fragment certification). No tests/builds, runtime/network checks, application
+edits, push or merge. Checkpoint restricted to the four owned audit documents.
