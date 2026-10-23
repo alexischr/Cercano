@@ -96,6 +96,7 @@ type remoteEvent struct {
 
 var (
 	_ localruntime.Manager          = (*Remote)(nil)
+	_ localruntime.SharedManager    = (*Remote)(nil)
 	_ localruntime.DownloadEnroller = (*Remote)(nil)
 )
 
@@ -136,6 +137,15 @@ func newRemote(ctx context.Context, opts RemoteOptions, ensure func(context.Cont
 
 // ClientID is the ID this Remote attaches and calls with.
 func (r *Remote) ClientID() string { return r.clientID }
+
+// HoldEpoch implements localruntime.SharedManager. It changes on every
+// reconnect: a host that saw this client's Attach stream end may have
+// released its holds, and re-taking a hold that survived is harmless.
+func (r *Remote) HoldEpoch() uint64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.gen
+}
 
 // Close ends the Attach stream, which releases this client's holds on the
 // host, and stops all background work. Observers are not called after Close

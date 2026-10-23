@@ -35,6 +35,11 @@ type FakeProvider struct {
 	// DefaultModel, if set, is launched when Start is asked for no model, as
 	// a real provider launches its configured default model.
 	DefaultModel string
+	// Endpoint and Context, if set, are reported on every started instance,
+	// so engines that need a serving endpoint and confirmed capacity can use
+	// it.
+	Endpoint string
+	Context  localruntime.ContextCapacity
 
 	mu         sync.Mutex
 	startedID  string
@@ -103,10 +108,12 @@ func (f *FakeProvider) Start(_ context.Context, req localruntime.StartRequest, s
 	f.mu.Unlock()
 	sink.WriteLog(localruntime.LogEntry{Source: "fake", Message: "started " + modelID})
 	rec := &localruntime.InstanceRecord{
-		ID:      id,
-		Runtime: f.ProviderName,
-		ModelID: modelID,
-		State:   state,
+		ID:       id,
+		Runtime:  f.ProviderName,
+		ModelID:  modelID,
+		State:    state,
+		Endpoint: f.Endpoint,
+		Context:  f.Context,
 	}
 	if f.FailAfterStart {
 		return rec, errors.New("still loading: instance left running")
