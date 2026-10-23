@@ -26,7 +26,7 @@ sections ([What you get](#what-you-get), [Quick start](#quick-start),
 - **Go 1.26** (to build the server and CLI — they're separate Go modules under `source/`).
 - **A model to talk to.** Pick at least one:
   - **Local inference:** managed llama-server, optional mistral.rs, or [Ollama](https://ollama.com), with a compatible model. Local inference has no provider per-token fee; downloads and network tools are not offline. See the [runtime guide](features/integrated-local-runtime.md).
-  - **Anthropic Claude:** a direct API key, *or* [Meridian](https://github.com/rynfar/meridian) if you drive Claude through a Claude Max subscription.
+  - **Anthropic Claude:** a direct API key or built-in Claude subscription sign-in (Max/Pro). [Meridian](https://github.com/rynfar/meridian) is an optional proxy route.
   - **OpenAI-compatible** (OpenAI, Gemini, Groq, …) via an API key, or **ChatGPT** via a Plus/Pro subscription sign-in.
 
 You need Go plus one model source. Everything else is optional.
@@ -95,7 +95,7 @@ piece.
 - **Headless one-shot mode** (`cercano run "prompt"`) for scripts, CI, and other agents
 - **Native tool calling** through the provider's structured tool channel (Anthropic `tool_use` blocks, Ollama `tool_calls`) — no JSON-in-text parsing
 - **Three permission modes** controlling when the user is prompted before destructive work
-- **Conversation persistence** in SQLite with lossless tool-call history for `/resume`
+- **Conversation persistence** in SQLite with structured tool-call history for `/resume`
 - **Pluggable cloud + local providers** behind a shared interface
 
 ## Quick start
@@ -184,7 +184,7 @@ separate. Direct `/tool` calls use CLI-local confirmation as described below.
 | `/clear-compacted-context` | Drop the compacted summaries and rehydrate the context from raw turns — no re-summarization (recovery when a broken summarizer produced a bad/empty compacted layer) |
 | `/elide-context` | Stub all tool outputs in the context so far — LLM-free token reclaim. In-memory and send-view only: raw turns untouched, resets on agent restart; tool results after the command stay intact |
 | `/mcp` | Open MCP configuration; subcommands add/remove/restart hosted servers |
-| `/help` | Show keymap and command list |
+| `/help` | List registered slash commands and their help text |
 | `/quit` | Quit (or press Ctrl+C twice) |
 
 ## Cloud setup
@@ -220,7 +220,7 @@ The provider remains labeled untested until separately authorized live checks pa
 
 ### Direct Anthropic API
 
-Add an Anthropic API-key profile in `/cloud`; use its default API endpoint.
+Add an Anthropic API-key profile in `/config` → Cloud Providers → **+ Add provider…**; use its default API endpoint. `/cloud` lists profiles, selects an existing profile, or stores its key; it does not create profiles.
 
 ### ChatGPT subscription (device-code OAuth)
 
@@ -288,7 +288,7 @@ Layered abstraction. The shared `Provider` interface exposes `Chat`, `StreamChat
 host credential service; protocol support is not a live availability or account
 eligibility guarantee.
 
-The internal `Block` type carries text / `tool_use` / `tool_result` / `image` and is the lingua franca. Each adapter translates SDK types ↔ `Block`. Image translation is plumbed at the provider layer ([vision-input.md](vision-input.md)); live attachments can also be inspected through `inspect_image`.
+The internal `Block` type carries text / `tool_use` / `tool_result` / `image` / `reasoning` and is the lingua franca. Each adapter translates SDK types ↔ `Block`. Image translation is plumbed at the provider layer ([vision-input.md](vision-input.md)); live attachments can also be inspected through `inspect_image`.
 
 **Cloud resilience.** Every adapter normalizes its wire errors into provider-agnostic classes (`quota`, `busy`, `auth`, `invalid_request`, `network`, `unknown` — `llm.Error`), and a single engine (`internal/inference/resilience`) owns the retry/failover policy: busy gets one narrated same-provider retry, quota/auth/network fail over to the backup profile immediately, invalid requests surface. Actions are narrated to the user in-band ("anthropic quota reached — switching to openai") and logged server-side. SDK-internal and transport-level retries are deliberately disabled — the engine is the only retry layer. Primary's `internal/inference/profilechain` account cycle composes this engine into bounded ordered traversals. Its synchronized, generation-checked active-account state survives provider rebuilds, but is in-memory and resets on agent restart. Quota alone advances that shared state; partially streamed responses are never replayed. Secondary retains its existing single-backup behavior. See [cloud routing](../cloud-routing.md) for current account configuration and [cloud-failover-audit.md](cloud-failover-audit.md) for the earlier resilience audit.
 
@@ -346,7 +346,7 @@ Names match Claude's training (Read, Write, Edit, LS, Glob, Grep, Bash) to keep 
 
 ### Persistence (`internal/conversation/`)
 
-SQLite via `modernc.org/sqlite` (pure Go). Each turn is a row in `turns`. Tool-calling turns carry an ordered block-array JSON in `content_json` matching the Anthropic Messages wire shape. `/resume` deserializes and drops straight into the next provider call — no translation.
+SQLite via `modernc.org/sqlite` (pure Go). Each turn is a row in `turns`; `content_json` stores an ordered array of internal `llm.Block` values, not a provider-native wire payload. Resume reloads the transcript and rebuilds session state. Provider-facing history is reconstructed with text fallback for missing/invalid block JSON and repair of unmatched tool calls/results; compaction can replace older history with summaries. Adapters then translate the internal blocks to their wire formats. Renaming persists a user-chosen title, including before the first turn, protected from automatic title replacement.
 
 ### Permission gating
 
