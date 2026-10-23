@@ -38,8 +38,9 @@ The `cercano` binary also runs one shared `cercano model-host` process that owns
 llama-server and mistral.rs for the whole machine. Agent hosts launch it on
 demand and it exits when idle, so several agents share one loaded model.
 `CERCANO_MODEL_HOST=inprocess` keeps models inside the agent process instead
-(for tests and troubleshooting). `cercano restart-after-upgrade` also shuts the
-model host down so the next model request launches the upgraded binary.
+(for tests and troubleshooting). `cercano restart-after-upgrade` also relaunches
+a running model host with the upgraded binary, under the same launch lock agents
+use, so agents connect to the new host rather than starting their own.
 
 ## Project Structure
 
