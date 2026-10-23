@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 
 	"cercano/source/server/internal/localruntime"
 	"cercano/source/server/internal/localruntime/localruntimetest"
@@ -80,8 +81,8 @@ type oldHost struct {
 	shutdown atomic.Int32
 }
 
-func (o *oldHost) Hello(context.Context, *proto.HelloRequest) (*proto.HelloResponse, error) {
-	return &proto.HelloResponse{ApiVersion: APIVersion + 1, Version: "old", Pid: 4242}, nil
+func (o *oldHost) Hello(_ context.Context, req *proto.HelloRequest) (*proto.HelloResponse, error) {
+	return &proto.HelloResponse{ApiVersion: APIVersion + 1, Version: "old", Pid: 4242, Proof: helloProof("tok", req.GetNonce())}, nil
 }
 
 func (o *oldHost) Shutdown(context.Context, *proto.ShutdownRequest) (*proto.ShutdownResponse, error) {
@@ -207,16 +208,14 @@ func TestLaunchBinarySpawnsModelHost(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell script launcher")
 	}
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
+	runDir := filepath.Join(t.TempDir(), "run")
 	marker := filepath.Join(t.TempDir(), "marker")
 	script := filepath.Join(t.TempDir(), "fake-cercano")
 	body := "#!/bin/sh\necho \"argv:$*\" > " + marker + "\necho hello-log\n"
 	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := LaunchBinary(script)(context.Background()); err != nil {
+	if err := LaunchBinary(script, runDir)(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(5 * time.Second)
@@ -231,7 +230,7 @@ func TestLaunchBinarySpawnsModelHost(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	for {
-		log, _ := os.ReadFile(filepath.Join(RunDir(), "modelhost.log"))
+		log, _ := os.ReadFile(filepath.Join(runDir, "modelhost.log"))
 		if strings.Contains(string(log), "hello-log") {
 			break
 		}
@@ -239,5 +238,150 @@ func TestLaunchBinarySpawnsModelHost(t *testing.T) {
 			t.Fatalf("log missing output: %q", log)
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// stubbornHost acks Shutdown but keeps answering Hello with the old version.
+type stubbornHost struct {
+	proto.UnimplementedModelHostServer
+	shutdown atomic.Int32
+}
+
+func (o *stubbornHost) Hello(_ context.Context, req *proto.HelloRequest) (*proto.HelloResponse, error) {
+	return &proto.HelloResponse{ApiVersion: APIVersion + 1, Pid: 4243, Proof: helloProof("tok", req.GetNonce())}, nil
+}
+
+func (o *stubbornHost) Shutdown(context.Context, *proto.ShutdownRequest) (*proto.ShutdownResponse, error) {
+	o.shutdown.Add(1)
+	return &proto.ShutdownResponse{}, nil
+}
+
+func serve(t *testing.T, srv proto.ModelHostServer) string {
+	t.Helper()
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := grpc.NewServer()
+	proto.RegisterModelHostServer(g, srv)
+	go g.Serve(lis)
+	t.Cleanup(g.Stop)
+	return lis.Addr().String()
+}
+
+func TestEnsureLaunchesAfterReplaceWaitElapses(t *testing.T) {
+	old := replaceWait
+	replaceWait = 400 * time.Millisecond
+	t.Cleanup(func() { replaceWait = old })
+	dir := t.TempDir()
+	host := &stubbornHost{}
+	addr := serve(t, host)
+	if err := WriteRecord(dir, Record{PID: 4243, Addr: addr, Token: "tok", APIVersion: APIVersion + 1}); err != nil {
+		t.Fatal(err)
+	}
+	var launches atomic.Int32
+	var want Record
+	start := time.Now()
+	got, err := Ensure(context.Background(), testOpts(dir, func(context.Context) error {
+		launches.Add(1)
+		want = startHost(t)
+		return WriteRecord(dir, want)
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if host.shutdown.Load() != 1 || launches.Load() != 1 || got.Addr != want.Addr {
+		t.Fatalf("shutdown=%d launches=%d got=%+v", host.shutdown.Load(), launches.Load(), got)
+	}
+	if time.Since(start) < 400*time.Millisecond {
+		t.Fatalf("launched before the replace wait elapsed (%v)", time.Since(start))
+	}
+}
+
+func TestEnsureDoesNotShutDownIncompatibleHostWithoutLauncher(t *testing.T) {
+	dir := t.TempDir()
+	host := &stubbornHost{}
+	addr := serve(t, host)
+	if err := WriteRecord(dir, Record{PID: 4243, Addr: addr, Token: "tok", APIVersion: APIVersion + 1}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Ensure(context.Background(), EnsureOptions{RunDir: dir, Timeout: time.Second})
+	if err == nil || !strings.Contains(err.Error(), "incompatible model host running and no launcher configured") {
+		t.Fatalf("err = %v", err)
+	}
+	if host.shutdown.Load() != 0 {
+		t.Fatal("incompatible host was shut down without a launcher")
+	}
+}
+
+// impostor answers Hello with a proof made from the wrong token and records
+// whether any call ever carried a token.
+type impostor struct {
+	proto.UnimplementedModelHostServer
+	tokenSeen atomic.Int32
+}
+
+func (i *impostor) note(ctx context.Context) {
+	if md, ok := metadata.FromIncomingContext(ctx); ok && len(md.Get(tokenHeader)) > 0 {
+		i.tokenSeen.Add(1)
+	}
+}
+
+func (i *impostor) Hello(ctx context.Context, req *proto.HelloRequest) (*proto.HelloResponse, error) {
+	i.note(ctx)
+	return &proto.HelloResponse{ApiVersion: APIVersion, Pid: 1, Proof: helloProof("not-the-token", req.GetNonce())}, nil
+}
+
+func (i *impostor) Shutdown(ctx context.Context, _ *proto.ShutdownRequest) (*proto.ShutdownResponse, error) {
+	i.note(ctx)
+	return &proto.ShutdownResponse{}, nil
+}
+
+func (i *impostor) Call(ctx context.Context, _ *proto.CallRequest) (*proto.CallResponse, error) {
+	i.note(ctx)
+	return &proto.CallResponse{}, nil
+}
+
+func TestDialRejectsHostWithWrongProofAndNeverSendsToken(t *testing.T) {
+	imp := &impostor{}
+	addr := serve(t, imp)
+	rec := Record{PID: 1, Addr: addr, Token: "tok", APIVersion: APIVersion}
+	if conn, err := Dial(context.Background(), rec); err == nil {
+		conn.Close()
+		t.Fatal("Dial accepted a host with a bad proof")
+	}
+	dir := t.TempDir()
+	if err := WriteRecord(dir, rec); err != nil {
+		t.Fatal(err)
+	}
+	var launches atomic.Int32
+	_, err := Ensure(context.Background(), EnsureOptions{RunDir: dir, Timeout: 400 * time.Millisecond,
+		Launch: func(context.Context) error { launches.Add(1); return nil }})
+	if err == nil || launches.Load() != 1 {
+		t.Fatalf("err=%v launches=%d", err, launches.Load())
+	}
+	if imp.tokenSeen.Load() != 0 {
+		t.Fatalf("impostor received the token on %d calls", imp.tokenSeen.Load())
+	}
+}
+
+func TestDialRejectsNonLoopbackAddr(t *testing.T) {
+	for _, addr := range []string{"10.1.2.3:5000", "example.com:5000", "localhost:5000", "[2001:db8::1]:5000", "nonsense"} {
+		if conn, err := Dial(context.Background(), Record{Addr: addr, Token: "tok"}); err == nil {
+			conn.Close()
+			t.Errorf("Dial accepted %q", addr)
+		}
+	}
+}
+
+func TestDialAcceptsVerifiedHostAndAttachesToken(t *testing.T) {
+	rec := startHost(t)
+	conn, err := Dial(context.Background(), rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := proto.NewModelHostClient(conn).Call(context.Background(), &proto.CallRequest{Method: "Providers"}); err != nil {
+		t.Fatalf("token-bearing call failed: %v", err)
 	}
 }

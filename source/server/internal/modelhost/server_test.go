@@ -2,6 +2,7 @@ package modelhost
 
 import (
 	"context"
+	"crypto/hmac"
 	"encoding/json"
 	"net"
 	"sync"
@@ -291,10 +292,6 @@ func TestRejectsMissingOrWrongToken(t *testing.T) {
 		if status.Code(err) != codes.Unauthenticated {
 			t.Errorf("%s Call: code = %v, want Unauthenticated", name, status.Code(err))
 		}
-		_, err = h.client.Hello(ctx, &proto.HelloRequest{})
-		if status.Code(err) != codes.Unauthenticated {
-			t.Errorf("%s Hello: code = %v, want Unauthenticated", name, status.Code(err))
-		}
 		_, err = h.client.Shutdown(ctx, &proto.ShutdownRequest{})
 		if status.Code(err) != codes.Unauthenticated {
 			t.Errorf("%s Shutdown: code = %v, want Unauthenticated", name, status.Code(err))
@@ -306,6 +303,21 @@ func TestRejectsMissingOrWrongToken(t *testing.T) {
 		if status.Code(err) != codes.Unauthenticated {
 			t.Errorf("%s Attach: code = %v, want Unauthenticated", name, status.Code(err))
 		}
+	}
+}
+
+func TestHelloNeedsNoTokenAndProvesIt(t *testing.T) {
+	h := newHarness(t)
+	nonce := []byte("0123456789abcdef0123456789abcdef")
+	resp, err := h.client.Hello(context.Background(), &proto.HelloRequest{Nonce: nonce})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hmac.Equal(resp.Proof, helloProof(testToken, nonce)) {
+		t.Fatal("proof does not match HMAC(token, nonce)")
+	}
+	if hmac.Equal(resp.Proof, helloProof("other", nonce)) {
+		t.Fatal("proof must depend on the token")
 	}
 }
 

@@ -2,11 +2,15 @@ package modelhost
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/rand"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"google.golang.org/grpc"
@@ -21,8 +25,9 @@ const (
 	defaultEnsureTimeout = 10 * time.Second
 	probeTimeout         = 2 * time.Second
 	pollInterval         = 100 * time.Millisecond
-	replaceWait          = 5 * time.Second
 )
+
+var replaceWait = 5 * time.Second
 
 // EnsureOptions configures Ensure.
 type EnsureOptions struct {
@@ -36,13 +41,36 @@ type EnsureOptions struct {
 	Timeout time.Duration
 }
 
-// Dial connects to the host named by r over loopback, attaching the host's
-// token to every unary and streaming call.
-func Dial(_ context.Context, r Record) (*grpc.ClientConn, error) {
-	withToken := func(ctx context.Context) context.Context {
-		return metadata.AppendToOutgoingContext(ctx, tokenHeader, r.Token)
+// checkLoopback requires addr to be host:port with a loopback IP literal, so
+// the token is never offered to a remote or name-resolved endpoint.
+func checkLoopback(addr string) error {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("model host address %q: %w", addr, err)
 	}
-	return grpc.NewClient(r.Addr,
+	ip := net.ParseIP(host)
+	if ip == nil || !ip.IsLoopback() {
+		return fmt.Errorf("model host address %q is not a loopback IP literal", addr)
+	}
+	return nil
+}
+
+// dialVerified connects to the host named by r and authenticates it before
+// the token is ever sent: Hello carries a fresh nonce and no token, and the
+// host must answer with HMAC-SHA256(token, nonce). Only afterwards do the
+// returned connection's interceptors attach the token to calls.
+func dialVerified(ctx context.Context, r Record, clientVersion string) (*grpc.ClientConn, *proto.HelloResponse, error) {
+	if err := checkLoopback(r.Addr); err != nil {
+		return nil, nil, err
+	}
+	var verified atomic.Bool
+	withToken := func(ctx context.Context) context.Context {
+		if verified.Load() {
+			return metadata.AppendToOutgoingContext(ctx, tokenHeader, r.Token)
+		}
+		return ctx
+	}
+	conn, err := grpc.NewClient(r.Addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithUnaryInterceptor(func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 			return invoker(withToken(ctx), method, req, reply, cc, opts...)
@@ -51,29 +79,41 @@ func Dial(_ context.Context, r Record) (*grpc.ClientConn, error) {
 			return streamer(withToken(ctx), desc, cc, method, opts...)
 		}),
 	)
-}
-
-// hello dials r and performs the Hello handshake.
-func hello(ctx context.Context, r Record, clientVersion string) (*proto.HelloResponse, error) {
-	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
-	defer cancel()
-	conn, err := Dial(ctx, r)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	defer conn.Close()
-	return proto.NewModelHostClient(conn).Hello(ctx, &proto.HelloRequest{ClientVersion: clientVersion})
+	nonce := make([]byte, 32)
+	if _, err := rand.Read(nonce); err != nil {
+		conn.Close()
+		return nil, nil, err
+	}
+	hctx, cancel := context.WithTimeout(ctx, probeTimeout)
+	defer cancel()
+	resp, err := proto.NewModelHostClient(conn).Hello(hctx, &proto.HelloRequest{ClientVersion: clientVersion, Nonce: nonce})
+	if err != nil {
+		conn.Close()
+		return nil, nil, err
+	}
+	if !hmac.Equal(resp.GetProof(), helloProof(r.Token, nonce)) {
+		conn.Close()
+		return nil, nil, errors.New("model host failed to prove it holds the token")
+	}
+	verified.Store(true)
+	return conn, resp, nil
 }
 
-func shutdownHost(ctx context.Context, r Record) error {
+// Dial connects to the host named by r over loopback after verifying that it
+// holds the record's token; the returned connection attaches the token to
+// every unary and streaming call.
+func Dial(ctx context.Context, r Record) (*grpc.ClientConn, error) {
+	conn, _, err := dialVerified(ctx, r, "")
+	return conn, err
+}
+
+func shutdownHost(ctx context.Context, conn *grpc.ClientConn) error {
 	ctx, cancel := context.WithTimeout(ctx, replaceWait)
 	defer cancel()
-	conn, err := Dial(ctx, r)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	_, err = proto.NewModelHostClient(conn).Shutdown(ctx, &proto.ShutdownRequest{})
+	_, err := proto.NewModelHostClient(conn).Shutdown(ctx, &proto.ShutdownRequest{})
 	return err
 }
 
@@ -85,36 +125,44 @@ const (
 	incompatible
 )
 
-// probe reads the record and classifies the host it names. Any read, dial or
-// handshake failure (including a draining host or wrong token) is notLive.
-func probe(ctx context.Context, dir, clientVersion string) (Record, probeState) {
+// probe reads the record and classifies the host it names. Any read, dial,
+// verification or handshake failure (including a draining host) is notLive.
+// For an incompatible host the verified connection is returned; the caller
+// closes it.
+func probe(ctx context.Context, dir, clientVersion string) (Record, probeState, *grpc.ClientConn) {
 	rec, err := ReadRecord(dir)
 	if err != nil {
-		return Record{}, notLive
+		return Record{}, notLive, nil
 	}
-	resp, err := hello(ctx, rec, clientVersion)
+	conn, resp, err := dialVerified(ctx, rec, clientVersion)
 	if err != nil {
-		return rec, notLive
+		return rec, notLive, nil
 	}
 	if int(resp.GetApiVersion()) == APIVersion {
-		return rec, live
+		conn.Close()
+		return rec, live, nil
 	}
-	return rec, incompatible
+	return rec, incompatible, conn
 }
 
 // replaceIncompatible asks an incompatible host to shut down and waits for
-// its record to disappear or for it to stop answering.
-func replaceIncompatible(ctx context.Context, dir string, rec Record, clientVersion string) {
-	_ = shutdownHost(ctx, rec)
+// its record to disappear or for it to stop answering. If it does neither
+// within replaceWait, the caller launches anyway: the launched process waits
+// for the old host to exit.
+func replaceIncompatible(ctx context.Context, dir string, rec Record, conn *grpc.ClientConn, clientVersion string) {
+	defer conn.Close()
+	_ = shutdownHost(ctx, conn)
 	deadline := time.Now().Add(replaceWait)
 	for time.Now().Before(deadline) && ctx.Err() == nil {
 		cur, err := ReadRecord(dir)
 		if err != nil || cur.PID != rec.PID || cur.Addr != rec.Addr {
 			return
 		}
-		if _, err := hello(ctx, cur, clientVersion); err != nil {
+		c, _, err := dialVerified(ctx, cur, clientVersion)
+		if err != nil {
 			return
 		}
+		c.Close()
 		sleep(ctx, 50*time.Millisecond)
 	}
 }
@@ -133,34 +181,34 @@ func sleep(ctx context.Context, d time.Duration) {
 func Ensure(ctx context.Context, opts EnsureOptions) (Record, error) {
 	dir := opts.RunDir
 	if dir == "" {
-		dir = RunDir()
+		var err error
+		if dir, err = RunDir(); err != nil {
+			return Record{}, err
+		}
 	}
 	timeout := opts.Timeout
 	if timeout <= 0 {
 		timeout = defaultEnsureTimeout
 	}
-
-	check := func() (Record, bool) {
-		rec, st := probe(ctx, dir, opts.ClientVersion)
-		switch st {
-		case live:
-			return rec, true
-		case incompatible:
-			replaceIncompatible(ctx, dir, rec, opts.ClientVersion)
-		}
-		return Record{}, false
+	if err := ensureRunDir(dir); err != nil {
+		return Record{}, err
 	}
 
-	if rec, ok := check(); ok {
+	rec, st, conn := probe(ctx, dir, opts.ClientVersion)
+	switch st {
+	case live:
 		return rec, nil
+	case incompatible:
+		if opts.Launch == nil {
+			conn.Close()
+			return Record{}, errors.New("incompatible model host running and no launcher configured")
+		}
+		replaceIncompatible(ctx, dir, rec, conn, opts.ClientVersion)
 	}
 	if opts.Launch == nil {
 		return Record{}, errors.New("model host is not running and no launcher is configured")
 	}
 
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return Record{}, err
-	}
 	lockCtx, cancelLock := context.WithTimeout(ctx, timeout+replaceWait)
 	release, err := filelock.Lock(lockCtx, filepath.Join(dir, "launch.lock"))
 	cancelLock()
@@ -169,7 +217,12 @@ func Ensure(ctx context.Context, opts EnsureOptions) (Record, error) {
 	}
 	defer release()
 
-	if rec, ok := check(); ok {
+	// Another Ensure may have launched while we waited for the lock.
+	rec, st, conn = probe(ctx, dir, opts.ClientVersion)
+	if conn != nil {
+		conn.Close()
+	}
+	if st == live {
 		return rec, nil
 	}
 	if err := opts.Launch(ctx); err != nil {
@@ -180,7 +233,11 @@ func Ensure(ctx context.Context, opts EnsureOptions) (Record, error) {
 	// replacement publishes its own, so keep polling until the deadline.
 	deadline := time.Now().Add(timeout)
 	for {
-		if rec, st := probe(ctx, dir, opts.ClientVersion); st == live {
+		rec, st, conn := probe(ctx, dir, opts.ClientVersion)
+		if conn != nil {
+			conn.Close()
+		}
+		if st == live {
 			return rec, nil
 		}
 		if err := ctx.Err(); err != nil {
@@ -194,14 +251,21 @@ func Ensure(ctx context.Context, opts EnsureOptions) (Record, error) {
 }
 
 // LaunchBinary returns a Launch func that spawns "<path> model-host"
-// detached, appending its output to RunDir()/modelhost.log.
-func LaunchBinary(path string) func(ctx context.Context) error {
+// detached, appending its output to runDir/modelhost.log (RunDir() when
+// runDir is empty).
+func LaunchBinary(path, runDir string) func(ctx context.Context) error {
 	return func(context.Context) error {
-		dir := RunDir()
-		if err := os.MkdirAll(dir, 0o700); err != nil {
+		dir := runDir
+		if dir == "" {
+			var err error
+			if dir, err = RunDir(); err != nil {
+				return err
+			}
+		}
+		if err := ensureRunDir(dir); err != nil {
 			return err
 		}
-		logf, err := os.OpenFile(filepath.Join(dir, "modelhost.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+		logf, err := os.OpenFile(filepath.Join(dir, "modelhost.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND|logOpenFlags, 0o600)
 		if err != nil {
 			return err
 		}

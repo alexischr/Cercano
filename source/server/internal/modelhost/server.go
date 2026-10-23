@@ -2,6 +2,8 @@ package modelhost
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -343,15 +345,26 @@ func (s *Server) authorize(ctx context.Context) error {
 	return nil
 }
 
-// Hello implements the version handshake.
-func (s *Server) Hello(ctx context.Context, _ *proto.HelloRequest) (*proto.HelloResponse, error) {
-	if err := s.authorize(ctx); err != nil {
-		return nil, err
-	}
+// helloProof is HMAC-SHA256(key=token, msg=nonce): proof that the responder
+// knows the host token without revealing it.
+func helloProof(token string, nonce []byte) []byte {
+	m := hmac.New(sha256.New, []byte(token))
+	m.Write(nonce)
+	return m.Sum(nil)
+}
+
+// Hello implements the version handshake. It needs no token, so a client can
+// authenticate the host (via the proof) before ever sending it the token.
+func (s *Server) Hello(_ context.Context, req *proto.HelloRequest) (*proto.HelloResponse, error) {
 	if s.draining.Load() {
 		return nil, errDraining
 	}
-	return &proto.HelloResponse{ApiVersion: APIVersion, Version: s.opts.Version, Pid: int32(os.Getpid())}, nil
+	return &proto.HelloResponse{
+		ApiVersion: APIVersion,
+		Version:    s.opts.Version,
+		Pid:        int32(os.Getpid()),
+		Proof:      helloProof(s.opts.Token, req.GetNonce()),
+	}, nil
 }
 
 // Shutdown stops all instances, then calls OnShutdown.

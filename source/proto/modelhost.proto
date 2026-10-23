@@ -29,12 +29,16 @@ service ModelHost {
 
 message HelloRequest {
   string client_version = 1;
+  // nonce is a fresh random value; the host proves knowledge of the token by
+  // returning HMAC-SHA256(token, nonce). Hello itself needs no token.
+  bytes nonce = 2;
 }
 
 message HelloResponse {
   int32 api_version = 1;
   string version = 2;
   int32 pid = 3;
+  bytes proof = 4;
 }
 
 message AttachRequest {

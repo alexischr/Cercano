@@ -3,6 +3,7 @@ package modelhost
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -21,17 +22,29 @@ type Record struct {
 }
 
 // RunDir is the directory holding the host record, launch lock and log.
-func RunDir() string {
+func RunDir() (string, error) {
 	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		home = os.TempDir()
+	if err != nil {
+		return "", fmt.Errorf("locating home directory: %w", err)
 	}
-	return filepath.Join(home, ".cercano", "run", "modelhost")
+	if home == "" {
+		return "", errors.New("home directory is unknown")
+	}
+	return filepath.Join(home, ".cercano", "run", "modelhost"), nil
+}
+
+// ensureRunDir creates dir (0700) and verifies it is safe to trust: a real
+// directory owned by the current user that nobody else can access.
+func ensureRunDir(dir string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	return checkRunDir(dir)
 }
 
 // WriteRecord atomically writes the record with mode 0600.
 func WriteRecord(dir string, r Record) error {
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := ensureRunDir(dir); err != nil {
 		return err
 	}
 	data, err := json.Marshal(r)
@@ -68,7 +81,14 @@ func WriteRecord(dir string, r Record) error {
 // ReadRecord reads the host record; the error wraps os.ErrNotExist when absent.
 func ReadRecord(dir string) (Record, error) {
 	var r Record
-	data, err := os.ReadFile(filepath.Join(dir, recordFile))
+	if err := ensureRunDir(dir); err != nil {
+		return r, err
+	}
+	path := filepath.Join(dir, recordFile)
+	if err := checkRecordFile(path); err != nil {
+		return r, err
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return r, err
 	}

@@ -24,6 +24,9 @@ const (
 type HelloRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ClientVersion string                 `protobuf:"bytes,1,opt,name=client_version,json=clientVersion,proto3" json:"client_version,omitempty"`
+	// nonce is a fresh random value; the host proves knowledge of the token by
+	// returning HMAC-SHA256(token, nonce). Hello itself needs no token.
+	Nonce         []byte `protobuf:"bytes,2,opt,name=nonce,proto3" json:"nonce,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -65,11 +68,19 @@ func (x *HelloRequest) GetClientVersion() string {
 	return ""
 }
 
+func (x *HelloRequest) GetNonce() []byte {
+	if x != nil {
+		return x.Nonce
+	}
+	return nil
+}
+
 type HelloResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ApiVersion    int32                  `protobuf:"varint,1,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
 	Version       string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
 	Pid           int32                  `protobuf:"varint,3,opt,name=pid,proto3" json:"pid,omitempty"`
+	Proof         []byte                 `protobuf:"bytes,4,opt,name=proof,proto3" json:"proof,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -123,6 +134,13 @@ func (x *HelloResponse) GetPid() int32 {
 		return x.Pid
 	}
 	return 0
+}
+
+func (x *HelloResponse) GetProof() []byte {
+	if x != nil {
+		return x.Proof
+	}
+	return nil
 }
 
 type AttachRequest struct {
@@ -448,14 +466,16 @@ var File_modelhost_proto protoreflect.FileDescriptor
 
 const file_modelhost_proto_rawDesc = "" +
 	"\n" +
-	"\x0fmodelhost.proto\x12\x05agent\"5\n" +
+	"\x0fmodelhost.proto\x12\x05agent\"K\n" +
 	"\fHelloRequest\x12%\n" +
-	"\x0eclient_version\x18\x01 \x01(\tR\rclientVersion\"\\\n" +
+	"\x0eclient_version\x18\x01 \x01(\tR\rclientVersion\x12\x14\n" +
+	"\x05nonce\x18\x02 \x01(\fR\x05nonce\"r\n" +
 	"\rHelloResponse\x12\x1f\n" +
 	"\vapi_version\x18\x01 \x01(\x05R\n" +
 	"apiVersion\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12\x10\n" +
-	"\x03pid\x18\x03 \x01(\x05R\x03pid\"X\n" +
+	"\x03pid\x18\x03 \x01(\x05R\x03pid\x12\x14\n" +
+	"\x05proof\x18\x04 \x01(\fR\x05proof\"X\n" +
 	"\rAttachRequest\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12\x18\n" +
 	"\aprofile\x18\x02 \x01(\tR\aprofile\x12\x10\n" +
