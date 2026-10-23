@@ -276,3 +276,103 @@ func TestAgentShutdownDoesNotStopSharedModel(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+// shortenModelHostBudget shrinks the agent's model host connect budget so a
+// hung host fails over quickly in tests.
+func shortenModelHostBudget(t *testing.T, ensure, budget time.Duration) {
+	t.Helper()
+	prevEnsure, prevBudget := modelHostEnsureTimeout, modelHostConnectBudget
+	modelHostEnsureTimeout, modelHostConnectBudget = ensure, budget
+	t.Cleanup(func() { modelHostEnsureTimeout, modelHostConnectBudget = prevEnsure, prevBudget })
+}
+
+func TestConnectFallsBackWithinBudgetWhenHostNeverReady(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		ensure, budget time.Duration
+	}{
+		// Ensure gives up on the launched host first.
+		{"ensure timeout", 300 * time.Millisecond, 500 * time.Millisecond},
+		// The overall budget cuts off an Ensure that would wait longer.
+		{"overall budget", 5 * time.Second, 300 * time.Millisecond},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			testConnectFallsBackWithinBudget(t, tc.ensure, tc.budget)
+		})
+	}
+}
+
+func testConnectFallsBackWithinBudget(t *testing.T, ensure, budget time.Duration) {
+	connectTestEnv(t)
+	shortenModelHostBudget(t, ensure, budget)
+	// The launch "succeeds" but no host ever publishes a record.
+	var launches atomic.Int32
+	prev := launchModelHost
+	launchModelHost = func(string) func(context.Context) error {
+		return func(context.Context) error { launches.Add(1); return nil }
+	}
+	t.Cleanup(func() { launchModelHost = prev })
+
+	logPath := filepath.Join(t.TempDir(), "crash.log")
+	events, err := crashlog.NewWriter(logPath, version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = events.Close() })
+
+	start := time.Now()
+	m, _ := connect(t, ollamaConfig(), events)
+	elapsed := time.Since(start)
+	if _, ok := m.(*localruntime.InMemoryManager); !ok {
+		t.Fatalf("manager is %T, want the in-process *localruntime.InMemoryManager", m)
+	}
+	if limit := budget + time.Second; elapsed > limit {
+		t.Fatalf("connectRuntimeManager took %s, want at most %s", elapsed, limit)
+	}
+	if launches.Load() == 0 {
+		t.Fatal("model host was never launched")
+	}
+
+	// The abandoned client must not keep trying to launch a host.
+	n := launches.Load()
+	time.Sleep(3 * min(ensure, budget))
+	if got := launches.Load(); got != n {
+		t.Fatalf("launches went from %d to %d after fallback", n, got)
+	}
+
+	entries, err := crashlog.TailEntries(logPath, 50)
+	if err != nil {
+		t.Fatalf("TailEntries: %v", err)
+	}
+	for _, e := range entries {
+		if e.Kind == crashlog.KindRuntimeEvent && e.Event == crashlog.EventModelHostUnavailable {
+			return
+		}
+	}
+	t.Fatalf("no %s event in crash log: %+v", crashlog.EventModelHostUnavailable, entries)
+}
+
+func TestConnectReturnsErrorWhenCallerCancelled(t *testing.T) {
+	connectTestEnv(t)
+	prev := launchModelHost
+	launchModelHost = func(string) func(context.Context) error {
+		return func(context.Context) error { return nil }
+	}
+	t.Cleanup(func() { launchModelHost = prev })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	m, closeFn, err := connectRuntimeManager(ctx, ollamaConfig(), nil)
+	if err == nil {
+		if closeFn != nil {
+			closeFn()
+		}
+		t.Fatalf("connectRuntimeManager with a cancelled ctx returned %T and no error, want an error", m)
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled", err)
+	}
+	if m != nil {
+		t.Fatalf("manager = %T, want nil on error", m)
+	}
+}

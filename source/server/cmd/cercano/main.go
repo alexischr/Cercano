@@ -786,6 +786,19 @@ func warmActiveRuntime(manager localruntime.Manager, cfg config.Config) {
 // an escape hatch); anything else uses the shared model host.
 const modelHostEnv = "CERCANO_MODEL_HOST"
 
+// The agent binds its gRPC port only after the runtime manager is ready, and
+// the CLI gives an auto-launched agent 8s to answer. Connecting to the model
+// host therefore gets a fixed budget, after which the agent falls back to
+// in-process models. Variables so tests can shorten them.
+var (
+	// modelHostEnsureTimeout bounds the wait for a launched host to publish
+	// its record (EnsureOptions.Timeout).
+	modelHostEnsureTimeout = 3 * time.Second
+	// modelHostConnectBudget bounds the whole connect: lock waits, launch,
+	// verification, Attach and retries.
+	modelHostConnectBudget = 4 * time.Second
+)
+
 // connectRuntimeManager returns the runtime manager the agent uses and a
 // function that closes it. By default that is a client of the shared model
 // host, launched on demand, so several agents share one copy of each local
@@ -802,8 +815,10 @@ func connectRuntimeManager(ctx context.Context, cfg config.Config, events *crash
 	}
 	remote, err := newModelHostRemote(ctx)
 	if err != nil {
+		// Only the caller giving up is fatal. The connect budget expiring,
+		// like any other failure, falls back to in-process models.
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return nil, nil, ctxErr
+			return nil, nil, fmt.Errorf("connecting to model host: %w", ctxErr)
 		}
 		log.Printf("[WARN] shared model host unavailable (%v); hosting local models in this process", err)
 		events.LogRuntimeEvent(crashlog.EventModelHostUnavailable, err.Error(), crashlog.RuntimeInfo{}, map[string]any{"fallback": "inprocess"})
@@ -819,21 +834,30 @@ func connectRuntimeManager(ctx context.Context, cfg config.Config, events *crash
 }
 
 // newModelHostRemote connects to the shared model host in the default run
-// directory, launching this binary as the host when none is running.
+// directory, launching this binary as the host when none is running. The
+// whole connect is bounded by modelHostConnectBudget. A failed NewRemote has
+// already closed its client, so nothing keeps retrying in the background.
 func newModelHostRemote(ctx context.Context) (*modelhost.Remote, error) {
 	runDir, err := modelhost.RunDir()
 	if err != nil {
 		return nil, err
 	}
-	return modelhost.NewRemote(ctx, modelhost.RemoteOptions{
+	bctx, cancel := context.WithTimeout(ctx, modelHostConnectBudget)
+	defer cancel()
+	remote, err := modelhost.NewRemote(bctx, modelhost.RemoteOptions{
 		Ensure: modelhost.EnsureOptions{
 			RunDir:        runDir,
 			ClientVersion: version,
 			Launch:        launchModelHost(runDir),
+			Timeout:       modelHostEnsureTimeout,
 		},
 		// The active profile is reported once profiles reach the agent host.
 		Profile: "",
 	})
+	if err != nil && ctx.Err() == nil && bctx.Err() != nil {
+		return nil, fmt.Errorf("model host not connected within %s: %w", modelHostConnectBudget, err)
+	}
+	return remote, err
 }
 
 // startDefaultRuntimeAsync warms the llama-server default model in the
