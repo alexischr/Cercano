@@ -30,6 +30,16 @@ var sentinels = []struct {
 	{"ErrModelNotPresent", localruntime.ErrModelNotPresent, codes.FailedPrecondition},
 }
 
+// sentinelName returns the wire name of a wrapped localruntime sentinel.
+func sentinelName(err error) (string, bool) {
+	for _, s := range sentinels {
+		if errors.Is(err, s.err) {
+			return s.name, true
+		}
+	}
+	return "", false
+}
+
 // encodeError converts err into a gRPC status error. A wrapped localruntime
 // sentinel becomes NotFound or FailedPrecondition with the sentinel's name in
 // an ErrorInfo detail; the full message is preserved. Other errors become

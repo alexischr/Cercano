@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"google.golang.org/grpc"
@@ -56,9 +58,10 @@ type Server struct {
 	opts  ServerOptions
 	holds *holdTable
 
-	// lifeMu serializes instance lifecycle operations (Start, Stop, Restart,
-	// hold release, StopAll) so dedupe and hold bookkeeping stay consistent.
-	lifeMu sync.Mutex
+	// keys serializes lifecycle operations per (runtime, model), so dedupe and
+	// hold bookkeeping stay consistent for one model without making a slow
+	// load of one model block operations on another.
+	keys keyedMutex
 
 	mu        sync.Mutex
 	streams   map[*stream]struct{}
@@ -69,7 +72,47 @@ type Server struct {
 
 type stream struct {
 	ch chan *proto.ManagerEvent
+	// warned is set once a drop has been logged and cleared when the stream
+	// drains again, so a stuck stream logs once rather than per event.
+	warned atomic.Bool
 }
+
+// keyedMutex is a set of mutexes addressed by string key.
+type keyedMutex struct {
+	mu sync.Mutex
+	m  map[string]*keyedEntry
+}
+
+type keyedEntry struct {
+	mu   sync.Mutex
+	refs int
+}
+
+// lock acquires the mutex for key and returns its unlock function.
+func (k *keyedMutex) lock(key string) func() {
+	k.mu.Lock()
+	if k.m == nil {
+		k.m = map[string]*keyedEntry{}
+	}
+	e := k.m[key]
+	if e == nil {
+		e = &keyedEntry{}
+		k.m[key] = e
+	}
+	e.refs++
+	k.mu.Unlock()
+	e.mu.Lock()
+	return func() {
+		e.mu.Unlock()
+		k.mu.Lock()
+		if e.refs--; e.refs == 0 {
+			delete(k.m, key)
+		}
+		k.mu.Unlock()
+	}
+}
+
+func modelKey(runtime, model string) string { return runtime + "\x00" + model }
 
 // NewServer wraps m. It registers itself as an observer of m once.
 func NewServer(m localruntime.Manager, opts ServerOptions) *Server {
@@ -138,10 +181,9 @@ func (s *Server) checkIdle(ctx context.Context) {
 	}
 }
 
-// StopAll stops every live instance and drops all holds.
+// StopAll stops every live instance and drops their holds. It takes no model
+// locks, so it never waits behind an in-flight Start of another model.
 func (s *Server) StopAll(ctx context.Context) error {
-	s.lifeMu.Lock()
-	defer s.lifeMu.Unlock()
 	instances, err := s.mgr.Instances(ctx)
 	if err != nil {
 		return err
@@ -153,19 +195,35 @@ func (s *Server) StopAll(ctx context.Context) error {
 		}
 		if err := s.mgr.Stop(ctx, localruntime.StopRequest{InstanceID: inst.ID}); err != nil {
 			errs = append(errs, fmt.Errorf("stop %s: %w", inst.ID, err))
+			continue
 		}
+		s.holds.drop(inst.ID)
 	}
-	s.holds.clear()
 	return errors.Join(errs...)
 }
 
+// liveInstance reports whether an instance may still hold a process. Only
+// states that are definitely gone are excluded: an unreachable or unknown
+// instance may be a hung process that must still be stopped and shared.
 func liveInstance(i localruntime.InstanceRecord) bool {
 	switch i.State {
-	case localruntime.InstanceStarting, localruntime.InstanceRunning, localruntime.InstanceHealthy,
-		localruntime.InstanceDegraded, localruntime.InstanceUnhealthy:
-		return true
+	case localruntime.InstanceStopped, localruntime.InstanceCrashed, localruntime.InstanceFailed:
+		return false
 	}
-	return false
+	return true
+}
+
+// lockInstance takes the model lock for instance id, resolving its runtime and
+// model from the manager. An unknown instance locks on its ID alone.
+func (s *Server) lockInstance(ctx context.Context, id string) func() {
+	if instances, err := s.mgr.Instances(ctx); err == nil {
+		for _, inst := range instances {
+			if inst.ID == id {
+				return s.keys.lock(modelKey(inst.Runtime, inst.ModelID))
+			}
+		}
+	}
+	return s.keys.lock("instance\x00" + id)
 }
 
 // authorize checks the token in the incoming metadata.
@@ -222,6 +280,7 @@ func (s *Server) Attach(req *proto.AttachRequest, srv grpc.ServerStreamingServer
 		case <-ctx.Done():
 			return nil
 		case ev := <-st.ch:
+			st.warned.Store(false)
 			if err := srv.Send(ev); err != nil {
 				return err
 			}
@@ -262,20 +321,27 @@ func (s *Server) attachedClients(clientID string) int {
 }
 
 // releaseClient drops all of clientID's holds, stopping instances left unheld.
+// Under each instance's model lock it first re-checks that the client has not
+// re-attached: a reconnect that raced the old stream's teardown keeps its holds.
 func (s *Server) releaseClient(clientID string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	s.lifeMu.Lock()
-	defer s.lifeMu.Unlock()
 	for _, id := range s.holds.heldBy(clientID) {
-		if err := s.releaseLocked(ctx, clientID, id); err != nil {
-			log.Printf("modelhost: release %s for client %s: %v", id, clientID, err)
-		}
+		func() {
+			unlock := s.lockInstance(ctx, id)
+			defer unlock()
+			if s.attachedClients(clientID) > 0 {
+				return
+			}
+			if err := s.releaseLocked(ctx, clientID, id); err != nil {
+				log.Printf("modelhost: release %s for client %s: %v", id, clientID, err)
+			}
+		}()
 	}
 }
 
 // releaseLocked removes clientID's hold on id and stops the instance when no
-// holds remain. lifeMu must be held.
+// holds remain. The instance's model lock must be held.
 func (s *Server) releaseLocked(ctx context.Context, clientID, id string) error {
 	if s.holds.remove(clientID, id) > 0 {
 		return nil
@@ -309,9 +375,32 @@ func (s *Server) broadcast(ev *proto.ManagerEvent) {
 		select {
 		case st.ch <- ev:
 		default:
-			log.Printf("modelhost: dropping event for slow stream")
+			if st.warned.CompareAndSwap(false, true) {
+				log.Printf("modelhost: dropping events for slow stream")
+			}
 		}
 	}
+}
+
+// EnsureModelsPresentRequest is the payload of the "EnsureModelsPresent" call.
+type EnsureModelsPresentRequest struct {
+	Runtime string
+	Want    []string
+}
+
+// ResolveOpenModelRequest is the payload of the "ResolveOpenModel" call.
+type ResolveOpenModelRequest struct {
+	Runtime string
+	Want    string
+}
+
+// ResolveOpenModelResult is the response of the "ResolveOpenModel" call. The
+// manager returns a record alongside ErrModelNotPresent, so the sentinel
+// travels in the body: Error is the sentinel's name ("ErrModelNotFound",
+// "ErrModelNotPresent") or empty. Other errors are returned as statuses.
+type ResolveOpenModelResult struct {
+	Record localruntime.ModelRecord `json:"record"`
+	Error  string                   `json:"error"`
 }
 
 // Call dispatches a localruntime.Manager method by name.
@@ -378,13 +467,6 @@ func (s *Server) dispatch(ctx context.Context, clientID, method string, payload 
 		}
 		v, err := s.restart(ctx, clientID, r)
 		return reply(v, err)
-	case "UpdateInstance":
-		var r localruntime.InstanceRecord
-		if err := decode(payload, &r); err != nil {
-			return "", err
-		}
-		s.mgr.UpdateInstance(r)
-		return "", nil
 	case "DownloadModel":
 		var r localruntime.DownloadRequest
 		if err := decode(payload, &r); err != nil {
@@ -393,26 +475,26 @@ func (s *Server) dispatch(ctx context.Context, clientID, method string, payload 
 		v, err := s.mgr.DownloadModel(ctx, r)
 		return reply(v, err)
 	case "EnsureModelsPresent":
-		var r struct {
-			Runtime string
-			Want    []string
-		}
+		var r EnsureModelsPresentRequest
 		if err := decode(payload, &r); err != nil {
 			return "", err
 		}
 		return "", s.mgr.EnsureModelsPresent(ctx, r.Runtime, r.Want)
 	case "ResolveOpenModel":
-		var r struct {
-			Runtime string
-			Want    string
-		}
+		var r ResolveOpenModelRequest
 		if err := decode(payload, &r); err != nil {
 			return "", err
 		}
-		v, err := s.mgr.ResolveOpenModel(ctx, r.Runtime, r.Want)
-		// ErrModelNotPresent still returns the record; the sentinel travels
-		// in the error and the client re-fetches by name if it needs it.
-		return reply(v, err)
+		rec, err := s.mgr.ResolveOpenModel(ctx, r.Runtime, r.Want)
+		res := ResolveOpenModelResult{Record: rec}
+		if err != nil {
+			name, ok := sentinelName(err)
+			if !ok {
+				return "", err
+			}
+			res.Error = name
+		}
+		return encode(res)
 	case "CancelDownload":
 		var r localruntime.DownloadRequest
 		if err := decode(payload, &r); err != nil {
@@ -470,8 +552,8 @@ func reply(v any, err error) (string, error) {
 // start shares a running instance for the same runtime and model, otherwise
 // starts one, and records the client's hold either way.
 func (s *Server) start(ctx context.Context, clientID string, req localruntime.StartRequest) (*localruntime.InstanceRecord, error) {
-	s.lifeMu.Lock()
-	defer s.lifeMu.Unlock()
+	unlock := s.keys.lock(modelKey(req.Runtime, req.ModelID))
+	defer unlock()
 	instances, err := s.mgr.Instances(ctx)
 	if err != nil {
 		return nil, err
@@ -493,21 +575,58 @@ func (s *Server) start(ctx context.Context, clientID string, req localruntime.St
 
 // stop releases the client's hold and stops the instance once unheld.
 func (s *Server) stop(ctx context.Context, clientID string, req localruntime.StopRequest) error {
-	s.lifeMu.Lock()
-	defer s.lifeMu.Unlock()
+	unlock := s.lockInstance(ctx, req.InstanceID)
+	defer unlock()
 	return s.releaseLocked(ctx, clientID, req.InstanceID)
+}
+
+// restartTarget resolves the instance a restart will act on, the way the
+// manager does: by ID, or for an empty ID the newest non-stopped instance of
+// the named runtime.
+func (s *Server) restartTarget(ctx context.Context, req localruntime.RestartRequest) (localruntime.InstanceRecord, bool) {
+	instances, err := s.mgr.Instances(ctx)
+	if err != nil {
+		return localruntime.InstanceRecord{}, false
+	}
+	if req.InstanceID != "" {
+		for _, inst := range instances {
+			if inst.ID == req.InstanceID {
+				return inst, true
+			}
+		}
+		return localruntime.InstanceRecord{}, false
+	}
+	if req.Runtime == "" {
+		return localruntime.InstanceRecord{}, false
+	}
+	var running []localruntime.InstanceRecord
+	for _, inst := range instances {
+		if inst.Runtime == req.Runtime && inst.State != localruntime.InstanceStopped {
+			running = append(running, inst)
+		}
+	}
+	if len(running) == 0 {
+		return localruntime.InstanceRecord{}, false
+	}
+	sort.Slice(running, func(i, j int) bool { return running[i].ID < running[j].ID })
+	return running[len(running)-1], true
 }
 
 // restart restarts for every holder; holds follow the instance if its ID changes.
 func (s *Server) restart(ctx context.Context, clientID string, req localruntime.RestartRequest) (*localruntime.InstanceRecord, error) {
-	s.lifeMu.Lock()
-	defer s.lifeMu.Unlock()
+	target, found := s.restartTarget(ctx, req)
+	key := modelKey(req.Runtime, req.ModelID)
+	if found {
+		key = modelKey(target.Runtime, target.ModelID)
+	}
+	unlock := s.keys.lock(key)
+	defer unlock()
 	inst, err := s.mgr.Restart(ctx, req)
 	if err != nil {
 		return nil, err
 	}
-	if req.InstanceID != "" {
-		s.holds.move(req.InstanceID, inst.ID)
+	if found {
+		s.holds.move(target.ID, inst.ID)
 	}
 	if s.holds.count(inst.ID) == 0 {
 		// A restart that degenerated into a fresh start still needs an owner.

@@ -82,6 +82,13 @@ func (h *holdTable) move(from, to string) {
 	}
 }
 
+// drop removes every hold on instance.
+func (h *holdTable) drop(instance string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.byInstance, instance)
+}
+
 // clear drops every hold.
 func (h *holdTable) clear() {
 	h.mu.Lock()

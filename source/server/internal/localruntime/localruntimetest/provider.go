@@ -4,6 +4,7 @@ package localruntimetest
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 
 	"cercano/source/server/internal/localruntime"
@@ -18,6 +19,12 @@ type FakeProvider struct {
 	ProviderName string
 	// Models is returned by Discover.
 	Models []localruntime.ModelRecord
+	// UniqueIDs gives every launch a fresh instance ID ("fake-<model>-<n>"),
+	// as real providers do when the port is part of the ID.
+	UniqueIDs bool
+	// OnStart, if set, runs at the start of every Start call, before it is
+	// counted. Tests use it to block a launch.
+	OnStart func(localruntime.StartRequest)
 
 	mu         sync.Mutex
 	startedID  string
@@ -56,9 +63,15 @@ func (f *FakeProvider) Start(_ context.Context, req localruntime.StartRequest, s
 	if req.ModelID == "" {
 		return nil, errors.New("model id required")
 	}
+	if f.OnStart != nil {
+		f.OnStart(req)
+	}
 	id := "fake-" + req.ModelID
 	f.mu.Lock()
 	f.startCalls++
+	if f.UniqueIDs {
+		id = fmt.Sprintf("%s-%d", id, f.startCalls)
+	}
 	f.startedID = id
 	state := localruntime.InstanceRunning
 	if f.stopped[id] {

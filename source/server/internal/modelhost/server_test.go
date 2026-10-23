@@ -43,6 +43,7 @@ type harness struct {
 	t        *testing.T
 	srv      *Server
 	provider *localruntimetest.FakeProvider
+	mgr      *localruntime.InMemoryManager
 	client   proto.ModelHostClient
 	clock    *fakeClock
 	idle     chan struct{}
@@ -50,11 +51,11 @@ type harness struct {
 
 func newHarness(t *testing.T, models ...string) *harness {
 	t.Helper()
-	provider := localruntimetest.NewFakeProvider("fake")
+	provider := localruntimetest.NewFakeProvider("fake", localruntime.ModelRecord{ID: "absent", Runtime: "fake"})
 	mgr := localruntime.NewManager()
 	mgr.RegisterProvider(provider)
 	clock := &fakeClock{t: time.Unix(1000, 0)}
-	h := &harness{t: t, provider: provider, clock: clock, idle: make(chan struct{}, 4)}
+	h := &harness{t: t, provider: provider, mgr: mgr, clock: clock, idle: make(chan struct{}, 4)}
 	h.srv = NewServer(mgr, ServerOptions{
 		Token:       testToken,
 		IdleTimeout: time.Minute,
@@ -404,5 +405,159 @@ func TestSlowStreamDoesNotBlockManager(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("observer blocked on a full stream")
+	}
+}
+
+func (h *harness) restart(clientID string, req localruntime.RestartRequest) localruntime.InstanceRecord {
+	h.t.Helper()
+	var rec localruntime.InstanceRecord
+	if err := h.call(clientID, "Restart", req, &rec); err != nil {
+		h.t.Fatalf("Restart: %v", err)
+	}
+	return rec
+}
+
+func TestRestartWithNewInstanceIDKeepsHolds(t *testing.T) {
+	for name, byName := range map[string]bool{"by id": false, "by runtime name": true} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t)
+			h.provider.UniqueIDs = true
+			a := h.start("A", "m1")
+			h.start("B", "m1")
+			req := localruntime.RestartRequest{InstanceID: a.ID}
+			if byName {
+				req = localruntime.RestartRequest{Runtime: "fake"}
+			}
+			re := h.restart("A", req)
+			if re.ID == a.ID {
+				t.Fatalf("test needs a new instance id, got %q twice", re.ID)
+			}
+			if h.srv.holds.count(a.ID) != 0 || h.srv.holds.count(re.ID) != 2 {
+				t.Fatalf("holds: old=%d new=%d, want 0 and 2", h.srv.holds.count(a.ID), h.srv.holds.count(re.ID))
+			}
+			afterRestart := h.provider.StopCalls()
+			h.stop("B", re.ID)
+			if h.provider.StopCalls() != afterRestart {
+				t.Fatal("instance stopped while A still holds it")
+			}
+			h.stop("A", re.ID)
+			if h.provider.StopCalls() != afterRestart+1 {
+				t.Fatal("instance not stopped after last hold released")
+			}
+		})
+	}
+}
+
+func TestReconnectRaceKeepsNewHold(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	req := localruntime.StartRequest{Runtime: "fake", ModelID: "m1"}
+	old := h.srv.addStream("A")
+	if _, err := h.srv.start(ctx, "A", req); err != nil {
+		t.Fatal(err)
+	}
+	// The old stream ends, but before its release runs the client reconnects
+	// and starts again.
+	if !h.srv.removeStream("A", old) {
+		t.Fatal("expected client to be fully detached")
+	}
+	fresh := h.srv.addStream("A")
+	defer h.srv.removeStream("A", fresh)
+	if _, err := h.srv.start(ctx, "A", req); err != nil {
+		t.Fatal(err)
+	}
+	h.srv.releaseClient("A")
+	if h.provider.StopCalls() != 0 {
+		t.Fatalf("StopCalls = %d, reconnected client lost its hold", h.provider.StopCalls())
+	}
+	if h.srv.holds.count("fake-m1") != 1 {
+		t.Fatalf("holds = %d, want 1", h.srv.holds.count("fake-m1"))
+	}
+}
+
+func TestUnreachableInstanceIsSharedAndStopped(t *testing.T) {
+	h := newHarness(t)
+	a := h.start("A", "m1")
+	hung := a
+	hung.State = localruntime.InstanceUnreachable
+	h.mgr.UpdateInstance(hung)
+	b := h.start("B", "m1")
+	if b.ID != a.ID || h.provider.StartCalls() != 1 {
+		t.Fatalf("unreachable instance not shared: %q vs %q, starts=%d", a.ID, b.ID, h.provider.StartCalls())
+	}
+	if err := h.srv.StopAll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if h.provider.StopCalls() != 1 {
+		t.Fatalf("StopCalls = %d, StopAll skipped the unreachable instance", h.provider.StopCalls())
+	}
+}
+
+func TestSlowStartOfOneModelDoesNotBlockAnother(t *testing.T) {
+	h := newHarness(t)
+	gate := make(chan struct{})
+	entered := make(chan struct{})
+	h.provider.OnStart = func(req localruntime.StartRequest) {
+		if req.ModelID == "x" {
+			close(entered)
+			<-gate
+		}
+	}
+	xDone := make(chan struct{})
+	go func() {
+		defer close(xDone)
+		h.start("A", "x")
+	}()
+	<-entered
+	defer func() { close(gate); <-xDone }()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		y := h.start("B", "y")
+		h.stop("B", y.ID)
+		if err := h.srv.StopAll(context.Background()); err != nil {
+			t.Error(err)
+		}
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("operations on model y blocked behind the slow start of x")
+	}
+}
+
+func TestUpdateInstanceIsNotRemotelyCallable(t *testing.T) {
+	h := newHarness(t)
+	err := h.call("A", "UpdateInstance", localruntime.InstanceRecord{ID: "fake-m1"}, nil)
+	if status.Code(err) != codes.Unimplemented {
+		t.Fatalf("code = %v, want Unimplemented", status.Code(err))
+	}
+}
+
+func TestResolveOpenModelEnvelope(t *testing.T) {
+	h := newHarness(t)
+	var res ResolveOpenModelResult
+	err := h.call("A", "ResolveOpenModel", ResolveOpenModelRequest{Runtime: "fake", Want: "absent"}, &res)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Error != "ErrModelNotPresent" || res.Record.ID != "absent" {
+		t.Fatalf("not present: %+v", res)
+	}
+	res = ResolveOpenModelResult{}
+	if err := h.call("A", "ResolveOpenModel", ResolveOpenModelRequest{Runtime: "fake", Want: "nope"}, &res); err != nil {
+		t.Fatal(err)
+	}
+	if res.Error != "ErrModelNotFound" {
+		t.Fatalf("not found: %+v", res)
+	}
+	// A non-sentinel failure is a status error, not an envelope.
+	err = h.call("A", "ResolveOpenModel", ResolveOpenModelRequest{Want: "x"}, nil)
+	if err == nil {
+		t.Fatal("expected error for missing runtime")
+	}
+	if err := h.call("A", "EnsureModelsPresent", EnsureModelsPresentRequest{Runtime: "fake"}, nil); err != nil {
+		t.Fatalf("EnsureModelsPresent: %v", err)
 	}
 }
