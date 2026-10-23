@@ -1,11 +1,11 @@
-//go:build !unix
+//go:build !unix && !windows
 
 package modelhost
 
 import "syscall"
 
-// detachSysProcAttr: POSIX session detachment (setsid) has no equivalent
-// here; the spawned host is independent of the caller's console by default.
+// detachSysProcAttr: this platform offers no session or console detachment
+// through SysProcAttr, so the host is started with default attributes.
 func detachSysProcAttr() *syscall.SysProcAttr {
 	return nil
 }
