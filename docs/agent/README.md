@@ -169,8 +169,8 @@ separate. Direct `/tool` calls use CLI-local confirmation as described below.
 | `/tool <name> <json>` | Invoke a tool directly; cached W/X calls queue CLI-local confirmation in every mode (including bypass); approval calls unary `InvokeTool` |
 | `/strict` `/permissive` `/bypass` `/mode <m>` | Change permission mode |
 | `/history` | Pick a past conversation to resume |
-| `/resume <id>` | Resume by conversation id |
-| `/rename <title>` | Rename the current conversation |
+| `/resume [id]` | Resume by conversation id; without an id, open the conversation picker |
+| `/rename <title>` or `/rename <id> <title>` | Rename the current conversation, or the specified conversation when `<id>` is exactly 24 hexadecimal characters; titles may contain spaces |
 | `/clear` | Clear displayed messages and start a new conversation ID; retain the old stored conversation |
 | `/color <name|hex>` | Change the prompt border accent color |
 | `/config` | Open the settings page (or `/config <key> <value>` to set one value directly; `/config show` to print current config) |
