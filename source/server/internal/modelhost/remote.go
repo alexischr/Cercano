@@ -79,6 +79,7 @@ type Remote struct {
 	client  proto.ModelHostClient
 	gen     uint64             // incremented on every successful connect
 	endConn context.CancelFunc // ends the current Attach stream
+	rec     Record             // the host the current connection is to
 
 	epMu      sync.RWMutex
 	endpoints []localruntime.EndpointRecord
@@ -186,22 +187,50 @@ func (r *Remote) reconnect(ctx context.Context, failedGen uint64) error {
 		r.mu.Unlock()
 		return nil
 	}
-	old, end := r.conn, r.endConn
+	prev := &prevConn{conn: r.conn, end: r.endConn, rec: r.rec}
 	r.conn, r.client, r.endConn = nil, nil, nil
 	r.mu.Unlock()
-	if end != nil {
-		end()
+	// Whatever happens, the old connection is gone once reconnect returns.
+	defer prev.close()
+	return r.connect(ctx, prev)
+}
+
+// prevConn is the connection a reconnect replaces. It stays open while the
+// replacement attaches to the same host, so the host never sees this client
+// without a stream and keeps its holds.
+type prevConn struct {
+	conn *grpc.ClientConn
+	end  context.CancelFunc
+	rec  Record
+	once sync.Once
+}
+
+// close ends the old Attach stream and connection; later calls do nothing.
+func (p *prevConn) close() {
+	if p == nil {
+		return
 	}
-	if old != nil {
-		old.Close()
-	}
-	return r.connect(ctx)
+	p.once.Do(func() {
+		if p.end != nil {
+			p.end()
+		}
+		if p.conn != nil {
+			p.conn.Close()
+		}
+	})
+}
+
+// sameHost reports whether rec names the host the old connection is to.
+func (p *prevConn) sameHost(rec Record) bool {
+	return p != nil && p.conn != nil && rec.PID == p.rec.PID && rec.Addr == p.rec.Addr
 }
 
 // connect ensures a host, dials it with fresh verification and attaches. A
 // host that is draining answers Unavailable; connect then waits and tries
-// again (Ensure relaunches once it has gone) until the Ensure timeout.
-func (r *Remote) connect(ctx context.Context) error {
+// again (Ensure relaunches once it has gone) until the Ensure timeout. prev,
+// when not nil, is the connection being replaced: it is closed before
+// attaching to a different host, and only after attaching to the same one.
+func (r *Remote) connect(ctx context.Context, prev *prevConn) error {
 	cctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	stop := context.AfterFunc(r.ctx, cancel)
@@ -213,7 +242,7 @@ func (r *Remote) connect(ctx context.Context) error {
 	}
 	deadline := time.Now().Add(timeout)
 	for {
-		err := r.connectOnce(cctx)
+		err := r.connectOnce(cctx, prev)
 		if err == nil {
 			return nil
 		}
@@ -227,10 +256,13 @@ func (r *Remote) connect(ctx context.Context) error {
 	}
 }
 
-func (r *Remote) connectOnce(ctx context.Context) error {
+func (r *Remote) connectOnce(ctx context.Context, prev *prevConn) error {
 	rec, err := r.ensure(ctx, r.opts.Ensure)
 	if err != nil {
 		return err
+	}
+	if !prev.sameHost(rec) {
+		prev.close()
 	}
 	// An empty token is no secret: anyone can compute its Hello proof.
 	if rec.Token == "" {
@@ -261,11 +293,14 @@ func (r *Remote) connectOnce(ctx context.Context) error {
 	}
 	r.gen++
 	gen := r.gen
-	r.conn, r.client, r.endConn = conn, client, end
+	r.conn, r.client, r.endConn, r.rec = conn, client, end, rec
 	r.wg.Add(2)
 	r.mu.Unlock()
 	go r.readEvents(stream, sctx, gen)
 	go r.watchConn(conn, sctx)
+	// The new stream is registered: the old one can end without the host
+	// releasing this client's holds.
+	prev.close()
 	return nil
 }
 
@@ -314,7 +349,9 @@ func (r *Remote) readEvents(stream grpc.ServerStreamingClient[proto.ManagerEvent
 			return
 		}
 		ev, ok := decodeEvent(msg)
-		if !ok {
+		if !ok || !r.isCurrent(gen) {
+			// A replaced stream overlaps its replacement briefly during a
+			// reconnect to the same host; only the current one delivers.
 			continue
 		}
 		select {
@@ -323,6 +360,13 @@ func (r *Remote) readEvents(stream grpc.ServerStreamingClient[proto.ManagerEvent
 			return
 		}
 	}
+}
+
+// isCurrent reports whether gen is the current connection's generation.
+func (r *Remote) isCurrent(gen uint64) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.gen == gen
 }
 
 // watchConn closes conn as soon as it leaves READY, so gRPC can never carry

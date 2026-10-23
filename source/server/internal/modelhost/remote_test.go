@@ -591,3 +591,41 @@ func TestVerifiedConnNeverRedials(t *testing.T) {
 		t.Fatalf("impostor on the reused port received %d calls (%d with the token)", imp.calls.Load(), imp.tokenSeen.Load())
 	}
 }
+
+// TestRemoteReconnectToSameHostKeepsHolds: a reconnect to the host it is
+// already attached to must attach the new stream before ending the old one,
+// so the host never sees this client gone and keeps its holds.
+func TestRemoteReconnectToSameHostKeepsHolds(t *testing.T) {
+	dir := t.TempDir()
+	host := startTestHost(t, "tok-same")
+	host.publish(t, dir)
+	r := newTestRemote(t, remoteOpts(dir, nil))
+	ctx := context.Background()
+	inst, err := r.Start(ctx, localruntime.StartRequest{Runtime: "fake", ModelID: "present"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	epoch := r.HoldEpoch()
+	for i := 0; i < 5; i++ {
+		r.mu.Lock()
+		gen := r.gen
+		r.mu.Unlock()
+		if err := r.reconnect(ctx, gen); err != nil {
+			t.Fatalf("reconnect: %v", err)
+		}
+	}
+	// Give the host time to process the old streams ending.
+	time.Sleep(200 * time.Millisecond)
+	if n := host.provider.StopCalls(); n != 0 {
+		t.Fatalf("reconnecting to the same host stopped the held model (stop calls = %d)", n)
+	}
+	if host.srv.holds.count(inst.ID) != 1 {
+		t.Fatalf("holds on %s = %d after reconnect, want 1", inst.ID, host.srv.holds.count(inst.ID))
+	}
+	if n := host.srv.attachedClients(r.ClientID()); n != 1 {
+		t.Fatalf("attached streams = %d after reconnect, want 1", n)
+	}
+	if r.HoldEpoch() == epoch {
+		t.Fatal("HoldEpoch unchanged after reconnect; cached holds would never be re-taken")
+	}
+}
