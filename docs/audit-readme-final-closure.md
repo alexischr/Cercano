@@ -10,9 +10,11 @@ retained evidence, not claims of fresh inspection in this finalization.
 Only `source/server/internal/agent/toolloop.go:1205–1275` was freshly read to
 resolve the remaining concrete watchdog qualification. No broad source tracing.
 
-Source closure is bounded to the exact assertions below. Two assertions lack
-closure evidence in the saved report and remain explicitly unresolved below;
-implementation completeness and runtime acceptance are not implied.
+Source closure is bounded to the exact assertions below. The saved
+[control closure](audit-readme-control-closure.md) now supplies cross-report
+evidence for autonomy, later Permission gating, subscription-auth recovery and
+conversation-scoped main-chat selection. The reconciliation below supersedes the
+former whole-family gaps, not implementation completeness or runtime acceptance.
 
 ## Exact-section closure matrix
 
@@ -35,18 +37,41 @@ a cell share the preceding directory unless otherwise stated.
 | Persistence / stored turns, resume and rename | Block JSON and durable title upsert before first turn: `server/internal/conversation/store.go:629–655,830–858,926–947`; automatic titles exclude user titles: `:950–958`. Host forwarding: `server/internal/hostsvc/persistence/persistence.go:649–677,862–869`; load/meter/title forwarding and in-memory replay: `server/internal/agent/agent.go:288–328,424–428`. Internal-block reconstruction/text fallback/pair repair: `server/internal/agent/history.go:16–46`; summary plus live tail: `server/internal/compactor/compactor.go:51–64`. Corrected provider-native/no-translation/lossless absolutes: schema includes display metadata, excludes ProviderExtras (`server/internal/llm/messages.go:35–51`). |
 | Known limitations / folding and restored transcript | Tool navigation/toggles: `clients/cli/internal/ui/model.go:1586–1606`; folding/lazy fetch: `clients/cli/internal/ui/chat_view.go:928–963,1831–1848`. Resume skips blank prose turns and inserts timestamp-bound recap divider: `clients/cli/internal/ui/model.go:3959–4010`. Removed obsolete no-keybind claim; restored text is not a replay of every live tool card. |
 
-## Exact unresolved source claims
+## Cross-report reconciliation — 2026-10-23
 
-The saved report initially listed these as open and contains no later source
-citations closing them. They are not silently certified by consolidation:
+Saved reports only; no new source investigation. The
+[control closure](audit-readme-control-closure.md) records:
 
-- **Autonomous run completion**: completion confirmation/decline, legacy
-  `review_pending` handling, and completion-record/profile-change rollback claims.
-- **Session model selection**: conversation-scoped main-chat selection and its
-  transition/rollback details. No fresh tracing was authorized for this family.
+- **Autonomous completion / later Permission gating:** Increment 1 compares the
+  one-confirmation completion action, legacy `review_pending`, retained review
+  fields/decisions, completion-before-profile-change and attempted rollback with
+  reported rollback failure (`autonomous.go:213–282`), plus permission fences and
+  stream-origin decisions. This closes the former broad autonomy gap, not an
+  atomic transaction or guaranteed model compliance.
+- **Subscription authentication:** Increment 2 compares structured login-required
+  gates, safe replay/fallback, credential ownership and cancellation. The corrected
+  preservation claim allows normalized saved-account identity updates while
+  retaining routing/active selection. Live OAuth and delivery remain excluded.
+- **Session model selection:** Increment 3 compares conversation-only storage,
+  exact profile/model validation, next-message/resume semantics, pinned main-chat
+  routing and worker conversation checks. This closes the former broad selection
+  gap, not exhaustive delegated/background isolation or crash durability.
 
-Other former broad open families are closed only to the exact assertions in the
-matrix or covered by the inherited exclusions below, not exhaustive branches.
+### Exact remaining source-evidence gaps
+
+The former list included details not explicitly established by the control
+report's saved citations/dispositions. Retain only these narrower questions:
+
+- Autonomous completion **decline behavior**, distinct from the compared
+  one-confirmation completion action and preservation of existing decisions.
+- Session-model **transition/rollback details beyond the compared validated
+  set/clear and next-message/resume behavior**. The control report does not
+  establish a separate rollback guarantee.
+
+These are carried-forward assertion-level evidence gaps, not findings of broken
+implementation. Do not infer either closure or a new rollback promise from the
+whole-section disposition. All other former broad open families are closed only
+to the recorded assertions or inherited exclusions, not exhaustive branches.
 
 ## Inherited work and runtime exclusions
 
@@ -54,7 +79,8 @@ Previously completed startup/headless, setup 2/3/6, Permission modes and later
 permission callbacks, direct tools, attachments, rename/resume parsing,
 history/clear local handlers, development mode and subscription-auth recovery
 are inherited from the earlier control/self-development work, not re-audited.
-No new claim is made here that those reports were freshly read.
+The control report was read for the reconciliation above; other inherited reports
+were not freshly revalidated.
 
 Excluded from source closure: live sign-in, keychain/OAuth success, account/model
 eligibility and third-party ToS; external Meridian behavior/turn limits;
@@ -78,3 +104,10 @@ Markdown paths are checkpoint targets; unrelated routing changes stay intact.
 - Offline relative filesystem-link check: 16 targets, zero missing; fenced blocks,
   external URLs and fragment anchors excluded. No fetching or anchor certification.
 - Checkpoint restricted to the two owned files, including pre-existing owned edits.
+
+## Reconciliation publication checks — 2026-10-23
+
+Saved-report reconciliation only; no guide/source edits or runtime checks.
+Scoped whitespace and offline local-link results are recorded in the shared
+[remaining ledger](audit-core-remaining.md). Historical checks above belong to
+that earlier finalization and were not rerun against the README here.

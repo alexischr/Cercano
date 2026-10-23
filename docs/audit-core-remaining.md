@@ -158,3 +158,35 @@ acceptance, runtime certification or a repair of the codec implementation.
   no stale attachment claim requiring an edit; its other unchecked families
   remain explicitly listed above. The three cumulative ledgers point here for
   the same completed/remaining split. This checkpoint is partial, not closure.
+
+## Latest remaining-list closure reconciliation — 2026-10-23
+
+Saved reports only: [README final matrix](audit-readme-final-closure.md),
+[README control closure](audit-readme-control-closure.md), and
+[routing seven-family matrix](audit-routing-final-closure.md). This entry
+supersedes earlier pending lists only for their recorded maintained assertions.
+README autonomy, later Permission gating, subscription-auth recovery and
+conversation-scoped model selection now have cross-report dispositions; routing's
+seven remaining families have bounded source closure after the recorded fixes.
+Earlier isolation, self-dev, startup/headless, direct-tool, specialist and
+decision-fidelity dispositions remain inherited, not independently revalidated.
+
+**Exact remaining actionable source-evidence claims:** completion decline
+behavior; session-model transition/rollback details beyond validated set/clear
+and next-message/resume semantics. These narrower carried-forward questions are
+not explicitly closed by the control report; see the README matrix. No other
+unsupported maintained claim is identified by these final saved matrices.
+
+This closes the historical remaining list only to that extent, **not exhaustive
+validation of all five complete guides or all 500 repository docs**. Runtime/UI,
+OAuth/keychain/provider availability, deployed interoperability, model compliance,
+exhaustive execution-path isolation, crash/disk durability and external Meridian
+behavior remain unverified exclusions, not newly discovered source defects.
+Source comparison and publication checks are distinct from runtime/external
+acceptance. No new source investigation, tests/builds, network, guide/application
+edits, push or merge in this reconciliation.
+
+Reconciliation checks: `git diff --check` and line-by-line trailing-whitespace
+scan passed for the four edited audit Markdown files. Offline relative inline
+filesystem-link targets passed; fenced blocks, fragment anchors and external
+URLs excluded. No guide links, anchor semantics or external services certified.
