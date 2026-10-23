@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -11,7 +12,9 @@ import (
 	"time"
 
 	"cercano/source/server/internal/brewrestart"
+	"cercano/source/server/internal/modelhost"
 	"cercano/source/server/pkg/config"
+	"cercano/source/server/pkg/proto"
 )
 
 func runUpgradeRestart(args []string) int {
@@ -24,10 +27,43 @@ func runUpgradeRestart(args []string) int {
 			}
 			return filepath.EvalSymlinks(path)
 		},
+		shutdownModelHost,
 		brewrestart.RestartInstalled)
 }
 
-func upgradeRestartCommand(args []string, out io.Writer, configuredPort func() (string, error), executable func() (string, error), restart func(context.Context, string, netip.AddrPort) (bool, error)) int {
+// shutdownModelHost asks the shared model host to exit so the next model
+// request launches the installed binary.
+func shutdownModelHost(ctx context.Context) error {
+	dir, err := modelhost.RunDir()
+	if err != nil {
+		return err
+	}
+	return shutdownModelHostIn(dir)(ctx)
+}
+
+// shutdownModelHostIn returns a shutdown function for the host recorded in
+// dir. A missing record, or a recorded host that no longer answers, means
+// there is nothing to shut down and is not an error.
+func shutdownModelHostIn(dir string) func(context.Context) error {
+	return func(ctx context.Context) error {
+		rec, err := modelhost.ReadRecord(dir)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return nil
+			}
+			return err
+		}
+		conn, err := modelhost.Dial(ctx, rec)
+		if err != nil {
+			return nil
+		}
+		defer conn.Close()
+		_, err = proto.NewModelHostClient(conn).Shutdown(ctx, &proto.ShutdownRequest{})
+		return err
+	}
+}
+
+func upgradeRestartCommand(args []string, out io.Writer, configuredPort func() (string, error), executable func() (string, error), shutdownModelHost func(context.Context) error, restart func(context.Context, string, netip.AddrPort) (bool, error)) int {
 	flags := flag.NewFlagSet("restart-after-upgrade", flag.ContinueOnError)
 	flags.SetOutput(out)
 	address := flags.String("address", "", "explicit loopback agent address (default: configured port)")
@@ -70,6 +106,12 @@ func upgradeRestartCommand(args []string, out io.Writer, configuredPort func() (
 	if err != nil {
 		fmt.Fprintf(out, "Upgrade restart failed: %v\nThe update may already be installed. Check agent logs; use /restart-agent if the old agent is still serving, or start cercano manually if no agent is running.\n", err)
 		return 1
+	}
+	// The model host is shut down even when no agent was running, so the next
+	// request launches the new binary. A failure here is reported but does not
+	// change the exit code: the agent restart itself succeeded.
+	if err := shutdownModelHost(ctx); err != nil {
+		fmt.Fprintf(out, "Could not shut down the shared model host: %v\nIt will exit when idle; the next model request then launches the installed binary.\n", err)
 	}
 	if restarted {
 		fmt.Fprintln(out, "Running agent restarted using the installed binary.")

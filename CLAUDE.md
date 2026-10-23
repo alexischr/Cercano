@@ -34,6 +34,13 @@ it auto-launches `cercano agent` if no server is listening, finding the server
 binary as a sibling next to its own executable. The dev launcher
 (`source/server/scripts/cercano-launcher.sh`) builds both and co-locates them.
 
+The `cercano` binary also runs one shared `cercano model-host` process that owns
+llama-server and mistral.rs for the whole machine. Agent hosts launch it on
+demand and it exits when idle, so several agents share one loaded model.
+`CERCANO_MODEL_HOST=inprocess` keeps models inside the agent process instead
+(for tests and troubleshooting). `cercano restart-after-upgrade` also shuts the
+model host down so the next model request launches the upgraded binary.
+
 ## Project Structure
 
 - `source/server/` — Go module `cercano/source/server`: AI agent, gRPC server, MCP tool handlers

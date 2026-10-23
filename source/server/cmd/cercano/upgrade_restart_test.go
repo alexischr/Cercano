@@ -5,8 +5,12 @@ import (
 	"context"
 	"errors"
 	"net/netip"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"cercano/source/server/internal/modelhost"
 )
 
 func TestUpgradeRestartCommand(t *testing.T) {
@@ -48,6 +52,7 @@ func TestUpgradeRestartCommand(t *testing.T) {
 					}
 					return "/fake/Cellar/cercano/2/bin/cercano", nil
 				},
+				func(context.Context) error { return nil },
 				func(ctx context.Context, path string, endpoint netip.AddrPort) (bool, error) {
 					calls++
 					if _, ok := ctx.Deadline(); !ok {
@@ -71,5 +76,57 @@ func TestUpgradeRestartCommand(t *testing.T) {
 				t.Fatal("unexpected config access")
 			}
 		})
+	}
+}
+
+func upgradeArgs(t *testing.T, out *bytes.Buffer, shutdown func(context.Context) error, restarted bool) int {
+	t.Helper()
+	return upgradeRestartCommand(nil, out,
+		func() (string, error) { return "4242", nil },
+		func() (string, error) { return "/fake/bin/cercano", nil },
+		shutdown,
+		func(context.Context, string, netip.AddrPort) (bool, error) { return restarted, nil })
+}
+
+func TestUpgradeRestartShutsDownModelHost(t *testing.T) {
+	opts := testHostOptions(t, time.Minute)
+	done := startHost(t, context.Background(), opts)
+	waitRecord(t, opts.RunDir, 3*time.Second)
+	var out bytes.Buffer
+	if code := upgradeArgs(t, &out, shutdownModelHostIn(opts.RunDir), true); code != 0 {
+		t.Fatalf("code=%d output=%s", code, out.String())
+	}
+	if err := waitDone(t, done, 5*time.Second); err != nil {
+		t.Fatalf("runModelHost: %v", err)
+	}
+	if _, err := modelhost.ReadRecord(opts.RunDir); err == nil {
+		t.Fatal("record still present after shutdown")
+	}
+}
+
+func TestUpgradeRestartWithoutModelHost(t *testing.T) {
+	var out bytes.Buffer
+	dir := filepath.Join(t.TempDir(), "run")
+	if code := upgradeArgs(t, &out, shutdownModelHostIn(dir), true); code != 0 {
+		t.Fatalf("code=%d output=%s", code, out.String())
+	}
+	if strings.Contains(out.String(), "model host") {
+		t.Fatalf("unexpected model host message: %s", out.String())
+	}
+}
+
+func TestUpgradeRestartModelHostFailureKeepsExitCode(t *testing.T) {
+	var out bytes.Buffer
+	code := upgradeArgs(t, &out, func(context.Context) error { return errors.New("boom") }, true)
+	if code != 0 || !strings.Contains(out.String(), "model host") {
+		t.Fatalf("code=%d output=%s", code, out.String())
+	}
+}
+
+func TestUpgradeRestartShutsDownModelHostWhenNoAgentRunning(t *testing.T) {
+	called := 0
+	var out bytes.Buffer
+	if code := upgradeArgs(t, &out, func(context.Context) error { called++; return nil }, false); code != 0 || called != 1 {
+		t.Fatalf("code=%d called=%d", code, called)
 	}
 }
