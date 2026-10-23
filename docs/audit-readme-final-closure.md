@@ -1,139 +1,80 @@
-# README remaining-family audit — 2026-10-23
+# README final bounded source closure — 2026-10-23
 
-Branch `docs/core-closure-bounded`. Source comparison only, not runtime
-certification. Only `docs/agent/README.md` and this report are owned by this pass.
-Previously completed startup/headless, setup 2/3/6, Permission modes, direct-tool,
-attachments, rename/resume parsing and history/clear local handlers are excluded.
-No shared ledger or cloud-routing guide changes.
+## Scope and disposition
 
-## Increment 1 — onboarding prerequisites
+Owned files: `docs/agent/README.md` and this report, including their existing
+uncommitted changes. Routing files belong to another writer and are not staged.
+This matrix consolidates the saved increments and supersedes their repeated
+partial/open-family lists and promises of a later matrix. Saved citations are
+retained evidence, not claims of fresh inspection in this finalization.
+Only `source/server/internal/agent/toolloop.go:1205–1275` was freshly read to
+resolve the remaining concrete watchdog qualification. No broad source tracing.
 
-Both `source/server/go.mod:3` and `source/clients/cli/go.mod:3` require Go
-1.26.0; the README's Go 1.26/separate modules prerequisite matches. The
-Anthropic SDK version in the provider inventory also matches
-`source/server/go.mod:8`. No correction for these claims.
+Source closure is bounded to the exact assertions below. Two assertions lack
+closure evidence in the saved report and remain explicitly unresolved below;
+implementation completeness and runtime acceptance are not implied.
 
-## Remaining at this save
+## Exact-section closure matrix
 
-Setup 4/5 and capability summaries; remaining slash handlers; Cloud/Local setup;
-architecture/provider/tool-loop/built-in inventories; autonomy/later permission
-gating; downstream persistence/resume/rename; nonattachment limitations and auth
-recovery; session model selection. These are not certified by the initial slice.
+Source paths in this table are relative to `source/`; abbreviated filenames in
+a cell share the preceding directory unless otherwise stated.
 
-## Increment 2 — other slash handlers (partial downstream closure)
+| README section / assertion | Disposition and retained source evidence |
+|---|---|
+| Prerequisites; architecture dependencies | Go 1.26/separate modules match `server/go.mod:3`, `clients/cli/go.mod:3`; Anthropic SDK 1.51, Ollama and pure-Go SQLite match `server/go.mod:8,16,25`; Bubble Tea matches `clients/cli/go.mod:8`. |
+| Setup 4 / Cloud; Cloud setup | Provider creation, keys/subscriptions, account actions, quality/model selection, custom endpoints and Mistral combined catalog: `clients/cli/internal/ui/cloud_section.go:125–148,191,205–295`; account credential/catalog selection: `server/internal/server/mistral_catalog.go:18–90`. `/cloud` lists/selects/keys existing profiles (`clients/cli/internal/slash/config.go:73–141`); creation instructions corrected to Cloud settings, including Meridian. |
+| Cloud flavors, subscription prerequisites and account traversal | Four flavors and subscription token-source routes: `server/internal/cloudfactory/factory.go:19–24,68–122`. Built-in Claude Max/Pro sign-in does not require Meridian. Generation-checked account state, quota advancement and finite exhaustion: `server/internal/inference/profilechain/cycle.go:106–165,229–246`. ChatGPT token save/refresh: `server/internal/chatgptauth/source.go:14–107`. Fixed model allowlist replaced with account-scoped catalog wording. |
+| Setup 4 / Local | Managed-runtime setup/readiness gates: `clients/cli/internal/ui/settings_page.go:562–579`; hard local-only governor: `server/internal/inference/router.go:67–103`. Selecting a model alone is not an offline guarantee. |
+| Setup 5; What you get / native tools | Submission and slash separation: `clients/cli/internal/ui/model.go:2979–3008`. Tool resolution, profile fences and R-tier goroutines versus W/X partition: `server/internal/agent/toolloop.go:925–975,1010–1040`. Source behavior is not a promise of correct model choices; completed permission controls are inherited, not reopened. |
+| Slash commands / parser and UI dispatch | `clients/cli/internal/slash/basic.go:10–42`, `color.go:13–74`, `config.go:16–141`, `settings.go:6–14`, `theme.go:5–12`, `tools.go:14–46`, `context.go:13–95`, `contextview.go:5–12`, `mcp.go:12–74`; `clients/cli/internal/ui/model.go:3225–3414`. `/help` generates registered command help, not a keymap. Ctrl+C clears selected/composed input first; double-empty-press exit: `model.go:3620–3649`. |
+| Slash commands / downstream context, MCP and config | Elision preserves raw turns with a process-local send-view floor: `server/internal/hostsvc/persistence/persistence.go:1164–1201`; clear/regenerate/incremental dispatch: `:1263–1316` (incremental compaction starts asynchronously). MCP RPC dispatch: `server/internal/server/server.go:463–520`; lifecycle/persistence: `server/internal/mcp_host/manager.go:262–328` (add may retain failed connection status). Config commit/persist/provider reconfiguration: `server/internal/server/server.go:2094–2125`. These close asserted operations, not universal success. |
+| Architecture / provider interface and internal blocks | Actual interface is Name/Capabilities/Chat/StreamChat: `server/internal/inference/provider.go:52–57`, not the stale Infer/Stream introductory comment. Streaming calls: `server/internal/agent/toolloop.go:745,1312`. Internal text/tool/image/reasoning schema: `server/internal/llm/messages.go:7–13,23–51`; reasoning was added to the inventory. |
+| Cloud resilience; Meridian streaming | Retry classes: `server/internal/llm/error.go:150–184`; one narrated live restart and guarded pre-content retry/failover: `server/internal/inference/resilience/resilience.go:841–889,954–990`. Corrected busy-only and never-replay absolutes. Request decoration: `server/internal/llm/anthropic/auth.go:1–64`; removed unsupported proxy-header/turn-cap promises. Tool-loop StreamChat use remains, without an external proxy-cap rationale. |
+| Tool loop / three-error guard | **Corrected in this finalization:** `server/internal/agent/toolloop.go:1209–1216,1228–1243` computes all-error results, then prioritizes `watchdogIntervened` over incrementing the counter and testing `>= 3`. Watchdog challenge/block/escalation iterations neither advance nor reset the counter. README now qualifies the counted iterations; no application edit. |
+| Built-in tools / aliases, command execution and limits | Registration/aliases: `server/internal/capabilities/builtins/builtins.go:27–111`; reads/globs: `fs_read.go:19–32,263–310`; atomic writes/edits: `fs_write.go:59–110,163–198`; destructive operations: `fs_destructive.go:44–65`; git writes: `git_write.go:160–175`; command execution: `run.go:79–139,196–209`. Corrected canonical RunCommand (Bash is legacy), direct argv rather than implicit shell, and 16 KiB cap per output stream. Inventory is explicitly selected, not exhaustive. |
+| Persistence / stored turns, resume and rename | Block JSON and durable title upsert before first turn: `server/internal/conversation/store.go:629–655,830–858,926–947`; automatic titles exclude user titles: `:950–958`. Host forwarding: `server/internal/hostsvc/persistence/persistence.go:649–677,862–869`; load/meter/title forwarding and in-memory replay: `server/internal/agent/agent.go:288–328,424–428`. Internal-block reconstruction/text fallback/pair repair: `server/internal/agent/history.go:16–46`; summary plus live tail: `server/internal/compactor/compactor.go:51–64`. Corrected provider-native/no-translation/lossless absolutes: schema includes display metadata, excludes ProviderExtras (`server/internal/llm/messages.go:35–51`). |
+| Known limitations / folding and restored transcript | Tool navigation/toggles: `clients/cli/internal/ui/model.go:1586–1606`; folding/lazy fetch: `clients/cli/internal/ui/chat_view.go:928–963,1831–1848`. Resume skips blank prose turns and inserts timestamp-bound recap divider: `clients/cli/internal/ui/model.go:3959–4010`. Removed obsolete no-keybind claim; restored text is not a replay of every live tool card. |
 
-Compared maintained entries with `source/clients/cli/internal/slash/`:
-`basic.go:10–42`, `color.go:13–74`, `config.go:16–141`,
-`settings.go:6–14`, `theme.go:5–12`, `tools.go:14–46`,
-`context.go:13–95`, `contextview.go:5–12`, `mcp.go:12–74`.
-The model dispatch in `source/clients/cli/internal/ui/model.go:3225–3414`
-opens the matching settings/context/MCP pages, starts context RPC commands,
-applies prompt color, renders text, or quits. Ctrl+C's actual double-empty-press
-contract is at `model.go:3620–3649` (selected/composed input clears first).
-Corrected `/help`: it generates registered command help, not a keymap.
-Cloud profile creation instructions elsewhere in README incorrectly said to add
-profiles in `/cloud`: this handler only lists/selects/stores keys; the Cloud
-settings editor is the creation surface already described in setup step 4.
-That correction is made in the Cloud increment below, not inferred as cloud
-provider/authentication closure.
+## Exact unresolved source claims
 
-No discrepancy found in other compared parser/dispatch descriptions. Still
-unresolved in this family: server-side compaction/regeneration/elision semantics,
-MCP management execution, config update persistence and settings-page details.
-The development-mode entry remains covered by the earlier self-dev report;
-previously completed handlers were not re-audited.
+The saved report initially listed these as open and contains no later source
+citations closing them. They are not silently certified by consolidation:
 
+- **Autonomous run completion**: completion confirmation/decline, legacy
+  `review_pending` handling, and completion-record/profile-change rollback claims.
+- **Session model selection**: conversation-scoped main-chat selection and its
+  transition/rollback details. No fresh tracing was authorized for this family.
 
-## Increment 3 — Cloud entry surfaces and provider inventory (partial)
+Other former broad open families are closed only to the exact assertions in the
+matrix or covered by the inherited exclusions below, not exhaustive branches.
 
-`source/server/internal/cloudfactory/factory.go:19–24,68–115,120–122`
-constructs four cloud flavors, including direct subscription token-source routes
-for Claude and ChatGPT. Corrected the prerequisite that misleadingly required
-Meridian for Claude subscriptions: built-in Max/Pro sign-in is supported.
-`source/clients/cli/internal/ui/cloud_section.go:125–148,191` supplies the
-Cloud Providers add-provider/sign-in surfaces; `internal/slash/config.go:73–141`
-only lists/selects/keys existing profiles. Corrected direct-Anthropic creation
-instructions accordingly. Provider flavor inventory matches factory wiring.
-`source/server/internal/llm/messages.go:7–13,23–51` additionally defines reasoning;
-added that omitted internal block kind to the provider description.
+## Inherited work and runtime exclusions
 
-Still unresolved: full setup 4 and UI save behavior, provider presets/defaults,
-OAuth/key storage and recovery, ChatGPT allowlist/eligibility assertions, Local
-runtime selection/locus enforcement, and cloud resilience/retry claims. Nothing
-here is live account/provider certification or a cloud-routing guide audit.
+Previously completed startup/headless, setup 2/3/6, Permission modes and later
+permission callbacks, direct tools, attachments, rename/resume parsing,
+history/clear local handlers, development mode and subscription-auth recovery
+are inherited from the earlier control/self-development work, not re-audited.
+No new claim is made here that those reports were freshly read.
 
-## Increment 4 — downstream persistence/resume/rename
+Excluded from source closure: live sign-in, keychain/OAuth success, account/model
+eligibility and third-party ToS; external Meridian behavior/turn limits;
+terminal delivery; correct model tool choice; exhaustive MCP/config/error
+branches; full viewport/client reconstruction and live-card replay; raw-body
+retention/pruning and crash durability. These are not implementation backlog
+unless an actual README assertion is identified. No byte-for-byte replay or
+universal connection-success promise remains.
 
-`source/server/internal/conversation/store.go:629–655,830–858,926–947`
-writes and reads block JSON and upserts user titles even before the first turn.
-`source/server/internal/hostsvc/persistence/persistence.go:649–677,862–869`
-forwards resume/rename to Agent; `internal/agent/agent.go:288–313,424–428`
-loads stored turns/rebuilds the context meter and forwards the title update.
-`internal/agent/history.go:16–46` unmarshals INTERNAL blocks, falls back to text,
-and repairs pairing. `internal/compactor/compactor.go:51–64` assembles summary
-plus live-tail send views. This disproves the README's provider-native JSON /
-“no translation” restore claim and its unconditional “lossless” summary.
-Corrected those statements, and documented durable user-title upsert behavior.
-The internal schema includes reasoning and display-only metadata and excludes
-ProviderExtras (`internal/llm/messages.go:35–51`), not verbatim provider payloads.
-
-Bounded coverage: store and host downstream behavior compared; previously
-completed resume/rename parsing was not repeated. Viewport-first pagination,
-all client restoration/display details, raw-body retention/pruning policy and
-crash durability remain unverified; this is not a byte-for-byte replay promise.
-
-
-## Final disposition — PARTIAL, budget-bounded
-
-Additional source checks: `internal/inference/provider.go:52–57` confirms the
-maintained Chat/StreamChat/Capabilities methods (also Name); the stale introductory
-Infer/Stream comment in `llm/provider.go` is not the interface definition and was
-not used to alter the README. `internal/agent/toolloop.go:745,1312` calls
-StreamChat. `internal/conversation/store.go:950–958` confirms automatic title
-updates exclude user titles, and `internal/agent/agent.go:315–328` replays user/
-assistant text pairs into the in-memory conversation store.
-
-Covered slices: Go/module/SDK prerequisites; compared slash parser/dispatch
-entries in Increment 2; Claude built-in subscription prerequisite and direct API
-creation surface; cloud wire-flavor inventory and internal block kinds; stored
-turn JSON, history reconstruction/compaction, resume service forwarding and
-user-title rename persistence. Corrections are limited to these concrete claims.
-
-**Unresolved families, not closed by this pass:**
-
-- Onboarding setup 4 model selection, setup 5 interaction and other capability
-  summaries (except the persistence wording and prerequisites compared above).
-- Other slash handlers' downstream execution, especially context mutation, MCP
-  lifecycle and configuration persistence; compared parser/UI routing is bounded.
-- Cloud/Local provider setup beyond the compared creation surfaces/flavors:
-  presets/defaults, OAuth/key handling, local runtime/locus and account claims.
-- Architecture and provider wiring beyond the shared-interface/flavor/block
-  slices; full tool-loop guards/parallelism and built-in tool inventory/actions;
-  README Cloud resilience paragraph remains unverified here.
-- Autonomous completion/continuation criteria and later permission-gating
-  exceptions/UI callbacks.
-- Persistence viewport pagination/client reconstruction and retention/crash
-  durability details beyond the bounded downstream slice.
-- Nonattachment known limitations, subscription authentication recovery, and
-  conversation-scoped main-chat model selection.
-
-Previously completed areas were excluded. Concurrent changes to cloud-routing
-and its other-agent report were observed and are neither reviewed nor staged by
-this pass. No application changes, broad tests, builds, installation, network,
-restart, push or merge. This partial report supersedes only its own intermediate
-remaining list, not shared ledger dispositions or other agents' evidence.
-
+Failed guessed UI/MCP/config paths in earlier continuations supplied no evidence.
+No shared ledger or routing guide audit, application changes, tests, builds,
+installation, network, restart, push or merge were performed in this finalization.
 
 ## Scoped publication checks
 
-- Read project instructions and latest remaining/core-guide dispositions.
-- Reviewed the README-only diff: six concrete corrections; no completed-area
-  edits and no application changes.
-- `git diff --check -- docs/agent/README.md` passed. Both owned Markdown files
-  also passed a line-by-line trailing-whitespace check (including this report
-  before this whitespace-clean checks paragraph was appended).
-- Offline relative inline/reference filesystem-target check: 16 targets, zero
-  missing across the two owned files. Fenced blocks, external URLs and fragment
-  anchors excluded; no link fetching or anchor certification.
-- Confirmed branch `docs/core-closure-bounded`. Only the README and this report
-  are designated checkpoint paths. Other-agent working files are left intact.
+Finalization checks are recorded after execution below. Only the two owned
+Markdown paths are checkpoint targets; unrelated routing changes stay intact.
+
+- `git diff --check -- docs/agent/README.md docs/audit-readme-final-closure.md` passed.
+- Both files passed line-by-line trailing-whitespace checks.
+- Offline relative filesystem-link check: 16 targets, zero missing; fenced blocks,
+  external URLs and fragment anchors excluded. No fetching or anchor certification.
+- Checkpoint restricted to the two owned files, including pre-existing owned edits.

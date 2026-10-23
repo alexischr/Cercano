@@ -119,7 +119,7 @@ can auto-launch the agent if it cannot connect.
 cercano
 ```
 
-Type a prompt. The agent decides whether to use tools (Read, Glob, Grep, LS, Bash, Edit, Write, plus git operations). For ordinary built-ins, W-tier calls require confirmation in strict mode; X-tier calls require it in strict and permissive modes. MCP tools and explicit human-handoff tools have additional gates. See the permission table below.
+Type a prompt. The agent decides whether to use tools (Read, Glob, Grep, LS, RunCommand, Edit, Write, plus git operations). For ordinary built-ins, W-tier calls require confirmation in strict mode; X-tier calls require it in strict and permissive modes. MCP tools and explicit human-handoff tools have additional gates. See the permission table below.
 
 ### Headless / scripted mode
 
@@ -204,12 +204,15 @@ The agent supports multiple cloud providers:
 
 ### Meridian (Claude Max via OAuth)
 
-Add an Anthropic profile in `/cloud` and configure its endpoint and credentials.
+Add an Anthropic profile in `/config` → Cloud Providers → **+ Add provider…**
+and configure its endpoint and credentials.
 For Meridian, use your running proxy endpoint (commonly `http://127.0.0.1:3456`).
 Use profile-scoped quality selections in [cloud routing](../cloud-routing.md),
 not legacy top-level `cloud_model` mutations.
 
-The Anthropic provider streams through Meridian, which uses your Claude Max subscription. Cercano injects `x-opencode-session` / `x-opencode-request` / `x-opencode-agent-mode` headers per request so Meridian routes through its OpenCode adapter and bumps the SDK turn cap from 3 to 4.
+The Anthropic provider can stream through a running Meridian proxy using its
+configured endpoint and credentials. Proxy-side subscription handling and turn
+limits depend on the Meridian version; they are not enforced by Cercano.
 
 ### Mistral API accounts
 
@@ -234,8 +237,8 @@ keychain (refreshing them automatically) under a `chatgpt` profile
 
 **Unofficial / ToS-gray.** This borrows the Codex CLI's OAuth client id, has no
 sanctioned third-party path, can break whenever OpenAI changes things, and
-limits you to the ChatGPT-backend model allowlist (gpt-5.5, gpt-5.3-codex,
-gpt-5.4, gpt-5.4-mini, …). An API key stays the fully-sanctioned path and is
+uses the account-scoped ChatGPT-backend model catalog rather than guaranteeing
+access to any fixed model list. An API key stays the fully-sanctioned path and is
 one keystroke away in the same UI. Design + endpoint details:
 [docs/features/chatgpt-subscription-auth/design.md](../features/chatgpt-subscription-auth/design.md).
 
@@ -290,21 +293,34 @@ eligibility guarantee.
 
 The internal `Block` type carries text / `tool_use` / `tool_result` / `image` / `reasoning` and is the lingua franca. Each adapter translates SDK types ↔ `Block`. Image translation is plumbed at the provider layer ([vision-input.md](vision-input.md)); live attachments can also be inspected through `inspect_image`.
 
-**Cloud resilience.** Every adapter normalizes its wire errors into provider-agnostic classes (`quota`, `busy`, `auth`, `invalid_request`, `network`, `unknown` — `llm.Error`), and a single engine (`internal/inference/resilience`) owns the retry/failover policy: busy gets one narrated same-provider retry, quota/auth/network fail over to the backup profile immediately, invalid requests surface. Actions are narrated to the user in-band ("anthropic quota reached — switching to openai") and logged server-side. SDK-internal and transport-level retries are deliberately disabled — the engine is the only retry layer. Primary's `internal/inference/profilechain` account cycle composes this engine into bounded ordered traversals. Its synchronized, generation-checked active-account state survives provider rebuilds, but is in-memory and resets on agent restart. Quota alone advances that shared state; partially streamed responses are never replayed. Secondary retains its existing single-backup behavior. See [cloud routing](../cloud-routing.md) for current account configuration and [cloud-failover-audit.md](cloud-failover-audit.md) for the earlier resilience audit.
+**Cloud resilience.** Adapters normalize wire errors into provider-agnostic
+classes (`llm.Error`), and `internal/inference/resilience` owns retry/failover
+policy. Busy, network, and unknown errors can receive one narrated same-provider
+retry, including a narrated mid-answer stream restart. Before content is emitted,
+eligible failures can fail over to a configured backup; authentication recovery
+has its own gates (see below). Invalid requests normally surface, except recognized
+model-unavailable errors; context overflow requires a known larger target window.
+Actions are narrated in-band and logged server-side. Primary's
+`internal/inference/profilechain` composes bounded ordered account traversals.
+Its synchronized, generation-checked active account survives provider rebuilds,
+but is in-memory and resets on agent restart. Quota alone advances that shared
+state. Secondary retains its single-backup behavior. See
+[cloud routing](../cloud-routing.md) for account configuration and
+[cloud-failover-audit.md](cloud-failover-audit.md) for the earlier resilience audit.
 
 ### Tool loop (`internal/agent/toolloop.go`)
 
 Bounded autonomous loop. Per iteration:
 
 1. Build the tool catalog from `agenttools.Registry` (registered built-in and capability tools).
-2. Call `Provider.StreamChat` with the catalog. Streaming is required: Meridian's non-streaming path has a 3-turn SDK cap that bites broad agentic prompts.
+2. Call `Provider.StreamChat` with the catalog. The agent tool loop uses streaming for provider responses.
 3. Accumulate text + `tool_use` blocks from the stream.
 4. Partition tool calls by tier:
    - R-tier runs concurrently via goroutines
    - W/X-tier serializes through the permission gate
 5. For each W/X call requiring confirmation, emit a `PermissionRequired` streaming event; wait for the client's `AllowToolCall` or `DenyToolCall` reply via the `PendingDecisions` map.
 6. Execute the allowed tools. Each result becomes a `tool_result` block, fed back as a user message.
-7. Track guards: 3 consecutive iterations of all-errored calls aborts; the configured tool-loop iteration limit caps round-trips (see `pkg/config` defaults); ordinary permission denial ends the turn. A “chat about this” redirect continues for ordinary tools but ends session-control transitions; watchdog escalation denial blocks the action without this immediate turn-end.
+7. Track guards: 3 consecutive counted iterations of all-errored calls abort; iterations with watchdog intervention do not advance or reset that counter; the configured tool-loop iteration limit caps round-trips (see `pkg/config` defaults); ordinary permission denial ends the turn. A “chat about this” redirect continues for ordinary tools but ends session-control transitions; watchdog escalation denial blocks the action without this immediate turn-end.
 
 ### Autonomous run completion
 
@@ -323,7 +339,8 @@ of the record if the profile change fails; rollback failures are reported.
 
 ### Built-in tools (`internal/agenttools/`)
 
-Names match Claude's training (Read, Write, Edit, LS, Glob, Grep, Bash) to keep Claude's internal planning concise:
+Selected built-ins are exposed with standalone aliases (Read, Write, Edit, LS,
+Glob, Grep, RunCommand). This is a core inventory, not the full capability catalog:
 
 | Name | Tier | Action |
 |---|---|---|
@@ -337,7 +354,7 @@ Names match Claude's training (Read, Write, Edit, LS, Glob, Grep, Bash) to keep 
 | `git_log` | R | `git log` |
 | `Write` | W | Atomic file write |
 | `Edit` | W | Find/replace in a file (refuses ambiguous/zero/no-op matches) |
-| `Bash` | W | Run a shell command (16 KiB output cap, timeout-aware) |
+| `RunCommand` | W | Execute a program and argv (shell only when explicitly invoked; stdout and stderr each capped at 16 KiB; timeout-aware) |
 | `git_add` | W | `git add` |
 | `git_commit` | W | `git commit` |
 | `rm_file` | X | Delete a file (refuses directories) |
@@ -365,7 +382,7 @@ Direct `/tool` is different: the CLI checks its cached tier, runs R-tier (and un
 ## Known limitations
 
 - **Direct tool invocation:** `/tool` uses CLI-local confirmation, not the model-driven permission protocol; `/bypass` is not required. Use `y` to approve local MCP calls: the current local `[a]lways` callback neither invokes the tool nor persists an allowlist rule (persistence is wired only for stream-origin calls).
-- **Inline tool-call expand/collapse keybind** isn't implemented yet. Tool entries render folded; scroll your terminal to see args/results.
+- **Tool-call display:** entries can be folded or expanded in tool navigation (Enter/Tab toggles the focused entry). Resumed transcript text is restored, but empty-content tool turns are skipped by the main transcript renderer; this is not a replay of every live tool card.
 - **Image attachment storage:** `inspect_image` uses private temporary files under the operating system's temporary directory (Go `os.TempDir()`, not a hard-coded Unix or Windows path). The store retains only metadata and reads image bytes on demand; it has no cumulative per-conversation image-count or byte cap. `Store.Clear` removes a conversation’s files; server shutdown and worker-turn completion close their owned stores. Missing/unreadable files produce lookup misses, and failed writes produce an omitted-image placeholder. Reattaching identical bytes restores a missing file under the same live ID.
 - **Image lifetime:** attachment IDs are indexed in memory and do not survive agent restarts. Temporary storage is not durable history: OS cleanup can remove files, and crashes may leave orphan files for OS cleanup. Payloads still occupy memory while being ingested or inspected; this change removes long-lived payload retention in the attachment store, not provider/request limits or other copies elsewhere in the message pipeline.
 
