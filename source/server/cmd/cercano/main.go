@@ -49,6 +49,7 @@ import (
 	mcpserver "cercano/source/server/internal/mcp"
 	mcphost "cercano/source/server/internal/mcp_host"
 	"cercano/source/server/internal/modelcatalog"
+	"cercano/source/server/internal/modelhost"
 	"cercano/source/server/internal/modelpolicy"
 	"cercano/source/server/internal/ollamacatalog"
 	"cercano/source/server/internal/openmodels"
@@ -221,7 +222,18 @@ func startGRPCServer(cfg config.Config, bindAddr string, events *crashlog.Writer
 	registry.RegisterEmbedder(ollamaEng)
 	// llamaEng registers below once constructed — see RegisterEmbedder there.
 
-	runtimeManager := buildRuntimeManager(cfg, events)
+	// Local models live in the shared model host (or in-process as a
+	// fallback). The close function runs at shutdown after Server.Shutdown
+	// has stopped this agent's instances, or here if startup fails.
+	runtimeManager, closeRuntime, err := connectRuntimeManager(context.Background(), cfg, events)
+	if err != nil {
+		return "", nil, fmt.Errorf("connect runtime manager: %w", err)
+	}
+	defer func() {
+		if !started {
+			closeRuntime()
+		}
+	}()
 	llamaEng := llamaengine.NewEngine(runtimeManager)
 	registry.RegisterEngine(llamaEng)
 	registry.RegisterEmbedder(llamaEng)
@@ -656,6 +668,9 @@ func startGRPCServer(cfg config.Config, bindAddr string, events *crashlog.Writer
 	cleanup := func() {
 		defer restorePolicy()
 		defer enterpriseHost.Close()
+		// Runs after the body: srv.Shutdown has released this agent's
+		// runtime instances and the producers that use them have stopped.
+		defer closeRuntime()
 		// Drain before teardown: in-flight turns still need the MCP manager
 		// and providers, so those stop only after the streams finish. The
 		// standing SubscribeEvents streams must end first or GracefulStop
@@ -749,18 +764,76 @@ func newLocalRuntimeManager(cfg config.Config, events *crashlog.Writer) *localru
 // runtime's default model.
 func buildRuntimeManager(cfg config.Config, events *crashlog.Writer) localruntime.Manager {
 	manager := newLocalRuntimeManager(cfg, events)
+	warmActiveRuntime(manager, cfg)
+	return manager
+}
 
-	// Warm the active runtime's EFFECTIVE chat model (override else catalog
-	// default), not the legacy per-runtime default_model field. Otherwise the
-	// runtime can keep serving a stale model while config reports a newer
-	// effective tier model.
+// warmActiveRuntime warms the active managed runtime's EFFECTIVE chat model
+// (override else catalog default), not the legacy per-runtime default_model
+// field. Otherwise the runtime can keep serving a stale model while config
+// reports a newer effective tier model. Ollama has nothing to warm.
+func warmActiveRuntime(manager localruntime.Manager, cfg config.Config) {
 	switch {
 	case mistralRSEnabled(cfg):
 		warmDefaultRuntime(manager, "mistralrs", openTurnModel(cfg))
 	case llamaServerEnabled(cfg):
 		warmDefaultRuntime(manager, "llama_server", openTurnModel(cfg))
 	}
-	return manager
+}
+
+// modelHostEnv selects where this agent hosts local models. The value
+// "inprocess" keeps the runtime manager inside the agent process (tests and
+// an escape hatch); anything else uses the shared model host.
+const modelHostEnv = "CERCANO_MODEL_HOST"
+
+// connectRuntimeManager returns the runtime manager the agent uses and a
+// function that closes it. By default that is a client of the shared model
+// host, launched on demand, so several agents share one copy of each local
+// model. With CERCANO_MODEL_HOST=inprocess, or when the model host cannot be
+// reached or launched, it builds the in-process manager instead so local
+// models keep working. Either way the active runtime is warmed.
+//
+// The close function must run after the agent's own instances are stopped
+// (Server.Shutdown): closing ends this client's attachment, which releases
+// whatever holds remain on the host.
+func connectRuntimeManager(ctx context.Context, cfg config.Config, events *crashlog.Writer) (localruntime.Manager, func(), error) {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv(modelHostEnv)), "inprocess") {
+		return buildRuntimeManager(cfg, events), func() {}, nil
+	}
+	remote, err := newModelHostRemote(ctx)
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, nil, ctxErr
+		}
+		log.Printf("[WARN] shared model host unavailable (%v); hosting local models in this process", err)
+		events.LogRuntimeEvent(crashlog.EventModelHostUnavailable, err.Error(), crashlog.RuntimeInfo{}, map[string]any{"fallback": "inprocess"})
+		return buildRuntimeManager(cfg, events), func() {}, nil
+	}
+	remote.SetEndpoints(localruntime.EndpointsFromConfig(cfg, openChatModel(cfg), openEmbeddingModel(cfg)))
+	warmActiveRuntime(remote, cfg)
+	return remote, func() {
+		if err := remote.Close(); err != nil {
+			log.Printf("[WARN] closing model host connection: %v", err)
+		}
+	}, nil
+}
+
+// newModelHostRemote connects to the shared model host in the default run
+// directory, launching this binary as the host when none is running.
+func newModelHostRemote(ctx context.Context) (*modelhost.Remote, error) {
+	runDir, err := modelhost.RunDir()
+	if err != nil {
+		return nil, err
+	}
+	return modelhost.NewRemote(ctx, modelhost.RemoteOptions{
+		Ensure: modelhost.EnsureOptions{
+			RunDir:        runDir,
+			ClientVersion: version,
+			Launch:        launchModelHost(runDir),
+		},
+		// The active profile is reported once profiles reach the agent host.
+		Profile: "",
+	})
 }
 
 // startDefaultRuntimeAsync warms the llama-server default model in the
@@ -783,8 +856,22 @@ func startDefaultRuntimeAsync(manager localruntime.Manager, runtime, modelID str
 				Level:   "error",
 				Message: "failed to start " + runtime + ": " + err.Error(),
 			})
+			return
 		}
+		manager.WriteLog(localruntime.LogEntry{
+			Source:  "cercano.runtime." + runtime,
+			Level:   "info",
+			ModelID: modelID,
+			Message: warmedMessage(runtime, modelID),
+		})
 	}()
+}
+
+// warmedMessage is the runtime log line recorded when a warm-up's Start
+// succeeds. With a shared model host it is written once per agent, including
+// agents whose Start reused an instance another agent launched.
+func warmedMessage(runtime, modelID string) string {
+	return "warmed " + runtime + " model " + modelID
 }
 
 // warmDefaultRuntime warms a runtime's configured default model in the
