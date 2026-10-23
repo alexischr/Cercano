@@ -29,6 +29,11 @@ const (
 
 var replaceWait = 5 * time.Second
 
+// ErrNewerModelHost reports that the running model host speaks a newer API
+// than this client. Such a host is left alone: an older client never shuts
+// it down or launches a competing one.
+var ErrNewerModelHost = errors.New("model host is newer than this client")
+
 // EnsureOptions configures Ensure.
 type EnsureOptions struct {
 	// RunDir holds the host record and launch lock. Default RunDir().
@@ -136,34 +141,41 @@ type probeState int
 const (
 	notLive probeState = iota
 	live
-	incompatible
+	// older: the host speaks an older API; this client replaces it.
+	older
+	// newer: the host speaks a newer API; this client leaves it alone.
+	newer
 )
 
 // probe reads the record and classifies the host it names. Any read, dial,
 // verification or handshake failure (including a draining host) is notLive.
-// For an incompatible host the verified connection is returned; the caller
-// closes it.
-func probe(ctx context.Context, dir, clientVersion string) (Record, probeState, *grpc.ClientConn) {
+// For an older host the verified connection is returned; the caller closes
+// it. For a newer host the returned error describes it.
+func probe(ctx context.Context, dir, clientVersion string) (Record, probeState, *grpc.ClientConn, error) {
 	rec, err := ReadRecord(dir)
 	if err != nil {
-		return Record{}, notLive, nil
+		return Record{}, notLive, nil, nil
 	}
 	conn, resp, err := dialVerified(ctx, rec, clientVersion)
 	if err != nil {
-		return rec, notLive, nil
+		return rec, notLive, nil, nil
 	}
-	if int(resp.GetApiVersion()) == APIVersion {
+	switch v := int(resp.GetApiVersion()); {
+	case v == APIVersion:
 		conn.Close()
-		return rec, live, nil
+		return rec, live, nil, nil
+	case v > APIVersion:
+		conn.Close()
+		return rec, newer, nil, fmt.Errorf("%w (host API %d, version %q; client API %d)", ErrNewerModelHost, v, resp.GetVersion(), APIVersion)
 	}
-	return rec, incompatible, conn
+	return rec, older, conn, nil
 }
 
-// replaceIncompatible asks an incompatible host to shut down and waits for
+// replaceOlder asks an older host to shut down and waits for
 // its record to disappear or for it to stop answering. If it does neither
 // within replaceWait, the caller launches anyway: the launched process waits
 // for the old host to exit.
-func replaceIncompatible(ctx context.Context, dir string, rec Record, conn *grpc.ClientConn, clientVersion string) {
+func replaceOlder(ctx context.Context, dir string, rec Record, conn *grpc.ClientConn, clientVersion string) {
 	defer conn.Close()
 	_ = shutdownHost(ctx, conn)
 	deadline := time.Now().Add(replaceWait)
@@ -191,7 +203,10 @@ func sleep(ctx context.Context, d time.Duration) {
 }
 
 // Ensure returns the record of a live, compatible model host, launching one
-// if necessary. At most one Launch call is made per Ensure.
+// if necessary. At most one Launch call is made per Ensure. A host speaking
+// an older API is shut down and replaced; a host speaking a newer API is left
+// running and Ensure returns an error wrapping ErrNewerModelHost, so an older
+// client lingering after an upgrade never takes the newer host down.
 func Ensure(ctx context.Context, opts EnsureOptions) (Record, error) {
 	dir := opts.RunDir
 	if dir == "" {
@@ -208,16 +223,18 @@ func Ensure(ctx context.Context, opts EnsureOptions) (Record, error) {
 		return Record{}, err
 	}
 
-	rec, st, conn := probe(ctx, dir, opts.ClientVersion)
+	rec, st, conn, err := probe(ctx, dir, opts.ClientVersion)
 	switch st {
 	case live:
 		return rec, nil
-	case incompatible:
+	case newer:
+		return Record{}, err
+	case older:
 		if opts.Launch == nil {
 			conn.Close()
 			return Record{}, errors.New("incompatible model host running and no launcher configured")
 		}
-		replaceIncompatible(ctx, dir, rec, conn, opts.ClientVersion)
+		replaceOlder(ctx, dir, rec, conn, opts.ClientVersion)
 	}
 	if opts.Launch == nil {
 		return Record{}, errors.New("model host is not running and no launcher is configured")
@@ -232,12 +249,15 @@ func Ensure(ctx context.Context, opts EnsureOptions) (Record, error) {
 	defer release()
 
 	// Another Ensure may have launched while we waited for the lock.
-	rec, st, conn = probe(ctx, dir, opts.ClientVersion)
+	rec, st, conn, err = probe(ctx, dir, opts.ClientVersion)
 	if conn != nil {
 		conn.Close()
 	}
-	if st == live {
+	switch st {
+	case live:
 		return rec, nil
+	case newer:
+		return Record{}, err
 	}
 	if err := opts.Launch(ctx); err != nil {
 		return Record{}, fmt.Errorf("launching model host: %w", err)
@@ -247,12 +267,15 @@ func Ensure(ctx context.Context, opts EnsureOptions) (Record, error) {
 	// replacement publishes its own, so keep polling until the deadline.
 	deadline := time.Now().Add(timeout)
 	for {
-		rec, st, conn := probe(ctx, dir, opts.ClientVersion)
+		rec, st, conn, err := probe(ctx, dir, opts.ClientVersion)
 		if conn != nil {
 			conn.Close()
 		}
-		if st == live {
+		switch st {
+		case live:
 			return rec, nil
+		case newer:
+			return Record{}, err
 		}
 		if err := ctx.Err(); err != nil {
 			return Record{}, err

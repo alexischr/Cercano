@@ -3,6 +3,7 @@ package modelhost
 import (
 	"context"
 	"errors"
+	"log"
 	"net"
 	"os"
 	"reflect"
@@ -627,5 +628,81 @@ func TestRemoteReconnectToSameHostKeepsHolds(t *testing.T) {
 	}
 	if r.HoldEpoch() == epoch {
 		t.Fatal("HoldEpoch unchanged after reconnect; cached holds would never be re-taken")
+	}
+}
+
+// TestNewRemoteFailsFastOnNewerHost: an agent older than the running host
+// gets ErrNewerModelHost at once (so it can host models in-process) and
+// neither shuts the host down nor launches another.
+func TestNewRemoteFailsFastOnNewerHost(t *testing.T) {
+	dir := t.TempDir()
+	host := &newerHost{}
+	addr := serve(t, host)
+	if err := WriteRecord(dir, Record{PID: 4244, Addr: addr, Token: "tok", APIVersion: APIVersion + 1}); err != nil {
+		t.Fatal(err)
+	}
+	var launches atomic.Int32
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	start := time.Now()
+	_, err := NewRemote(ctx, remoteOpts(dir, func(context.Context) error { launches.Add(1); return nil }))
+	if !errors.Is(err, ErrNewerModelHost) {
+		t.Fatalf("NewRemote err = %v, want ErrNewerModelHost", err)
+	}
+	if time.Since(start) > 2*time.Second {
+		t.Fatalf("NewRemote took %s to give up on a newer host", time.Since(start))
+	}
+	if host.shutdown.Load() != 0 || launches.Load() != 0 {
+		t.Fatalf("shutdown=%d launches=%d, want 0 and 0", host.shutdown.Load(), launches.Load())
+	}
+}
+
+// syncBuffer is a goroutine-safe log sink.
+type syncBuffer struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
+// TestRemoteRecoveryLogsNewerHostOnce: when the host a long-lived Remote was
+// using is replaced by a newer one, background recovery keeps failing with
+// the same error; it is logged once, not on every retry.
+func TestRemoteRecoveryLogsNewerHostOnce(t *testing.T) {
+	var logs syncBuffer
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+	dir := t.TempDir()
+	first := startTestHost(t, "tok-first")
+	first.publish(t, dir)
+	var launches atomic.Int32
+	r := newTestRemote(t, remoteOpts(dir, func(context.Context) error { launches.Add(1); return nil }))
+
+	newer := &newerHost{}
+	addr := serve(t, newer)
+	first.g.Stop()
+	if err := WriteRecord(dir, Record{PID: 4244, Addr: addr, Token: "tok", APIVersion: APIVersion + 1}); err != nil {
+		t.Fatal(err)
+	}
+	// Recovery retries with backoff 100ms, 200ms, 400ms, 800ms, ...
+	time.Sleep(2 * time.Second)
+	r.Close()
+
+	if n := strings.Count(logs.String(), "newer than this client"); n != 1 {
+		t.Fatalf("newer-host error logged %d times, want once:\n%s", n, logs.String())
+	}
+	if newer.shutdown.Load() != 0 || launches.Load() != 0 {
+		t.Fatalf("shutdown=%d launches=%d, want 0 and 0", newer.shutdown.Load(), launches.Load())
 	}
 }

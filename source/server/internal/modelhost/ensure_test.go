@@ -2,6 +2,7 @@ package modelhost
 
 import (
 	"context"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -74,7 +75,7 @@ func TestEnsureLaunchesWhenNoRecord(t *testing.T) {
 	}
 }
 
-// oldHost reports a different api_version and removes its record on Shutdown.
+// oldHost reports an older api_version and removes its record on Shutdown.
 type oldHost struct {
 	proto.UnimplementedModelHostServer
 	dir      string
@@ -82,7 +83,7 @@ type oldHost struct {
 }
 
 func (o *oldHost) Hello(_ context.Context, req *proto.HelloRequest) (*proto.HelloResponse, error) {
-	return &proto.HelloResponse{ApiVersion: APIVersion + 1, Version: "old", Pid: 4242, Proof: helloProof("tok", req.GetNonce())}, nil
+	return &proto.HelloResponse{ApiVersion: APIVersion - 1, Version: "old", Pid: 4242, Proof: helloProof("tok", req.GetNonce())}, nil
 }
 
 func (o *oldHost) Shutdown(context.Context, *proto.ShutdownRequest) (*proto.ShutdownResponse, error) {
@@ -102,7 +103,7 @@ func TestEnsureReplacesIncompatibleHost(t *testing.T) {
 	proto.RegisterModelHostServer(g, old)
 	go g.Serve(lis)
 	t.Cleanup(g.Stop)
-	if err := WriteRecord(dir, Record{PID: 4242, Addr: lis.Addr().String(), Token: "tok", APIVersion: APIVersion + 1}); err != nil {
+	if err := WriteRecord(dir, Record{PID: 4242, Addr: lis.Addr().String(), Token: "tok", APIVersion: APIVersion - 1}); err != nil {
 		t.Fatal(err)
 	}
 	var launches atomic.Int32
@@ -241,14 +242,14 @@ func TestLaunchBinarySpawnsModelHost(t *testing.T) {
 	}
 }
 
-// stubbornHost acks Shutdown but keeps answering Hello with the old version.
+// stubbornHost acks Shutdown but keeps answering Hello with an older version.
 type stubbornHost struct {
 	proto.UnimplementedModelHostServer
 	shutdown atomic.Int32
 }
 
 func (o *stubbornHost) Hello(_ context.Context, req *proto.HelloRequest) (*proto.HelloResponse, error) {
-	return &proto.HelloResponse{ApiVersion: APIVersion + 1, Pid: 4243, Proof: helloProof("tok", req.GetNonce())}, nil
+	return &proto.HelloResponse{ApiVersion: APIVersion - 1, Pid: 4243, Proof: helloProof("tok", req.GetNonce())}, nil
 }
 
 func (o *stubbornHost) Shutdown(context.Context, *proto.ShutdownRequest) (*proto.ShutdownResponse, error) {
@@ -276,7 +277,7 @@ func TestEnsureLaunchesAfterReplaceWaitElapses(t *testing.T) {
 	dir := t.TempDir()
 	host := &stubbornHost{}
 	addr := serve(t, host)
-	if err := WriteRecord(dir, Record{PID: 4243, Addr: addr, Token: "tok", APIVersion: APIVersion + 1}); err != nil {
+	if err := WriteRecord(dir, Record{PID: 4243, Addr: addr, Token: "tok", APIVersion: APIVersion - 1}); err != nil {
 		t.Fatal(err)
 	}
 	var launches atomic.Int32
@@ -302,7 +303,7 @@ func TestEnsureDoesNotShutDownIncompatibleHostWithoutLauncher(t *testing.T) {
 	dir := t.TempDir()
 	host := &stubbornHost{}
 	addr := serve(t, host)
-	if err := WriteRecord(dir, Record{PID: 4243, Addr: addr, Token: "tok", APIVersion: APIVersion + 1}); err != nil {
+	if err := WriteRecord(dir, Record{PID: 4243, Addr: addr, Token: "tok", APIVersion: APIVersion - 1}); err != nil {
 		t.Fatal(err)
 	}
 	_, err := Ensure(context.Background(), EnsureOptions{RunDir: dir, Timeout: time.Second})
@@ -387,5 +388,43 @@ func TestDialAcceptsVerifiedHostAndAttachesToken(t *testing.T) {
 	defer conn.Close()
 	if _, err := proto.NewModelHostClient(conn).Call(context.Background(), &proto.CallRequest{Method: "Providers"}); err != nil {
 		t.Fatalf("token-bearing call failed: %v", err)
+	}
+}
+
+// newerHost answers Hello with a newer api_version than this client's.
+type newerHost struct {
+	proto.UnimplementedModelHostServer
+	shutdown atomic.Int32
+}
+
+func (n *newerHost) Hello(_ context.Context, req *proto.HelloRequest) (*proto.HelloResponse, error) {
+	return &proto.HelloResponse{ApiVersion: APIVersion + 1, Version: "newer", Pid: 4244, Proof: helloProof("tok", req.GetNonce())}, nil
+}
+
+func (n *newerHost) Shutdown(context.Context, *proto.ShutdownRequest) (*proto.ShutdownResponse, error) {
+	n.shutdown.Add(1)
+	return &proto.ShutdownResponse{}, nil
+}
+
+// TestEnsureLeavesNewerHostRunning: an older client must not shut down a
+// newer host (or launch a competing one); it reports ErrNewerModelHost.
+func TestEnsureLeavesNewerHostRunning(t *testing.T) {
+	dir := t.TempDir()
+	host := &newerHost{}
+	addr := serve(t, host)
+	if err := WriteRecord(dir, Record{PID: 4244, Addr: addr, Token: "tok", APIVersion: APIVersion + 1}); err != nil {
+		t.Fatal(err)
+	}
+	var launches atomic.Int32
+	start := time.Now()
+	_, err := Ensure(context.Background(), testOpts(dir, func(context.Context) error { launches.Add(1); return nil }))
+	if !errors.Is(err, ErrNewerModelHost) {
+		t.Fatalf("err = %v, want ErrNewerModelHost", err)
+	}
+	if host.shutdown.Load() != 0 || launches.Load() != 0 {
+		t.Fatalf("newer host: shutdown=%d launches=%d, want 0 and 0", host.shutdown.Load(), launches.Load())
+	}
+	if time.Since(start) > 2*time.Second {
+		t.Fatalf("Ensure took %s to report a newer host", time.Since(start))
 	}
 }

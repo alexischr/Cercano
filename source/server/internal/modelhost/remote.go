@@ -387,15 +387,22 @@ func (r *Remote) watchConn(conn *grpc.ClientConn, sctx context.Context) {
 }
 
 // recoverConn reconnects in the background until it succeeds, another caller
-// replaces the connection, or the Remote is closed.
+// replaces the connection, or the Remote is closed. Each distinct error is
+// logged once.
 func (r *Remote) recoverConn(gen uint64) {
 	backoff := pollInterval
+	// A persistent failure (a newer host this client cannot use, say) is
+	// logged once rather than on every retry.
+	var lastLogged string
 	for {
 		err := r.reconnect(r.ctx, gen)
 		if err == nil || r.ctx.Err() != nil {
 			return
 		}
-		log.Printf("modelhost: reconnecting to model host: %v", err)
+		if msg := err.Error(); msg != lastLogged {
+			log.Printf("modelhost: reconnecting to model host: %v", err)
+			lastLogged = msg
+		}
 		sleep(r.ctx, backoff)
 		if backoff *= 2; backoff > maxRecoverBackoff {
 			backoff = maxRecoverBackoff
