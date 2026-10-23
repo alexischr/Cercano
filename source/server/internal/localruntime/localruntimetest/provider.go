@@ -25,6 +25,13 @@ type FakeProvider struct {
 	// OnStart, if set, runs at the start of every Start call, before it is
 	// counted. Tests use it to block a launch.
 	OnStart func(localruntime.StartRequest)
+	// OnStop, if set, runs at the start of every Stop call, before it is
+	// counted.
+	OnStop func(id string)
+	// FailAfterStart makes Start return the live instance together with an
+	// error, as a provider does when a launched process is slow to become
+	// ready.
+	FailAfterStart bool
 
 	mu         sync.Mutex
 	startedID  string
@@ -89,15 +96,22 @@ func (f *FakeProvider) Start(_ context.Context, req localruntime.StartRequest, s
 	}
 	f.mu.Unlock()
 	sink.WriteLog(localruntime.LogEntry{Source: "fake", Message: "started " + modelID})
-	return &localruntime.InstanceRecord{
+	rec := &localruntime.InstanceRecord{
 		ID:      id,
 		Runtime: f.ProviderName,
 		ModelID: modelID,
 		State:   state,
-	}, nil
+	}
+	if f.FailAfterStart {
+		return rec, errors.New("still loading: instance left running")
+	}
+	return rec, nil
 }
 
 func (f *FakeProvider) Stop(_ context.Context, id string) error {
+	if f.OnStop != nil {
+		f.OnStop(id)
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.stopCalls++

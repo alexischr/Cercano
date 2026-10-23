@@ -42,10 +42,13 @@ type ServerOptions struct {
 	// Now returns the current time. Default time.Now.
 	Now func() time.Time
 	// OnIdle is called once, after StopAll, when the idle timeout expires.
+	// An idle stop is final: the server rejects Hello, Attach, Start and
+	// Restart with Unavailable from then on, and the host process must exit.
 	OnIdle func()
 	// Version is reported by Hello.
 	Version string
-	// OnShutdown is called after StopAll when a client calls Shutdown.
+	// OnShutdown is called after StopAll when a client calls Shutdown. Like
+	// OnIdle, it ends the server: the host process must exit.
 	OnShutdown func()
 }
 
@@ -230,6 +233,30 @@ func (s *Server) stopLive(ctx context.Context, inst localruntime.InstanceRecord)
 	return nil
 }
 
+// sweepModel stops every live instance of runtime whose model is one of models,
+// and drops their holds. The caller holds the model lock.
+func (s *Server) sweepModel(ctx context.Context, runtime string, models ...string) {
+	instances, err := s.mgr.Instances(ctx)
+	if err != nil {
+		log.Printf("modelhost: sweep during shutdown: %v", err)
+		return
+	}
+	for _, inst := range instances {
+		if inst.Runtime != runtime || !liveInstance(inst) {
+			continue
+		}
+		for _, m := range models {
+			if m != "" && inst.ModelID == m {
+				if err := s.mgr.Stop(ctx, localruntime.StopRequest{InstanceID: inst.ID}); err != nil {
+					log.Printf("modelhost: stop %s during shutdown: %v", inst.ID, err)
+				}
+				s.holds.drop(inst.ID)
+				break
+			}
+		}
+	}
+}
+
 var errDraining = status.Error(codes.Unavailable, "model host shutting down")
 
 // canonicalModel resolves a requested model reference to the manager's
@@ -288,6 +315,9 @@ func (s *Server) Hello(ctx context.Context, _ *proto.HelloRequest) (*proto.Hello
 	if err := s.authorize(ctx); err != nil {
 		return nil, err
 	}
+	if s.draining.Load() {
+		return nil, errDraining
+	}
 	return &proto.HelloResponse{ApiVersion: APIVersion, Version: s.opts.Version, Pid: int32(os.Getpid())}, nil
 }
 
@@ -312,6 +342,9 @@ func (s *Server) Attach(req *proto.AttachRequest, srv grpc.ServerStreamingServer
 	ctx := srv.Context()
 	if err := s.authorize(ctx); err != nil {
 		return err
+	}
+	if s.draining.Load() {
+		return errDraining
 	}
 	st := s.addStream(req.GetClientId())
 	defer func() {
@@ -338,7 +371,6 @@ func (s *Server) addStream(clientID string) *stream {
 	defer s.mu.Unlock()
 	s.streams[st] = struct{}{}
 	s.clients[clientID]++
-	s.idleFired = false
 	return st
 }
 
@@ -615,15 +647,15 @@ func (s *Server) start(ctx context.Context, clientID string, req localruntime.St
 		}
 	}
 	inst, err := s.mgr.Start(ctx, req)
-	if err != nil {
-		return nil, err
-	}
 	if s.draining.Load() {
 		// StopAll ran while this launch was in flight and could not see it.
-		if err := s.mgr.Stop(ctx, localruntime.StopRequest{InstanceID: inst.ID}); err != nil {
-			log.Printf("modelhost: stop %s started during shutdown: %v", inst.ID, err)
-		}
+		// A failed Start may still leave a live instance (a slow load), so
+		// sweep by model rather than trusting the result.
+		s.sweepModel(ctx, req.Runtime, canon, req.ModelID)
 		return nil, errDraining
+	}
+	if err != nil {
+		return nil, err
 	}
 	s.holds.add(clientID, inst.ID)
 	return inst, nil
@@ -681,14 +713,20 @@ func (s *Server) restart(ctx context.Context, clientID string, req localruntime.
 		return nil, errDraining
 	}
 	inst, err := s.mgr.Restart(ctx, req)
+	if s.draining.Load() {
+		models := []string{req.ModelID}
+		if found {
+			models = append(models, target.ModelID)
+		}
+		runtimeName := req.Runtime
+		if found {
+			runtimeName = target.Runtime
+		}
+		s.sweepModel(ctx, runtimeName, models...)
+		return nil, errDraining
+	}
 	if err != nil {
 		return nil, err
-	}
-	if s.draining.Load() {
-		if err := s.mgr.Stop(ctx, localruntime.StopRequest{InstanceID: inst.ID}); err != nil {
-			log.Printf("modelhost: stop %s restarted during shutdown: %v", inst.ID, err)
-		}
-		return nil, errDraining
 	}
 	if found {
 		s.holds.move(target.ID, inst.ID)

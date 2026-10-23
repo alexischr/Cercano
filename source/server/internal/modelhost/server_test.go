@@ -603,17 +603,96 @@ func TestStopAllDrainsInFlightStartAndRejectsNewOnes(t *testing.T) {
 	}
 }
 
-func TestStopAllDoesNotDoubleStop(t *testing.T) {
+func TestStopAllRacingClientStopStopsOnce(t *testing.T) {
 	h := newHarness(t)
-	h.start("A", "m1")
-	if err := h.srv.StopAll(context.Background()); err != nil {
-		t.Fatal(err)
+	a := h.start("A", "m1")
+	gate := make(chan struct{})
+	entered := make(chan struct{})
+	h.provider.OnStop = func(string) {
+		select {
+		case <-entered:
+		default:
+			close(entered)
+			<-gate
+		}
 	}
-	if err := h.srv.StopAll(context.Background()); err != nil {
+	stopDone := make(chan struct{})
+	go func() {
+		defer close(stopDone)
+		h.stop("A", a.ID)
+	}()
+	<-entered // the client's Stop is inside provider.Stop, holding the model lock
+	allDone := make(chan error, 1)
+	go func() { allDone <- h.srv.StopAll(context.Background()) }()
+	time.Sleep(50 * time.Millisecond) // let StopAll queue behind the lock
+	close(gate)
+	<-stopDone
+	if err := <-allDone; err != nil {
 		t.Fatal(err)
 	}
 	if h.provider.StopCalls() != 1 {
 		t.Fatalf("StopCalls = %d, want 1", h.provider.StopCalls())
+	}
+}
+
+func TestStopAllSweepsLiveInstanceFromFailedStart(t *testing.T) {
+	h := newHarness(t)
+	h.provider.FailAfterStart = true
+	gate := make(chan struct{})
+	entered := make(chan struct{})
+	h.provider.OnStart = func(localruntime.StartRequest) {
+		close(entered)
+		<-gate
+	}
+	res := make(chan error, 1)
+	go func() {
+		_, err := h.srv.start(context.Background(), "A", localruntime.StartRequest{Runtime: "fake", ModelID: "x"})
+		res <- err
+	}()
+	<-entered
+	if err := h.srv.StopAll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	close(gate)
+	if err := <-res; status.Code(err) != codes.Unavailable {
+		t.Fatalf("Start err = %v, want Unavailable", err)
+	}
+	insts, _ := h.mgr.Instances(context.Background())
+	if len(insts) == 0 {
+		t.Fatal("test did not publish a live instance")
+	}
+	for _, inst := range insts {
+		if liveInstance(inst) {
+			t.Fatalf("instance %s orphaned after failed start during drain", inst.ID)
+		}
+	}
+}
+
+func TestIdleStopIsFinal(t *testing.T) {
+	h := newHarness(t)
+	h.clock.Advance(2 * time.Minute)
+	h.srv.checkIdle(context.Background())
+	select {
+	case <-h.idle:
+	default:
+		t.Fatal("OnIdle not called")
+	}
+	ctx := authCtx(context.Background())
+	if _, err := h.client.Hello(ctx, &proto.HelloRequest{}); status.Code(err) != codes.Unavailable {
+		t.Fatalf("Hello after idle: %v, want Unavailable", err)
+	}
+	stream, err := h.client.Attach(ctx, &proto.AttachRequest{ClientId: "A"})
+	if err == nil {
+		_, err = stream.Recv()
+	}
+	if status.Code(err) != codes.Unavailable {
+		t.Fatalf("Attach after idle: %v, want Unavailable", err)
+	}
+	h.srv.checkIdle(context.Background())
+	select {
+	case <-h.idle:
+		t.Fatal("OnIdle fired twice")
+	default:
 	}
 }
 
