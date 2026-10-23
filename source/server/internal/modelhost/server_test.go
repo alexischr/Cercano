@@ -1,0 +1,408 @@
+package modelhost
+
+import (
+	"context"
+	"encoding/json"
+	"net"
+	"sync"
+	"testing"
+	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+	"google.golang.org/grpc/test/bufconn"
+
+	"cercano/source/server/internal/localruntime"
+	"cercano/source/server/internal/localruntime/localruntimetest"
+	"cercano/source/server/pkg/proto"
+)
+
+const testToken = "secret"
+
+type fakeClock struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+func (c *fakeClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.t
+}
+
+func (c *fakeClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.t = c.t.Add(d)
+}
+
+type harness struct {
+	t        *testing.T
+	srv      *Server
+	provider *localruntimetest.FakeProvider
+	client   proto.ModelHostClient
+	clock    *fakeClock
+	idle     chan struct{}
+}
+
+func newHarness(t *testing.T, models ...string) *harness {
+	t.Helper()
+	provider := localruntimetest.NewFakeProvider("fake")
+	mgr := localruntime.NewManager()
+	mgr.RegisterProvider(provider)
+	clock := &fakeClock{t: time.Unix(1000, 0)}
+	h := &harness{t: t, provider: provider, clock: clock, idle: make(chan struct{}, 4)}
+	h.srv = NewServer(mgr, ServerOptions{
+		Token:       testToken,
+		IdleTimeout: time.Minute,
+		Now:         clock.Now,
+		Version:     "test-1",
+		OnIdle:      func() { h.idle <- struct{}{} },
+	})
+	lis := bufconn.Listen(1 << 20)
+	g := grpc.NewServer()
+	h.srv.Register(g)
+	go g.Serve(lis)
+	conn, err := grpc.NewClient("passthrough:///bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return lis.Dial() }),
+		grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close(); g.Stop() })
+	h.client = proto.NewModelHostClient(conn)
+	return h
+}
+
+func authCtx(ctx context.Context) context.Context {
+	return metadata.AppendToOutgoingContext(ctx, tokenHeader, testToken)
+}
+
+func (h *harness) call(clientID, method string, req, resp any) error {
+	h.t.Helper()
+	payload := ""
+	if req != nil {
+		b, err := json.Marshal(req)
+		if err != nil {
+			h.t.Fatal(err)
+		}
+		payload = string(b)
+	}
+	ctx, cancel := context.WithTimeout(authCtx(context.Background()), 5*time.Second)
+	defer cancel()
+	out, err := h.client.Call(ctx, &proto.CallRequest{ClientId: clientID, Method: method, PayloadJson: payload})
+	if err != nil {
+		return err
+	}
+	if resp != nil {
+		if err := json.Unmarshal([]byte(out.PayloadJson), resp); err != nil {
+			h.t.Fatalf("decode %s response %q: %v", method, out.PayloadJson, err)
+		}
+	}
+	return nil
+}
+
+func (h *harness) start(clientID, model string) localruntime.InstanceRecord {
+	h.t.Helper()
+	var rec localruntime.InstanceRecord
+	if err := h.call(clientID, "Start", localruntime.StartRequest{Runtime: "fake", ModelID: model}, &rec); err != nil {
+		h.t.Fatalf("Start: %v", err)
+	}
+	return rec
+}
+
+func (h *harness) stop(clientID, instanceID string) {
+	h.t.Helper()
+	if err := h.call(clientID, "Stop", localruntime.StopRequest{InstanceID: instanceID}, nil); err != nil {
+		h.t.Fatalf("Stop: %v", err)
+	}
+}
+
+// attach opens an Attach stream and waits until the server has registered it.
+func (h *harness) attach(clientID string) (events <-chan *proto.ManagerEvent, cancel func()) {
+	h.t.Helper()
+	ctx, cancelFn := context.WithCancel(authCtx(context.Background()))
+	stream, err := h.client.Attach(ctx, &proto.AttachRequest{ClientId: clientID})
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	// The server sends nothing on attach; wait for registration via a Call
+	// round trip ordering is not guaranteed, so poll the attached count.
+	deadline := time.Now().Add(2 * time.Second)
+	for h.srv.attachedClients(clientID) == 0 {
+		if time.Now().After(deadline) {
+			h.t.Fatal("attach not registered")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	ch := make(chan *proto.ManagerEvent, 64)
+	go func() {
+		defer close(ch)
+		for {
+			ev, err := stream.Recv()
+			if err != nil {
+				return
+			}
+			ch <- ev
+		}
+	}()
+	h.t.Cleanup(cancelFn)
+	return ch, cancelFn
+}
+
+func waitFor(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+}
+
+func TestTwoClientsStartSameModelShareOneInstance(t *testing.T) {
+	h := newHarness(t)
+	a := h.start("A", "m1")
+	b := h.start("B", "m1")
+	if h.provider.StartCalls() != 1 {
+		t.Fatalf("StartCalls = %d, want 1", h.provider.StartCalls())
+	}
+	if a.ID == "" || a.ID != b.ID {
+		t.Fatalf("instance IDs differ: %q vs %q", a.ID, b.ID)
+	}
+}
+
+func TestStopKeepsInstanceWhileAnotherClientHoldsIt(t *testing.T) {
+	h := newHarness(t)
+	a := h.start("A", "m1")
+	h.start("B", "m1")
+	h.stop("A", a.ID)
+	if h.provider.StopCalls() != 0 {
+		t.Fatalf("StopCalls = %d after A stop, want 0", h.provider.StopCalls())
+	}
+	h.stop("B", a.ID)
+	if h.provider.StopCalls() != 1 {
+		t.Fatalf("StopCalls = %d after B stop, want 1", h.provider.StopCalls())
+	}
+}
+
+func TestDroppedAttachReleasesHolds(t *testing.T) {
+	h := newHarness(t)
+	_, cancel := h.attach("A")
+	h.start("A", "m1")
+	cancel()
+	waitFor(t, "stop after attach dropped", func() bool { return h.provider.StopCalls() == 1 })
+}
+
+func TestDroppedAttachKeepsInstanceHeldByOthers(t *testing.T) {
+	h := newHarness(t)
+	_, cancelA := h.attach("A")
+	h.start("A", "m1")
+	h.start("B", "m1")
+	cancelA()
+	waitFor(t, "A detached", func() bool { return h.srv.attachedClients("A") == 0 })
+	time.Sleep(50 * time.Millisecond)
+	if h.provider.StopCalls() != 0 {
+		t.Fatalf("StopCalls = %d, want 0 while B holds", h.provider.StopCalls())
+	}
+}
+
+func TestRestartKeepsHolds(t *testing.T) {
+	h := newHarness(t)
+	a := h.start("A", "m1")
+	h.start("B", "m1")
+	var restarted localruntime.InstanceRecord
+	if err := h.call("A", "Restart", localruntime.RestartRequest{InstanceID: a.ID}, &restarted); err != nil {
+		t.Fatal(err)
+	}
+	if restarted.ID != a.ID {
+		t.Fatalf("restart changed instance id: %q -> %q", a.ID, restarted.ID)
+	}
+	// The manager's restart stops and relaunches the provider once; holds must
+	// not cause any further stop.
+	afterRestart := h.provider.StopCalls()
+	h.stop("B", a.ID)
+	if got := h.provider.StopCalls(); got != afterRestart {
+		t.Fatalf("StopCalls = %d after B stop, want %d (A still holds)", got, afterRestart)
+	}
+	h.stop("A", a.ID)
+	if got := h.provider.StopCalls(); got != afterRestart+1 {
+		t.Fatalf("StopCalls = %d after A stop, want %d", got, afterRestart+1)
+	}
+}
+
+func TestIdleTimeoutStopsAllAndCallsOnIdle(t *testing.T) {
+	h := newHarness(t)
+	_, cancel := h.attach("A")
+	h.start("A", "m1")
+	h.start("B", "m2") // never attached, so only idle StopAll can stop it
+	cancel()
+	waitFor(t, "A detached", func() bool { return h.srv.attachedClients("A") == 0 })
+	waitFor(t, "A's hold released", func() bool { return h.provider.StopCalls() == 1 })
+
+	h.srv.checkIdle(context.Background())
+	select {
+	case <-h.idle:
+		t.Fatal("OnIdle fired before timeout")
+	default:
+	}
+	h.clock.Advance(61 * time.Second)
+	h.srv.checkIdle(context.Background())
+	h.srv.checkIdle(context.Background())
+	select {
+	case <-h.idle:
+	default:
+		t.Fatal("OnIdle not called")
+	}
+	select {
+	case <-h.idle:
+		t.Fatal("OnIdle called twice")
+	default:
+	}
+	if h.provider.StopCalls() != 2 {
+		t.Fatalf("StopCalls = %d, want 2 (every instance stopped)", h.provider.StopCalls())
+	}
+}
+
+func TestAttachResetsIdleTimer(t *testing.T) {
+	h := newHarness(t)
+	h.clock.Advance(2 * time.Minute)
+	h.attach("A")
+	h.srv.checkIdle(context.Background())
+	select {
+	case <-h.idle:
+		t.Fatal("OnIdle fired while a stream is attached")
+	default:
+	}
+}
+
+func TestRejectsMissingOrWrongToken(t *testing.T) {
+	h := newHarness(t)
+	for name, ctx := range map[string]context.Context{
+		"missing": context.Background(),
+		"wrong":   metadata.AppendToOutgoingContext(context.Background(), tokenHeader, "nope"),
+	} {
+		_, err := h.client.Call(ctx, &proto.CallRequest{Method: "Providers"})
+		if status.Code(err) != codes.Unauthenticated {
+			t.Errorf("%s Call: code = %v, want Unauthenticated", name, status.Code(err))
+		}
+		_, err = h.client.Hello(ctx, &proto.HelloRequest{})
+		if status.Code(err) != codes.Unauthenticated {
+			t.Errorf("%s Hello: code = %v, want Unauthenticated", name, status.Code(err))
+		}
+		_, err = h.client.Shutdown(ctx, &proto.ShutdownRequest{})
+		if status.Code(err) != codes.Unauthenticated {
+			t.Errorf("%s Shutdown: code = %v, want Unauthenticated", name, status.Code(err))
+		}
+		stream, err := h.client.Attach(ctx, &proto.AttachRequest{ClientId: "x"})
+		if err == nil {
+			_, err = stream.Recv()
+		}
+		if status.Code(err) != codes.Unauthenticated {
+			t.Errorf("%s Attach: code = %v, want Unauthenticated", name, status.Code(err))
+		}
+	}
+}
+
+func TestInstanceEventsReachEveryAttachedClient(t *testing.T) {
+	h := newHarness(t)
+	evA, _ := h.attach("A")
+	evB, _ := h.attach("B")
+	rec := h.start("C", "m1")
+	for name, ch := range map[string]<-chan *proto.ManagerEvent{"A": evA, "B": evB} {
+		select {
+		case ev := <-ch:
+			raw := ev.GetInstanceEventJson()
+			if raw == "" {
+				t.Fatalf("%s: not an instance event: %v", name, ev)
+			}
+			var ie localruntime.InstanceEvent
+			if err := json.Unmarshal([]byte(raw), &ie); err != nil {
+				t.Fatal(err)
+			}
+			if ie.Instance.ID != rec.ID {
+				t.Errorf("%s: event instance %q, want %q", name, ie.Instance.ID, rec.ID)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("%s: no event", name)
+		}
+	}
+}
+
+func TestHelloAndShutdown(t *testing.T) {
+	h := newHarness(t)
+	shut := make(chan struct{}, 1)
+	h.srv.opts.OnShutdown = func() { shut <- struct{}{} }
+	ctx := authCtx(context.Background())
+	resp, err := h.client.Hello(ctx, &proto.HelloRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.ApiVersion != APIVersion || resp.Version != "test-1" || resp.Pid == 0 {
+		t.Fatalf("Hello = %+v", resp)
+	}
+	h.start("A", "m1")
+	if _, err := h.client.Shutdown(ctx, &proto.ShutdownRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if h.provider.StopCalls() != 1 {
+		t.Fatalf("StopCalls = %d, want 1", h.provider.StopCalls())
+	}
+	select {
+	case <-shut:
+	default:
+		t.Fatal("OnShutdown not called")
+	}
+}
+
+func TestCallUnknownMethodAndEnroll(t *testing.T) {
+	h := newHarness(t)
+	err := h.call("A", "Bogus", nil, nil)
+	if status.Code(err) != codes.Unimplemented {
+		t.Fatalf("unknown method code = %v", status.Code(err))
+	}
+	// InMemoryManager implements DownloadEnroller.
+	if err := h.call("A", "EnrollDownload", localruntime.ModelRecord{ID: "x", Runtime: "fake"}, nil); err != nil {
+		t.Fatalf("EnrollDownload: %v", err)
+	}
+	var infos []localruntime.ProviderInfo
+	if err := h.call("A", "Providers", nil, &infos); err != nil || len(infos) != 1 || infos[0].Name != "fake" {
+		t.Fatalf("Providers = %v, %v", infos, err)
+	}
+}
+
+func TestEnrollDownloadWithoutEnrollerIsFailedPrecondition(t *testing.T) {
+	s := NewServer(struct{ localruntime.Manager }{localruntime.NewManager()}, ServerOptions{Token: testToken})
+	_, err := s.Call(authCtx2(), &proto.CallRequest{Method: "EnrollDownload", PayloadJson: `{}`})
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("code = %v", status.Code(err))
+	}
+}
+
+func authCtx2() context.Context {
+	return metadata.NewIncomingContext(context.Background(), metadata.Pairs(tokenHeader, testToken))
+}
+
+func TestSlowStreamDoesNotBlockManager(t *testing.T) {
+	mgr := localruntime.NewManager()
+	s := NewServer(mgr, ServerOptions{Token: testToken})
+	// Register a stream that nobody drains.
+	st := s.addStream("slow")
+	defer s.removeStream("slow", st)
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < streamBuffer*3; i++ {
+			s.OnInstanceStateChange(localruntime.InstanceEvent{})
+		}
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("observer blocked on a full stream")
+	}
+}
