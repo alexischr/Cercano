@@ -52,9 +52,11 @@ cercano
 
 This development launcher is distinct from the installed server binary. For
 Homebrew/release installs, launch `cercano-cli`; bare `cercano` is the server.
-When stdin is a TTY, the development launcher runs the
-CLI; the CLI auto-launches the gRPC agent on `:50052` if one isn't already
-running. To run the agent server by hand, use `cercano agent`.
+The development launcher always execs `cercano-cli` with the original arguments;
+it does not select server mode based on stdin. The CLI can auto-launch the
+gRPC agent if it cannot connect. To run the agent server by hand from a dev
+launcher install, use `"$HOME/bin/.cercano-libexec/cercano" agent` (or
+`cercano agent` when `cercano` resolves to the installed server binary).
 
 ### 4. Point it at a model
 
@@ -70,16 +72,19 @@ any time with `/strict`, `/permissive`, or `/bypass`.
 
 ### 6. Or run it headless
 
-For scripts, CI, or driving Cercano from another agent, skip the UI entirely:
+For scripts, CI, or driving Cercano from another agent, invoke the server
+binary's `run` command, not the development launcher. For release installs, use
+`cercano run`; for a dev launcher install:
 
 ```bash
-cercano run "list the markdown files in this directory"
-cercano run --auto-allow "add a TODO line to the top of README.md"
-cercano run --conv my-session "continue where we left off"
+"$HOME/bin/.cercano-libexec/cercano" run "list the markdown files in this directory"
+"$HOME/bin/.cercano-libexec/cercano" run --auto-allow "add a TODO line to the top of README.md"
+"$HOME/bin/.cercano-libexec/cercano" run --conv my-session "continue where we left off"
 ```
 
-Stdout is the assistant's answer; stderr is progress. Exit codes: `0` success,
-`2` usage error, `3` you denied a confirm gate.
+Stdout is the assistant's answer; stderr carries progress and errors. Exit codes:
+`0` success, `1` connection/stream errors or no assistant output, `2` usage error,
+`3` a confirmation was denied automatically (the default without `--auto-allow`).
 
 That's the whole loop. The rest of this document is reference detail on each
 piece.
@@ -104,7 +109,9 @@ Generate it (bakes this clone's path in, exports `CERCANO_REPO`):
 cd source/server && make launcher
 ```
 
-Then `cercano` runs the CLI when stdin is a TTY, and `cercano agent` runs the gRPC agent server. The CLI auto-launches the agent if no server is on `:50052`.
+Then `cercano` always runs the CLI, forwarding its arguments. To run the gRPC
+agent server directly, use `"$HOME/bin/.cercano-libexec/cercano" agent`. The CLI
+can auto-launch the agent if it cannot connect.
 
 ### Interactive mode
 
@@ -116,13 +123,19 @@ Type a prompt. The agent decides whether to use tools (Read, Glob, Grep, LS, Bas
 
 ### Headless / scripted mode
 
+Use the server binary, not the development launcher. The paths below are for a
+dev launcher install; for a release install, use `cercano run` instead.
+
 ```bash
-cercano run "list the markdown files in this directory"
-cercano run --auto-allow "edit README.md and add a TODO line at the top"
-cercano run --conv my-session "continue where we left off"
+"$HOME/bin/.cercano-libexec/cercano" run "list the markdown files in this directory"
+"$HOME/bin/.cercano-libexec/cercano" run --auto-allow "edit README.md and add a TODO line at the top"
+"$HOME/bin/.cercano-libexec/cercano" run --conv my-session "continue where we left off"
 ```
 
-Stdout carries the assistant's text response. Stderr carries progress diagnostics (tool calls, exec status). Exit codes: `0` success, `2` usage error, `3` user denied a confirm gate.
+Stdout carries the assistant's text response. Stderr carries progress diagnostics
+(tool calls, exec status) and errors. Exit codes: `0` success, `1` connection/stream
+errors or no assistant output, `2` usage error, `3` a confirmation was denied
+automatically (the default without `--auto-allow`).
 
 ## Permission modes
 
