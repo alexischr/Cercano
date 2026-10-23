@@ -139,13 +139,26 @@ automatically (the default without `--auto-allow`).
 
 ## Permission modes
 
-| Mode | R-tier (read_file, grep, list) | W-tier (write, edit, run_command) | X-tier (rm, git push, reset) |
+This table describes the ordinary model-driven built-in tool gate, using the
+tool's effective tier (which can depend on its arguments). It is not a blanket
+authorization guarantee or the policy for direct `/tool` calls.
+
+| Mode | R-tier | W-tier | X-tier |
 |---|---|---|---|
 | `strict` | silent | confirm | confirm |
 | `permissive` *(default)* | silent | silent | confirm |
 | `bypass` | silent | silent | silent |
 
-Switch with `/strict`, `/permissive`, `/bypass`, or `/mode <name>`. Persists to `~/.config/cercano/permissions.yaml`.
+Switch with `/strict`, `/permissive`, `/bypass`, or `/mode <name>`. Successful
+server updates persist to `~/.config/cercano/permissions.yaml`; the CLI updates
+its status chip optimistically, so the chip alone does not prove the save succeeded.
+
+Additional boundaries apply: MCP W/X calls use their allowlist policy (X always
+confirms outside bypass); session-model changes and explicit human handoffs can
+still prompt in bypass. Recognized WIP-consuming `git stash` commands require
+confirmation regardless of mode or delegated tool grants. Explicitly preauthorized
+tools can skip the ordinary gate; profile fences and watchdog checks remain
+separate. Direct `/tool` calls use CLI-local confirmation as described below.
 
 ## Slash commands
 

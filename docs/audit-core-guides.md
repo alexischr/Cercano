@@ -1,11 +1,19 @@
 # Core guides semantic audit
 
-## Latest disposition — 2026-10-22
+## Latest disposition — 2026-10-23
 
-The local closure pass below completes the decision-fidelity maintained-claim
-comparison, but **does not complete the requested five-guide coverage**. README,
-self-development, cloud routing and isolation architecture remain partial.
-Publication of these corrections must not be read as closure of those gaps.
+The five-guide audit remains **PARTIAL**, but not all five files are pending.
+Decision fidelity has completed maintained-claim comparison (closure pass below).
+[Self-development](audit-core-self-dev.md) records a completed maintained-claim
+source comparison and saved final readback; its publication pass did not
+independently revalidate every claim. [README startup/headless](audit-core-readme-startup.md)
+is also complete within its explicitly bounded scope. Those later reports
+supersede the earlier pending lists for those families, not for surrounding text.
+
+The [bounded reconciliation and permission-section report](audit-core-readme-permissions.md)
+records this increment's limited self-dev review and README comparison. README,
+cloud routing and isolation architecture still have remaining coverage. No source
+comparison here constitutes runtime acceptance.
 
 ## Earlier disposition and boundary
 
@@ -25,11 +33,12 @@ Explicit downstream comparison confirms the corrected direct-tool description at
 - `source/clients/cli/internal/ui/model.go:5056–5085`: compose redirection is restricted to stream-origin ordinary tools. MCP “always” sends the persistence RPC only for stream-origin calls; the local callback dismisses the prompt without execution or persistence.
 - `source/server/internal/server/server.go:2385–2423`: unary `InvokeTool` resolves the registry entry and calls `Execute` directly, with no tool-loop permission gate. Errors are returned in the response. This is not a server-enforced approval boundary; individual tools can still validate/reject their input.
 
-Remaining complete-file coverage includes setup/launcher and headless behavior, the other slash-command downstream handlers, model-driven permission exceptions, provider resilience/authentication, autonomous completion, attachment lifetime, persistence/resume, and session model selection. The direct-tool comparison alone does not certify these sections.
+Historical remaining list (superseded in part by the latest disposition): setup/launcher and headless behavior, the other slash-command downstream handlers, model-driven permission exceptions, provider resilience/authentication, autonomous completion, attachment lifetime, persistence/resume, and session model selection. The direct-tool comparison alone did not certify these sections. See the linked section reports above for current coverage.
 
-### `docs/agent/self-dev.md` — partial
+### `docs/agent/self-dev.md` — historical partial disposition
 
-No complete-file implementation comparison is certified by this report. Remaining maintained claims include dev-mode admission/resume/rollover metadata, delegation/task lifecycle and routing, build/signing/launcher behavior, storage and log paths, timeout/cancellation, tracing switches, current compaction/recap routing, and reconnect behavior. Dated troubleshooting anecdotes remain historical and are not a live acceptance requirement. The documented opt-in live-model test was not run.
+Superseded by [the completed self-dev comparison](audit-core-self-dev.md), with
+its publication-review limitations retained. At this earlier stage, pending maintained claims included dev-mode admission/resume/rollover metadata, delegation/task lifecycle and routing, build/signing/launcher behavior, storage and log paths, timeout/cancellation, tracing switches, current compaction/recap routing, and reconnect behavior. Dated troubleshooting anecdotes remain historical and are not a live acceptance requirement. The documented opt-in live-model test was not run.
 
 ### `docs/cloud-routing.md` — partial
 
@@ -66,7 +75,8 @@ Result: **PASS**, `ok cercano/source/server/internal/compaction 0.329s`. No depe
 
 ## Publication review follow-up
 
-Coverage remains **PARTIAL** for all five files. Publication review read the
+At this historical publication stage, coverage remained **PARTIAL** for all five
+files (later dispositions above supersede that status). Publication review read the
 actual diff and spot-checked CLI local confirmation and unary execution,
 model-driven denial/preauthorization/watchdog gates (`agent/toolloop.go:1017–1135`),
 task-reference encoding and lenient parsing (`compaction/summarizer.go:32–120`),

@@ -45,11 +45,13 @@ are documentation source checks, not live-provider or full runtime certification
 See the [central report](publicity-freshness-audit.md) for CLI/reference coverage
 and publication and implementation advisories.
 
-The [core-guide follow-up](audit-core-guides.md) is **PARTIAL** across all five
-guides: it publishes completed targeted corrections, not a completed five-file
-semantic audit. Self-dev and cloud routing receive no new full-file certification.
-Its focused test result is attributed to that audit; publication review spot-checks
-do not close the remaining coverage.
+The [core-guide follow-up](audit-core-guides.md) remains **PARTIAL** as a
+five-guide audit. Decision fidelity and [self-dev](audit-core-self-dev.md) have
+completed maintained-claim source comparisons; the latter retains its publication
+revalidation limitation. [README startup/headless](audit-core-readme-startup.md)
+and [permission modes](audit-core-readme-permissions.md) have bounded section
+coverage. README, cloud routing and isolation architecture remain partial.
+Earlier tests belong to their recorded passes, not this ledger reconciliation.
 
 The [six-guide core-specialist report](audit-core-specialists.md) completes the
 maintained repo-verifiable claim review for Responses, both locus guides,
@@ -154,7 +156,7 @@ audit above remains **PARTIAL**.
 | `docs/agent/per-backend-quirks.md` | Completed bounded maintained-claim audit; historical proposals preserved; see [evidence and limits](audit-core-specialists.md) |
 | `docs/agent/proto-regen.md` | Completed bounded specialist source audit; see [evidence and validation limits](audit-agent-specialists.md) |
 | `docs/agent/runtime-agnostic-model-lifecycle-plan.md` | Historical boundary reviewed/added; original design body retained (not fully revalidated) |
-| `docs/agent/self-dev.md` | **PARTIAL** core-guide follow-up; targeted comparisons only; see [remaining coverage](audit-core-guides.md) |
+| `docs/agent/self-dev.md` | Maintained-claim source comparison completed; publication revalidation limitation retained; see [evidence](audit-core-self-dev.md) and [bounded final review](audit-core-readme-permissions.md) |
 | `docs/agent/sub_agents/README.md` | Completed bounded maintained-claim audit; historical proposals preserved; see [evidence and limits](audit-core-specialists.md) |
 | `docs/agent/trajectory-export.md` | Completed bounded maintained-claim audit; historical proposals preserved; see [evidence and limits](audit-core-specialists.md) |
 | `docs/agent/vision-input.md` | Completed bounded specialist source audit; see [evidence and validation limits](audit-agent-specialists.md); maintained guidance plus historical design |
@@ -172,13 +174,16 @@ closure-pass evidence completes maintained-claim source comparison for
 rendering, budget/retention/merge and main-thread/dispatch wiring. It does not
 certify live-model classification or repair of stored summaries.
 
-**The requested five-guide closure remains incomplete.** These four guides
-retain partial local semantic coverage:
+**Current reconciliation — 2026-10-23:** the requested five-guide closure remains
+incomplete. The saved [self-dev report](audit-core-self-dev.md) supersedes its
+former pending list, without claiming live acceptance or fresh full revalidation.
+These three guides retain partial local semantic coverage:
 
-- `docs/agent/README.md`: launcher/headless, downstream commands, permissions,
-  resilience/auth, autonomy, attachment lifetime, persistence/resume and models.
-- `docs/agent/self-dev.md`: dev-mode metadata, task lifecycle/routing, build and
-  signing, paths, timeouts/cancellation, tracing, recap and reconnect behavior.
+- `docs/agent/README.md`: startup/headless and the permission-modes section are
+  covered by their section reports; remaining setup/model claims, capability
+  summaries, other downstream commands, architecture/provider/tool inventories,
+  resilience/auth, autonomy, attachment lifetime, persistence/resume and models
+  are not closed. See [exact scope](audit-core-readme-permissions.md).
 - `docs/cloud-routing.md`: full remaining routing/account/image/identity-storage,
   draft/save/wizard and worker-snapshot comparisons are not closed.
 - `docs/agent/agent-isolation/architecture.md`: additional broker/pool/orphan and

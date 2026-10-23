@@ -29,10 +29,14 @@ reports supersede initial inventory-only labels for their explicitly scoped file
   supersede historical Responses/locus/sub-agent/export proposals. No external
   provider or ATIF certification. This does not close the partial core-guide audit.
 
-- [Core-guide follow-up](audit-core-guides.md): **PARTIAL** coverage of five core
-  guides; completed targeted corrections only, not full-file certification.
-  Self-dev and cloud routing remain incomplete; the report lists remaining
-  comparisons for each guide.
+- [Core-guide follow-up](audit-core-guides.md): five-guide closure remains
+  **PARTIAL**. Decision-fidelity and [self-dev](audit-core-self-dev.md)
+  maintained-claim comparisons are complete within their stated source-only
+  boundaries; self-dev publication did not independently revalidate every claim.
+  [README startup/headless](audit-core-readme-startup.md) and the
+  [permission section](audit-core-readme-permissions.md) have bounded reports.
+  README, cloud routing and isolation architecture retain explicit remaining
+  coverage; this is not complete-file certification of those three guides.
 
 Progression: the initial targeted correction/link-scan pass was partial; the
 follow-up fixed the classify example and 11 missing relative targets; scoped
