@@ -117,3 +117,32 @@ func TestAgentShutdownLeavesSharedModelToOtherAgent(t *testing.T) {
 	}
 	waitFor(t, "model stopped after the last holder closed", func() bool { return provider.StopCalls() == 1 })
 }
+
+// countingSharedManager is a shared manager that counts Stop calls.
+type countingSharedManager struct {
+	*localruntime.InMemoryManager
+	stops int
+}
+
+func (m *countingSharedManager) HoldEpoch() uint64 { return 1 }
+
+func (m *countingSharedManager) Stop(ctx context.Context, req localruntime.StopRequest) error {
+	m.stops++
+	return m.InMemoryManager.Stop(ctx, req)
+}
+
+// TestServerShutdownLeavesSharedInstancesToHolders: with a shared manager the
+// agent stops nothing at shutdown. Closing the manager afterwards releases
+// exactly this agent's holds; a Stop per listed instance would also reach
+// instances only other agents hold.
+func TestServerShutdownLeavesSharedInstancesToHolders(t *testing.T) {
+	mgr := &countingSharedManager{InMemoryManager: localruntime.NewManager()}
+	mgr.RegisterProvider(&shutdownRuntimeProvider{})
+	mgr.UpdateInstance(localruntime.InstanceRecord{ID: "mistralrs:abc:1", Runtime: "mistralrs", ModelID: "m", State: localruntime.InstanceRunning})
+	srv := &Server{}
+	srv.SetRuntimeManager(mgr)
+	srv.Shutdown()
+	if mgr.stops != 0 {
+		t.Fatalf("shutdown called Stop %d time(s) on a shared manager", mgr.stops)
+	}
+}

@@ -718,6 +718,12 @@ func (s *Server) stopRuntimeInstances() {
 	if rm == nil {
 		return
 	}
+	// Instances of a shared manager may be in use by other agents. Closing
+	// the manager (after Shutdown) releases exactly this agent's holds, and
+	// the model host stops whatever is left unheld.
+	if _, shared := rm.(localruntime.SharedManager); shared {
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	instances, err := rm.Instances(ctx)

@@ -223,8 +223,8 @@ func startGRPCServer(cfg config.Config, bindAddr string, events *crashlog.Writer
 	// llamaEng registers below once constructed — see RegisterEmbedder there.
 
 	// Local models live in the shared model host (or in-process as a
-	// fallback). The close function runs at shutdown after Server.Shutdown
-	// has stopped this agent's instances, or here if startup fails.
+	// fallback). The close function runs at shutdown after Server.Shutdown,
+	// or here if startup fails.
 	runtimeManager, closeRuntime, err := connectRuntimeManager(context.Background(), cfg, events)
 	if err != nil {
 		return "", nil, fmt.Errorf("connect runtime manager: %w", err)
@@ -668,8 +668,9 @@ func startGRPCServer(cfg config.Config, bindAddr string, events *crashlog.Writer
 	cleanup := func() {
 		defer restorePolicy()
 		defer enterpriseHost.Close()
-		// Runs after the body: srv.Shutdown has released this agent's
-		// runtime instances and the producers that use them have stopped.
+		// Runs after the body: srv.Shutdown has stopped in-process runtime
+		// instances and the producers that use them. For the shared model
+		// host, closing releases this agent's holds.
 		defer closeRuntime()
 		// Drain before teardown: in-flight turns still need the MCP manager
 		// and providers, so those stop only after the streams finish. The
@@ -806,9 +807,10 @@ var (
 // reached or launched, it builds the in-process manager instead so local
 // models keep working. Either way the active runtime is warmed.
 //
-// The close function must run after the agent's own instances are stopped
-// (Server.Shutdown): closing ends this client's attachment, which releases
-// whatever holds remain on the host.
+// The close function must run after Server.Shutdown, once nothing in this
+// agent uses local models any more: closing ends this client's attachment,
+// which releases this agent's holds. Server.Shutdown stops no shared
+// instances itself, since other agents may be using them.
 func connectRuntimeManager(ctx context.Context, cfg config.Config, events *crashlog.Writer) (localruntime.Manager, func(), error) {
 	if strings.EqualFold(strings.TrimSpace(os.Getenv(modelHostEnv)), "inprocess") {
 		return buildRuntimeManager(cfg, events), func() {}, nil
