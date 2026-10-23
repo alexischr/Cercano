@@ -125,13 +125,12 @@ Self-development remains closed within its saved report's stated limitations.
   rejection at callers, key-store boundary and legacy backup save/load behavior;
   Setup wizard inherited/edit markers, resume and rollback metadata preservation.
   Its fixture-verification claim has not been exhaustively independently rerun.
-- [ ] Isolation architecture: remaining provider construction and on-demand
-  credential/control proxy semantics; runner core execution/persistence wiring
-  and invariants; reconcile phase-status assertions against those callers.
-  Prior broker/pool/orphan, control receiver, host authorization, startup/default
-  and protocol-inventory comparisons remain bounded completed evidence, not
-  unreviewed whole sections. Codec limitations above are now compared, but do
-  not certify complete-file or end-to-end semantics.
+- [x] Isolation architecture: [remaining maintained-claim source closure](audit-core-isolation-closure.md)
+  completes provider construction, credential/control proxies, runner execution/
+  persistence and phase/invariant reconciliation. Earlier broker/pool/orphan,
+  control receiver, host authorization, startup/default, codec and protocol
+  comparisons remain bounded completed evidence. Source closure does not certify
+  complete-file correctness, live isolation, event parity or crash durability.
 
 ## Checks and exclusions for this continuation
 

@@ -12,8 +12,9 @@ supersede the earlier pending lists for those families, not for surrounding text
 
 The [bounded reconciliation and permission-section report](audit-core-readme-permissions.md)
 records this increment's limited self-dev review and README comparison. README,
-cloud routing and isolation architecture still have remaining coverage. No source
-comparison here constitutes runtime acceptance.
+cloud routing still have remaining coverage. Isolation now has
+[maintained-claim source closure](audit-core-isolation-closure.md), superseding
+its earlier pending lists without certifying runtime acceptance.
 
 ## Earlier disposition and boundary
 
@@ -174,10 +175,11 @@ Core-guide closure remains **PARTIAL**, not complete-file certification.
 - Cloud routing: saved defaults/image-inheritance corrections checked; snapshot
   serialization/reconstruction now compared. Invocation/retry/refresh callers,
   identity storage, settings draft/save failures and wizard rollback remain open.
-- Isolation architecture: message/event codec and snapshot claims now compared
-  and corrected. Remaining provider/credential/control-proxy and runner-core
-  semantics are not certified; prior broker/pool/orphan/control-receiver and
-  protocol-inventory comparisons are not reopened as pending whole sections.
+- Isolation architecture: [remaining maintained-claim source closure](audit-core-isolation-closure.md)
+  completes provider construction, credential/control proxies, runner persistence
+  and phase/invariant reconciliation. Earlier codec and broker/pool/control slices
+  remain bounded evidence. This supersedes isolation-pending claims above, not
+  historical evidence, and does not certify live isolation, parity or durability.
 - Self-dev has no outstanding maintained-claim family in its saved report; no
   repeated review. Startup/headless, Permission modes, direct-tool, specialist/
   features and decision-fidelity reports retain their bounded dispositions.

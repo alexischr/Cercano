@@ -35,8 +35,9 @@ reports supersede initial inventory-only labels for their explicitly scoped file
   boundaries; self-dev publication did not independently revalidate every claim.
   [README startup/headless](audit-core-readme-startup.md) and the
   [permission section](audit-core-readme-permissions.md) have bounded reports.
-  README, cloud routing and isolation architecture retain explicit remaining
-  coverage; this is not complete-file certification of those three guides.
+  README and cloud routing retain explicit remaining coverage. Isolation now has
+  [maintained-claim source closure](audit-core-isolation-closure.md), not
+  complete-file or live acceptance certification.
 
 Progression: the initial targeted correction/link-scan pass was partial; the
 follow-up fixed the classify example and 11 missing relative targets; scoped
@@ -782,10 +783,11 @@ Core-guide closure remains **PARTIAL**, not complete-file certification.
 - Cloud routing: saved defaults/image-inheritance corrections checked; snapshot
   serialization/reconstruction now compared. Invocation/retry/refresh callers,
   identity storage, settings draft/save failures and wizard rollback remain open.
-- Isolation architecture: message/event codec and snapshot claims now compared
-  and corrected. Remaining provider/credential/control-proxy and runner-core
-  semantics are not certified; prior broker/pool/orphan/control-receiver and
-  protocol-inventory comparisons are not reopened as pending whole sections.
+- Isolation architecture: [remaining maintained-claim source closure](audit-core-isolation-closure.md)
+  completes provider construction, credential/control proxies, runner persistence
+  and phase/invariant reconciliation. Earlier codec and broker/pool/control slices
+  remain bounded evidence. This supersedes isolation-pending claims above, not
+  historical evidence, and does not certify live isolation, parity or durability.
 - Self-dev has no outstanding maintained-claim family in its saved report; no
   repeated review. Startup/headless, Permission modes, direct-tool, specialist/
   features and decision-fidelity reports retain their bounded dispositions.

@@ -50,7 +50,8 @@ five-guide audit. Decision fidelity and [self-dev](audit-core-self-dev.md) have
 completed maintained-claim source comparisons; the latter retains its publication
 revalidation limitation. [README startup/headless](audit-core-readme-startup.md)
 and [permission modes](audit-core-readme-permissions.md) have bounded section
-coverage. README, cloud routing and isolation architecture remain partial.
+coverage. README and cloud routing remain partial; isolation has
+[maintained-claim source closure](audit-core-isolation-closure.md), not live acceptance.
 Earlier tests belong to their recorded passes, not this ledger reconciliation.
 
 The [six-guide core-specialist report](audit-core-specialists.md) completes the
@@ -78,7 +79,7 @@ audit above remains **PARTIAL**.
 | File | Cumulative coverage (original pass plus reported follow-up) |
 | --- | --- |
 | `docs/agent/README.md` | **PARTIAL** core-guide follow-up; targeted comparisons only; see [remaining coverage](audit-core-guides.md) |
-| `docs/agent/agent-isolation/architecture.md` | **PARTIAL** core-guide follow-up; targeted comparisons only; see [remaining coverage](audit-core-guides.md) |
+| `docs/agent/agent-isolation/architecture.md` | Maintained-claim source comparison closed; see [isolation closure and live exclusions](audit-core-isolation-closure.md); not complete-file or runtime certification |
 | `docs/agent/agent-isolation/design.md` | Historical boundary reviewed/added; original design body retained (not fully revalidated) |
 | `docs/agent/agent-isolation/plan-phase2.md` | Historical boundary reviewed/added; original design body retained (not fully revalidated) |
 | `docs/agent/agent-isolation/plan-phase3.md` | Historical boundary reviewed/added; original design body retained (not fully revalidated) |
@@ -210,10 +211,11 @@ Core-guide closure remains **PARTIAL**, not complete-file certification.
 - Cloud routing: saved defaults/image-inheritance corrections checked; snapshot
   serialization/reconstruction now compared. Invocation/retry/refresh callers,
   identity storage, settings draft/save failures and wizard rollback remain open.
-- Isolation architecture: message/event codec and snapshot claims now compared
-  and corrected. Remaining provider/credential/control-proxy and runner-core
-  semantics are not certified; prior broker/pool/orphan/control-receiver and
-  protocol-inventory comparisons are not reopened as pending whole sections.
+- Isolation architecture: [remaining maintained-claim source closure](audit-core-isolation-closure.md)
+  completes provider construction, credential/control proxies, runner persistence
+  and phase/invariant reconciliation. Earlier codec and broker/pool/control slices
+  remain bounded evidence. This supersedes isolation-pending claims above, not
+  historical evidence, and does not certify live isolation, parity or durability.
 - Self-dev has no outstanding maintained-claim family in its saved report; no
   repeated review. Startup/headless, Permission modes, direct-tool, specialist/
   features and decision-fidelity reports retain their bounded dispositions.
