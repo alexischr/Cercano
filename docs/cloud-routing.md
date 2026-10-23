@@ -11,7 +11,7 @@ A **model tier** (called a `destination` in configuration and APIs) chooses wher
 
 | Task | Default model tier | Default quality |
 | --- | --- | --- |
-| Chat | Primary | Standard |
+| Chat | Primary | Premium |
 | Compaction | Secondary | Light |
 | Default dispatch (class omitted) | Secondary | Standard |
 | Reconnaissance | Local | Light |
@@ -45,7 +45,7 @@ DeepInfra recommendations are:
 
 These are product defaults, not measured reliability or price claims. Discovery uses the registered DeepInfra catalog and its cache. A selected/custom ID remains editable if discovery fails or omits it.
 
-Image inspection uses the profile's separate `image_model`, never its text quality selection. No image model is invented when the selection is empty. Image bytes are sent only when the selected model has confirmed image-input support for that profile/endpoint. A backup must have its own image choice and confirmation. A confirmed configured backup is considered before Local when the preferred image model is missing or unconfirmed. Inspection remains a separate, tool-free request over the existing conversation-scoped attachment store. Successful-answer cache keys are unchanged; an identical question can reuse a previous answer after a model selection changes.
+Image inspection honors the profile's separate `image_model` override. When it is empty, the account can inherit a confirmed image-capable model: its selected chat quality is considered first, then its provider's image/text recommendations. This derived choice does not save an `image_model` override. Image bytes are sent only with confirmed image-input support for that profile/endpoint. A backup resolves its own explicit or inherited choice and confirmation. A confirmed configured backup is considered before Local when the preferred account has no confirmed image candidate. Inspection remains a separate, tool-free request over the existing conversation-scoped attachment store. Successful-answer cache keys are unchanged; an identical question can reuse a previous answer after a model selection changes.
 
 Legacy profile-wide `model`/`model_pinned` choices no longer override quality selection and are not migrated into every quality slot. The legacy `UpdateConfig.cloud_model` mutation is rejected. Re-select intentional choices in the Cloud profile editor.
 

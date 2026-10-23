@@ -161,3 +161,28 @@ retained for those gaps and review, not removed after publication.
 Publication target check: 8 scoped Markdown files, 73 relative inline/reference
 filesystem targets, zero missing. Fenced code, anchors and external URLs were
 excluded. `git diff --check` passed for this documentation increment.
+
+## Bounded continuation reconciliation — 2026-10-23
+
+The latest completed slices and exact remaining checklist are in
+[audit-core-remaining.md](audit-core-remaining.md). This update supersedes
+overlapping earlier pending lists, not the original evidence or limitations.
+Core-guide closure remains **PARTIAL**, not complete-file certification.
+
+- README attachment-storage/lifetime bullet: source-compared, no text correction
+  needed; other README families remain open as itemized in the checklist.
+- Cloud routing: saved defaults/image-inheritance corrections checked; snapshot
+  serialization/reconstruction now compared. Invocation/retry/refresh callers,
+  identity storage, settings draft/save failures and wizard rollback remain open.
+- Isolation architecture: message/event codec and snapshot claims now compared
+  and corrected. Remaining provider/credential/control-proxy and runner-core
+  semantics are not certified; prior broker/pool/orphan/control-receiver and
+  protocol-inventory comparisons are not reopened as pending whole sections.
+- Self-dev has no outstanding maintained-claim family in its saved report; no
+  repeated review. Startup/headless, Permission modes, direct-tool, specialist/
+  features and decision-fidelity reports retain their bounded dispositions.
+
+Source comparison is not live acceptance. No application/dependency edits,
+installs, network tests, paid calls, restarts, push, merge or land. Checks for
+this continuation are recorded in the linked report, not inferred from earlier
+publication passes.

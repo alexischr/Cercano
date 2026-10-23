@@ -246,8 +246,9 @@ turn in isolation and holds **no durable state**. Worker-side files:
   (id-correlated credential fetch; the ChatGPT-subscription token source), and
   `streamPersistFunc` + `preloadedHistory` (Assemble/LoadProjectContext return
   the StartTurn-provided values; PersistTurn proxies to the host).
-- **`wire.go`** — the codecs: `MarshalMessage`/`UnmarshalMessage` (lossless
-  `llm.Message ↔ LLMMessage` via `blocks_json`), `MarshalEvent`/`UnmarshalEvent`,
+- **`wire.go`** — the codecs: `MarshalMessage`/`UnmarshalMessage`
+  (`llm.Message ↔ LLMMessage` via JSON-serializable blocks; transient provider
+  extras are excluded), `MarshalEvent`/`UnmarshalEvent` (event subset; see §5),
   `SnapshotConfig`/`ConfigFromSnapshot`.
 - **`host.go`** — the host-side `workerRunner` (see §3.6 / §4-worker).
 - **`spawn.go`** — host-side process lifecycle: `spawnWorker` finds the `cercano`
@@ -302,8 +303,11 @@ callbacks. Only step 3 changes: `turnRunner` is a `workerRunner`, and
 
 1. **Pre-assemble.** `history := persist.AssembleHistory(ctx, convID)`;
    `projectCtx := persist.LoadProjectContext(workDir)` — the host owns the store.
-2. **Snapshot.** `snap := SnapshotConfig(cfg, "")` (no credential in the snapshot —
-   the worker fetches on demand); `permMode := perms.Mode()`.
+2. **Snapshot.** `snap := SnapshotConfig(cfg, "", w.resolveOpenTiers())`
+   resolves effective Local tier IDs on the host. The host adds a session-pinned
+   profile if absent from global routing references and attaches model evidence
+   when its evidence callback is configured. No credential is supplied in this
+   call — the worker fetches on demand; permission mode is read separately.
 3. **Acquire.** The per-conversation pool reuses a healthy idle worker with matching managed-policy mode, or spawns `cercano worker --socket …` with Setpgid, pidfile, socket readiness and gRPC dial. (Test path: injected `dial`.)
 4. **Start.** Open `client.RunTurn(ctx)` bidi stream; `Send(StartTurn{input,
    images, workDir, gen, config, history, projectContext, permissionMode})`.
@@ -350,13 +354,23 @@ default, or a strict host would silently auto-run writes in the worker).
 
 **`LLMMessage`** is the wire form of `llm.Message`: `role` + `blocks_json`
 (`json.Marshal(m.Blocks)`) + `content`. `blocks_json` is the same encoding the
-persistence layer already uses, so round-trip fidelity equals what the DB
-guarantees — lossless for all block kinds. **`ConfigSnapshot`** carries the ~37
-config fields the worker's execution slice reads at turn time (locus mode, the
-active cloud profile, model tiers, compaction knobs, the full watchdog block) —
-and deliberately **excludes** host-only concerns (Port, LlamaServer, Embedding,
-Retention). `WorkerEvent` mirrors `runner.Event` flat (a `WorkerEventKind` enum +
-all fields), so host↔worker event mapping is a trivial inverse.
+persistence layer uses. `content` is informational and ignored on decode. This
+preserves JSON-serializable block fields, not transient `ProviderExtras`
+(`json:"-"`); invalid block JSON fails decoding. **`ConfigSnapshot`** carries the
+worker's execution configuration at turn time, including routing assignments
+and referenced profiles, host-resolved Local tier IDs, model-profile choices,
+compaction knobs and watchdog settings. Host-only Port, LlamaServer and retention
+settings are not reconstructed. See `SnapshotConfig` / `ConfigFromSnapshot` for
+the current inventory rather than relying on a fixed field count.
+
+`WorkerEvent` is a flat **subset**, not a lossless mirror of `runner.Event`.
+The codecs carry route/model, text/progress, tool, watchdog, sub-agent and done
+result fields. Task-change and authentication kinds are not mapped by these
+codecs; unsupported outgoing kinds become `UNSPECIFIED` and unsupported incoming
+kinds become `runner.EventKind(-1)`. Task snapshots, authentication payloads and
+runner persistence/epoch/generation/sequence/background metadata are not carried
+by `MarshalEvent` / `UnmarshalEvent`. This boundary does not establish how those
+features are supplied through other host/control paths.
 
 **The four proxied operations** (worker asks; host owns the state):
 
