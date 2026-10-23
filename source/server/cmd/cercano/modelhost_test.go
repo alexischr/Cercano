@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"google.golang.org/grpc"
 	"net"
 	"path/filepath"
 	"strings"
@@ -205,5 +206,50 @@ func TestModelHostHandoverTimesOut(t *testing.T) {
 	err = waitDone(t, startHost(t, context.Background(), opts), 3*time.Second)
 	if err == nil || errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), "model host") {
 		t.Fatalf("err = %v, want a model host handover error", err)
+	}
+}
+
+func TestSecondModelHostExitsQuietlyWhileFirstIsStarting(t *testing.T) {
+	opts := testHostOptions(t, time.Minute)
+	dir := opts.RunDir
+	if _, err := modelhost.ReadRecord(dir); err == nil {
+		t.Fatal("unexpected record")
+	}
+	release, ok, err := filelock.TryLock(filepath.Join(dir, "modelhost.lock"))
+	if err != nil || !ok {
+		t.Fatalf("TryLock: ok=%v err=%v", ok, err)
+	}
+	defer release()
+	old := modelHostHandoverWait
+	modelHostHandoverWait = 10 * time.Second
+	defer func() { modelHostHandoverWait = old }()
+
+	// The "first host": holds the lock, and only after a slow start does its
+	// record appear and its server answer.
+	const token = "starting-host-token"
+	srv := modelhost.NewServer(localruntime.NewManager(), modelhost.ServerOptions{Token: token})
+	g := grpc.NewServer()
+	srv.Register(g)
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go g.Serve(lis)
+	defer g.Stop()
+	rec := modelhost.Record{PID: 1, Addr: lis.Addr().String(), Token: token, APIVersion: modelhost.APIVersion, StartedAt: time.Now()}
+	time.AfterFunc(300*time.Millisecond, func() { _ = modelhost.WriteRecord(dir, rec) })
+
+	start := time.Now()
+	second := opts
+	second.Manager = nil // must never build a manager or serve
+	if err := waitDone(t, startHost(t, context.Background(), second), 5*time.Second); err != nil {
+		t.Fatalf("second host: %v", err)
+	}
+	if d := time.Since(start); d > 3*time.Second {
+		t.Fatalf("second host took %s", d)
+	}
+	got, err := modelhost.ReadRecord(dir)
+	if err != nil || got.Addr != rec.Addr {
+		t.Fatalf("record changed: %+v, %v", got, err)
 	}
 }

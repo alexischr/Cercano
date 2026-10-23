@@ -184,28 +184,37 @@ func runModelHost(ctx context.Context, opts modelHostOptions) error {
 	return result
 }
 
+// modelHostPollInterval is how often a waiting launcher retries the lock and
+// probes the recorded host.
+const modelHostPollInterval = 200 * time.Millisecond
+
 // acquireModelHostLock takes the host lock. It returns a nil release when a
-// healthy host already runs. When the lock holder is draining or silent, it
-// waits up to modelHostHandoverWait for the lock.
+// healthy host already runs, including one that is still starting and only
+// begins answering while we wait. If the holder never answers and never
+// releases within modelHostHandoverWait, it returns an error.
 func acquireModelHostLock(ctx context.Context, dir string) (func(), error) {
 	path := filepath.Join(dir, modelHostLockFile)
-	release, ok, err := filelock.TryLock(path)
-	if err != nil {
-		return nil, fmt.Errorf("model host lock: %w", err)
+	deadline := time.Now().Add(modelHostHandoverWait)
+	for {
+		release, ok, err := filelock.TryLock(path)
+		if err != nil {
+			return nil, fmt.Errorf("model host lock: %w", err)
+		}
+		if ok {
+			return release, nil
+		}
+		if hostAnswers(ctx, dir) {
+			return nil, nil
+		}
+		if !time.Now().Before(deadline) {
+			return nil, fmt.Errorf("model host: previous host still holds the lock after %s", modelHostHandoverWait)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(modelHostPollInterval):
+		}
 	}
-	if ok {
-		return release, nil
-	}
-	if hostAnswers(ctx, dir) {
-		return nil, nil
-	}
-	wctx, cancel := context.WithTimeout(ctx, modelHostHandoverWait)
-	defer cancel()
-	release, err = filelock.Lock(wctx, path)
-	if err != nil {
-		return nil, fmt.Errorf("model host: previous host still holds the lock after %s: %w", modelHostHandoverWait, err)
-	}
-	return release, nil
 }
 
 // hostAnswers reports whether the recorded host verifies and answers Hello
