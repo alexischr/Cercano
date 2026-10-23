@@ -55,9 +55,11 @@ type RemoteOptions struct {
 //
 // Remote never lets gRPC reconnect a verified connection on its own: when a
 // call fails with Unavailable, the Attach stream breaks, or the connection
-// leaves READY, it closes the connection, runs Ensure, verifies the host
-// afresh, re-attaches, and (for a call) retries once. Concurrent callers share
-// one reconnect.
+// leaves READY, it runs Ensure, verifies the host afresh, re-attaches, and
+// (for a call) retries once. The old connection is closed first when Ensure
+// names a different host, and only after the new stream is attached when it
+// names the same one, so a live host keeps this client's holds. Concurrent
+// callers share one reconnect.
 type Remote struct {
 	opts     RemoteOptions
 	clientID string
