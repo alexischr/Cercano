@@ -2125,9 +2125,12 @@ func (s *Server) UpdateConfig(ctx context.Context, req *proto.UpdateConfigReques
 	// mistral.rs launch flags (paged_attn / isq / pa_memory_fraction) are baked
 	// into the process command line at Start (argsFor), so a running sidecar
 	// won't pick them up until it is restarted. Reconfigure above only re-points
-	// in-process routing. Bounce the active mistral.rs sidecar so the new flags
-	// take effect — Stop+Start (not Restart) so a simultaneous model change
-	// comes up on the resolved model rather than the instance's pinned old one.
+	// in-process routing. Restart the active mistral.rs sidecar so the new
+	// flags take effect, naming the resolved model so a simultaneous model
+	// change comes up on it rather than the instance's pinned old one. Restart
+	// (not Stop+Start) because on the shared model host Stop only releases this
+	// agent's hold and Start would re-take it on the unchanged process; Restart
+	// relaunches it for every holder.
 	// Option (a): if no sidecar is running, do nothing — the flags apply
 	// whenever the runtime is next started; we don't eagerly spin one up.
 	if mistralLaunchFlagsChanged && strings.EqualFold(c.OpenRuntime, "mistralrs") {
@@ -2137,11 +2140,10 @@ func (s *Server) UpdateConfig(ctx context.Context, req *proto.UpdateConfigReques
 				if m := strings.TrimSpace(c.MistralRS.DefaultModel); m != "" {
 					model = m
 				}
-				if err := rm.Stop(ctx, localruntime.StopRequest{InstanceID: inst.ID}); err != nil {
-					fmt.Printf("UpdateConfig: mistralrs sidecar stop for flag-restart failed: %v\n", err)
-				} else if _, err := rm.Start(ctx, localruntime.StartRequest{
-					Runtime: "mistralrs",
-					ModelID: model,
+				if _, err := rm.Restart(ctx, localruntime.RestartRequest{
+					InstanceID: inst.ID,
+					Runtime:    "mistralrs",
+					ModelID:    model,
 				}); err != nil {
 					fmt.Printf("UpdateConfig: mistralrs sidecar restart failed: %v\n", err)
 				} else {
