@@ -63,6 +63,9 @@ type Server struct {
 	// load of one model block operations on another.
 	keys keyedMutex
 
+	// draining is set once StopAll begins; lifecycle calls then fail.
+	draining atomic.Bool
+
 	mu        sync.Mutex
 	streams   map[*stream]struct{}
 	clients   map[string]int // attached stream count per client ID
@@ -181,9 +184,13 @@ func (s *Server) checkIdle(ctx context.Context) {
 	}
 }
 
-// StopAll stops every live instance and drops their holds. It takes no model
-// locks, so it never waits behind an in-flight Start of another model.
+// StopAll stops every live instance and drops their holds. It also puts the
+// server into a draining state for good: new Start and Restart calls fail with
+// Unavailable, and a Start already in flight stops its instance when it
+// completes. StopAll takes each instance's model lock while stopping it, but
+// never waits behind another model's in-flight Start.
 func (s *Server) StopAll(ctx context.Context) error {
+	s.draining.Store(true)
 	instances, err := s.mgr.Instances(ctx)
 	if err != nil {
 		return err
@@ -193,13 +200,50 @@ func (s *Server) StopAll(ctx context.Context) error {
 		if !liveInstance(inst) {
 			continue
 		}
-		if err := s.mgr.Stop(ctx, localruntime.StopRequest{InstanceID: inst.ID}); err != nil {
+		if err := s.stopLive(ctx, inst); err != nil {
 			errs = append(errs, fmt.Errorf("stop %s: %w", inst.ID, err))
-			continue
 		}
-		s.holds.drop(inst.ID)
 	}
 	return errors.Join(errs...)
+}
+
+// stopLive stops inst under its model lock unless a concurrent Stop already did.
+func (s *Server) stopLive(ctx context.Context, inst localruntime.InstanceRecord) error {
+	unlock := s.keys.lock(modelKey(inst.Runtime, inst.ModelID))
+	defer unlock()
+	current, err := s.mgr.Instances(ctx)
+	if err != nil {
+		return err
+	}
+	for _, c := range current {
+		if c.ID != inst.ID {
+			continue
+		}
+		if liveInstance(c) {
+			if err := s.mgr.Stop(ctx, localruntime.StopRequest{InstanceID: inst.ID}); err != nil {
+				return err
+			}
+		}
+		break
+	}
+	s.holds.drop(inst.ID)
+	return nil
+}
+
+var errDraining = status.Error(codes.Unavailable, "model host shutting down")
+
+// canonicalModel resolves a requested model reference to the manager's
+// canonical record ID, so aliases and canonical IDs share one lock and dedupe
+// key. It falls back to the raw reference when resolution fails.
+func (s *Server) canonicalModel(ctx context.Context, runtime, model string) string {
+	if runtime == "" || model == "" {
+		return model
+	}
+	rec, _ := s.mgr.ResolveOpenModel(ctx, runtime, model)
+	if rec.ID != "" {
+		return rec.ID
+	}
+	return model
 }
 
 // liveInstance reports whether an instance may still hold a process. Only
@@ -552,14 +596,19 @@ func reply(v any, err error) (string, error) {
 // start shares a running instance for the same runtime and model, otherwise
 // starts one, and records the client's hold either way.
 func (s *Server) start(ctx context.Context, clientID string, req localruntime.StartRequest) (*localruntime.InstanceRecord, error) {
-	unlock := s.keys.lock(modelKey(req.Runtime, req.ModelID))
+	canon := s.canonicalModel(ctx, req.Runtime, req.ModelID)
+	unlock := s.keys.lock(modelKey(req.Runtime, canon))
 	defer unlock()
+	if s.draining.Load() {
+		return nil, errDraining
+	}
 	instances, err := s.mgr.Instances(ctx)
 	if err != nil {
 		return nil, err
 	}
 	for _, inst := range instances {
-		if liveInstance(inst) && inst.Runtime == req.Runtime && inst.ModelID == req.ModelID {
+		if liveInstance(inst) && inst.Runtime == req.Runtime &&
+			(inst.ModelID == canon || inst.ModelID == req.ModelID) {
 			inst := inst
 			s.holds.add(clientID, inst.ID)
 			return &inst, nil
@@ -568,6 +617,13 @@ func (s *Server) start(ctx context.Context, clientID string, req localruntime.St
 	inst, err := s.mgr.Start(ctx, req)
 	if err != nil {
 		return nil, err
+	}
+	if s.draining.Load() {
+		// StopAll ran while this launch was in flight and could not see it.
+		if err := s.mgr.Stop(ctx, localruntime.StopRequest{InstanceID: inst.ID}); err != nil {
+			log.Printf("modelhost: stop %s started during shutdown: %v", inst.ID, err)
+		}
+		return nil, errDraining
 	}
 	s.holds.add(clientID, inst.ID)
 	return inst, nil
@@ -615,15 +671,24 @@ func (s *Server) restartTarget(ctx context.Context, req localruntime.RestartRequ
 // restart restarts for every holder; holds follow the instance if its ID changes.
 func (s *Server) restart(ctx context.Context, clientID string, req localruntime.RestartRequest) (*localruntime.InstanceRecord, error) {
 	target, found := s.restartTarget(ctx, req)
-	key := modelKey(req.Runtime, req.ModelID)
+	key := modelKey(req.Runtime, s.canonicalModel(ctx, req.Runtime, req.ModelID))
 	if found {
 		key = modelKey(target.Runtime, target.ModelID)
 	}
 	unlock := s.keys.lock(key)
 	defer unlock()
+	if s.draining.Load() {
+		return nil, errDraining
+	}
 	inst, err := s.mgr.Restart(ctx, req)
 	if err != nil {
 		return nil, err
+	}
+	if s.draining.Load() {
+		if err := s.mgr.Stop(ctx, localruntime.StopRequest{InstanceID: inst.ID}); err != nil {
+			log.Printf("modelhost: stop %s restarted during shutdown: %v", inst.ID, err)
+		}
+		return nil, errDraining
 	}
 	if found {
 		s.holds.move(target.ID, inst.ID)

@@ -506,7 +506,7 @@ func TestSlowStartOfOneModelDoesNotBlockAnother(t *testing.T) {
 	xDone := make(chan struct{})
 	go func() {
 		defer close(xDone)
-		h.start("A", "x")
+		_, _ = h.srv.start(context.Background(), "A", localruntime.StartRequest{Runtime: "fake", ModelID: "x"})
 	}()
 	<-entered
 	defer func() { close(gate); <-xDone }()
@@ -516,9 +516,6 @@ func TestSlowStartOfOneModelDoesNotBlockAnother(t *testing.T) {
 		defer close(done)
 		y := h.start("B", "y")
 		h.stop("B", y.ID)
-		if err := h.srv.StopAll(context.Background()); err != nil {
-			t.Error(err)
-		}
 	}()
 	select {
 	case <-done:
@@ -559,5 +556,76 @@ func TestResolveOpenModelEnvelope(t *testing.T) {
 	}
 	if err := h.call("A", "EnsureModelsPresent", EnsureModelsPresentRequest{Runtime: "fake"}, nil); err != nil {
 		t.Fatalf("EnsureModelsPresent: %v", err)
+	}
+}
+
+func TestStopAllDrainsInFlightStartAndRejectsNewOnes(t *testing.T) {
+	h := newHarness(t)
+	gate := make(chan struct{})
+	entered := make(chan struct{})
+	h.provider.OnStart = func(req localruntime.StartRequest) {
+		if req.ModelID == "x" {
+			close(entered)
+			<-gate
+		}
+	}
+	type result struct {
+		rec *localruntime.InstanceRecord
+		err error
+	}
+	res := make(chan result, 1)
+	go func() {
+		rec, err := h.srv.start(context.Background(), "A", localruntime.StartRequest{Runtime: "fake", ModelID: "x"})
+		res <- result{rec, err}
+	}()
+	<-entered
+	if err := h.srv.StopAll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	// A Start after StopAll began is refused.
+	err := h.call("B", "Start", localruntime.StartRequest{Runtime: "fake", ModelID: "y"}, nil)
+	if status.Code(err) != codes.Unavailable {
+		t.Fatalf("Start during drain: code = %v, want Unavailable", status.Code(err))
+	}
+	close(gate)
+	r := <-res
+	if status.Code(r.err) != codes.Unavailable || r.rec != nil {
+		t.Fatalf("in-flight Start = %v, %v; want Unavailable", r.rec, r.err)
+	}
+	insts, _ := h.mgr.Instances(context.Background())
+	for _, inst := range insts {
+		if liveInstance(inst) {
+			t.Fatalf("instance %s left running after drain", inst.ID)
+		}
+	}
+	if h.srv.holds.count("fake-x") != 0 {
+		t.Fatal("hold left on drained instance")
+	}
+}
+
+func TestStopAllDoesNotDoubleStop(t *testing.T) {
+	h := newHarness(t)
+	h.start("A", "m1")
+	if err := h.srv.StopAll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.srv.StopAll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if h.provider.StopCalls() != 1 {
+		t.Fatalf("StopCalls = %d, want 1", h.provider.StopCalls())
+	}
+}
+
+func TestAliasAndCanonicalModelShareOneInstance(t *testing.T) {
+	h := newHarness(t)
+	h.provider.Models = append(h.provider.Models, localruntime.ModelRecord{ID: "canon", DisplayName: "alias", Runtime: "fake"})
+	a := h.start("A", "alias")
+	b := h.start("B", "canon")
+	if h.provider.StartCalls() != 1 || a.ID != b.ID {
+		t.Fatalf("starts=%d ids %q %q; alias and canonical must share one instance", h.provider.StartCalls(), a.ID, b.ID)
+	}
+	if a.ModelID != "canon" {
+		t.Fatalf("ModelID = %q, want canon", a.ModelID)
 	}
 }

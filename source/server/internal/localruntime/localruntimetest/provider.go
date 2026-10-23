@@ -66,7 +66,16 @@ func (f *FakeProvider) Start(_ context.Context, req localruntime.StartRequest, s
 	if f.OnStart != nil {
 		f.OnStart(req)
 	}
-	id := "fake-" + req.ModelID
+	// Like real providers, report the canonical ID of the model record the
+	// request resolves to, not the alias that was asked for.
+	modelID := req.ModelID
+	for _, m := range f.Models {
+		if m.Runtime == f.ProviderName && localruntime.MatchesModel(req.ModelID, m) {
+			modelID = m.ID
+			break
+		}
+	}
+	id := "fake-" + modelID
 	f.mu.Lock()
 	f.startCalls++
 	if f.UniqueIDs {
@@ -79,11 +88,11 @@ func (f *FakeProvider) Start(_ context.Context, req localruntime.StartRequest, s
 		delete(f.stopped, id)
 	}
 	f.mu.Unlock()
-	sink.WriteLog(localruntime.LogEntry{Source: "fake", Message: "started " + req.ModelID})
+	sink.WriteLog(localruntime.LogEntry{Source: "fake", Message: "started " + modelID})
 	return &localruntime.InstanceRecord{
 		ID:      id,
 		Runtime: f.ProviderName,
-		ModelID: req.ModelID,
+		ModelID: modelID,
 		State:   state,
 	}, nil
 }
