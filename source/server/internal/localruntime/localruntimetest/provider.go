@@ -32,6 +32,9 @@ type FakeProvider struct {
 	// error, as a provider does when a launched process is slow to become
 	// ready.
 	FailAfterStart bool
+	// DefaultModel, if set, is launched when Start is asked for no model, as
+	// a real provider launches its configured default model.
+	DefaultModel string
 
 	mu         sync.Mutex
 	startedID  string
@@ -68,7 +71,10 @@ func (f *FakeProvider) Discover(context.Context) ([]localruntime.ModelRecord, er
 // manager's state machine only allows stopped -> starting.
 func (f *FakeProvider) Start(_ context.Context, req localruntime.StartRequest, sink localruntime.LogSink) (*localruntime.InstanceRecord, error) {
 	if req.ModelID == "" {
-		return nil, errors.New("model id required")
+		if f.DefaultModel == "" {
+			return nil, errors.New("model id required")
+		}
+		req.ModelID = f.DefaultModel
 	}
 	if f.OnStart != nil {
 		f.OnStart(req)

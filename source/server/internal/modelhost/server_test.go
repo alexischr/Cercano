@@ -616,17 +616,18 @@ func TestStopAllRacingClientStopStopsOnce(t *testing.T) {
 			<-gate
 		}
 	}
-	stopDone := make(chan struct{})
+	stopDone := make(chan error, 1)
 	go func() {
-		defer close(stopDone)
-		h.stop("A", a.ID)
+		stopDone <- h.call("A", "Stop", localruntime.StopRequest{InstanceID: a.ID}, nil)
 	}()
 	<-entered // the client's Stop is inside provider.Stop, holding the model lock
 	allDone := make(chan error, 1)
 	go func() { allDone <- h.srv.StopAll(context.Background()) }()
 	time.Sleep(50 * time.Millisecond) // let StopAll queue behind the lock
 	close(gate)
-	<-stopDone
+	if err := <-stopDone; err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
 	if err := <-allDone; err != nil {
 		t.Fatal(err)
 	}
@@ -706,5 +707,84 @@ func TestAliasAndCanonicalModelShareOneInstance(t *testing.T) {
 	}
 	if a.ModelID != "canon" {
 		t.Fatalf("ModelID = %q, want canon", a.ModelID)
+	}
+}
+
+// drainingRestart runs restart for req with the launch gated, calls StopAll
+// while the launch is in flight, then releases it. It returns restart's error.
+func drainingRestart(t *testing.T, h *harness, req localruntime.RestartRequest) error {
+	t.Helper()
+	h.provider.FailAfterStart = true
+	gate := make(chan struct{})
+	entered := make(chan struct{})
+	h.provider.OnStart = func(localruntime.StartRequest) {
+		close(entered)
+		<-gate
+	}
+	res := make(chan error, 1)
+	go func() {
+		_, err := h.srv.restart(context.Background(), "A", req)
+		res <- err
+	}()
+	<-entered
+	if err := h.srv.StopAll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	close(gate)
+	return <-res
+}
+
+func assertNoLiveInstances(t *testing.T, h *harness) {
+	t.Helper()
+	insts, _ := h.mgr.Instances(context.Background())
+	if len(insts) == 0 {
+		t.Fatal("test did not publish a live instance")
+	}
+	for _, inst := range insts {
+		if liveInstance(inst) {
+			t.Fatalf("instance %s (model %q) orphaned after restart during drain", inst.ID, inst.ModelID)
+		}
+		if h.srv.holds.count(inst.ID) != 0 {
+			t.Fatalf("hold left on drained instance %s", inst.ID)
+		}
+	}
+}
+
+func TestDrainingRestartByAliasSweepsCanonicalInstance(t *testing.T) {
+	h := newHarness(t)
+	h.provider.Models = append(h.provider.Models, localruntime.ModelRecord{ID: "canon", DisplayName: "alias", Runtime: "fake"})
+	err := drainingRestart(t, h, localruntime.RestartRequest{Runtime: "fake", ModelID: "alias"})
+	if status.Code(err) != codes.Unavailable {
+		t.Fatalf("Restart err = %v, want Unavailable", err)
+	}
+	assertNoLiveInstances(t, h)
+}
+
+func TestDrainingRestartWithoutModelSweepsDefaultInstance(t *testing.T) {
+	h := newHarness(t)
+	h.provider.DefaultModel = "dflt"
+	err := drainingRestart(t, h, localruntime.RestartRequest{Runtime: "fake"})
+	if status.Code(err) != codes.Unavailable {
+		t.Fatalf("Restart err = %v, want Unavailable", err)
+	}
+	assertNoLiveInstances(t, h)
+}
+
+func TestIdleCheckAfterShutdownDoesNothing(t *testing.T) {
+	h := newHarness(t)
+	h.start("A", "m1")
+	if _, err := h.client.Shutdown(authCtx(context.Background()), &proto.ShutdownRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	stops := h.provider.StopCalls()
+	h.clock.Advance(2 * time.Minute)
+	h.srv.checkIdle(context.Background())
+	select {
+	case <-h.idle:
+		t.Fatal("OnIdle called after Shutdown")
+	default:
+	}
+	if got := h.provider.StopCalls(); got != stops {
+		t.Fatalf("StopCalls = %d after idle check, want %d", got, stops)
 	}
 }

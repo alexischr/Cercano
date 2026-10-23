@@ -167,8 +167,12 @@ func (s *Server) Run(ctx context.Context) {
 }
 
 // checkIdle stops everything and calls OnIdle once if no stream has been
-// attached for IdleTimeout.
+// attached for IdleTimeout. It does nothing once the server is draining: a
+// Shutdown already stopped everything and ended the server.
 func (s *Server) checkIdle(ctx context.Context) {
+	if s.draining.Load() {
+		return
+	}
 	s.mu.Lock()
 	expired := len(s.streams) == 0 && !s.idleFired &&
 		s.opts.Now().Sub(s.idleSince) >= s.opts.IdleTimeout
@@ -176,7 +180,9 @@ func (s *Server) checkIdle(ctx context.Context) {
 		s.idleFired = true
 	}
 	s.mu.Unlock()
-	if !expired {
+	// Claim the drain so a Shutdown that began meanwhile is not followed by a
+	// second StopAll and an OnIdle.
+	if !expired || !s.draining.CompareAndSwap(false, true) {
 		return
 	}
 	if err := s.StopAll(ctx); err != nil {
@@ -231,6 +237,33 @@ func (s *Server) stopLive(ctx context.Context, inst localruntime.InstanceRecord)
 	}
 	s.holds.drop(inst.ID)
 	return nil
+}
+
+// sweepUnheld stops every live instance of runtime that no client holds, and
+// drops their holds. The caller holds the model lock heldKey; an instance under
+// another key is stopped under that key's lock, re-checked first, so it never
+// races StopAll stopping the same instance.
+func (s *Server) sweepUnheld(ctx context.Context, runtime, heldKey string) {
+	instances, err := s.mgr.Instances(ctx)
+	if err != nil {
+		log.Printf("modelhost: sweep during shutdown: %v", err)
+		return
+	}
+	for _, inst := range instances {
+		if inst.Runtime != runtime || !liveInstance(inst) || s.holds.count(inst.ID) > 0 {
+			continue
+		}
+		if modelKey(inst.Runtime, inst.ModelID) == heldKey {
+			if err := s.mgr.Stop(ctx, localruntime.StopRequest{InstanceID: inst.ID}); err != nil {
+				log.Printf("modelhost: stop %s during shutdown: %v", inst.ID, err)
+			}
+			s.holds.drop(inst.ID)
+			continue
+		}
+		if err := s.stopLive(ctx, inst); err != nil {
+			log.Printf("modelhost: stop %s during shutdown: %v", inst.ID, err)
+		}
+	}
 }
 
 // sweepModel stops every live instance of runtime whose model is one of models,
@@ -703,7 +736,8 @@ func (s *Server) restartTarget(ctx context.Context, req localruntime.RestartRequ
 // restart restarts for every holder; holds follow the instance if its ID changes.
 func (s *Server) restart(ctx context.Context, clientID string, req localruntime.RestartRequest) (*localruntime.InstanceRecord, error) {
 	target, found := s.restartTarget(ctx, req)
-	key := modelKey(req.Runtime, s.canonicalModel(ctx, req.Runtime, req.ModelID))
+	canon := s.canonicalModel(ctx, req.Runtime, req.ModelID)
+	key := modelKey(req.Runtime, canon)
 	if found {
 		key = modelKey(target.Runtime, target.ModelID)
 	}
@@ -714,15 +748,21 @@ func (s *Server) restart(ctx context.Context, clientID string, req localruntime.
 	}
 	inst, err := s.mgr.Restart(ctx, req)
 	if s.draining.Load() {
-		models := []string{req.ModelID}
-		if found {
-			models = append(models, target.ModelID)
-		}
-		runtimeName := req.Runtime
+		// As in start: the relaunch may have left a live instance even on
+		// error. It carries the canonical model, not an alias the client sent.
+		runtimeName, models := req.Runtime, []string{req.ModelID, canon}
 		if found {
 			runtimeName = target.Runtime
+			models = append(models, target.ModelID)
 		}
 		s.sweepModel(ctx, runtimeName, models...)
+		if !found && req.ModelID == "" && runtimeName != "" {
+			// A fresh start with no model launched the provider's default,
+			// whose name is unknown here. Draining blocks new starts, so an
+			// unheld live instance of this runtime is that launch (or one an
+			// in-flight start is about to sweep itself).
+			s.sweepUnheld(ctx, runtimeName, key)
+		}
 		return nil, errDraining
 	}
 	if err != nil {
