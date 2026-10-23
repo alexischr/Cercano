@@ -14,7 +14,10 @@ import (
 //     same model instead of launching another. A caller that found an
 //     instance through Instances must Start it before using it, or another
 //     process may stop it underneath.
-//   - Stop releases only the caller's hold.
+//   - Stop releases only the caller's hold. The instance keeps running while
+//     others hold it, so no stop event follows; instead, before Stop returns,
+//     the manager tells each registered HoldReleaseObserver that this
+//     process no longer holds the instance.
 //   - Closing the manager releases every hold the caller still has, so
 //     callers must not stop shared instances themselves on exit.
 type SharedManager interface {
@@ -24,6 +27,14 @@ type SharedManager interface {
 	// reconnect, so callers caching which instances they hold must take them
 	// again.
 	HoldEpoch() uint64
+}
+
+// HoldReleaseObserver is an Observer that a SharedManager also tells, before
+// Stop returns, that this process released its hold on an instance. Unlike an
+// instance event, this is local to the process: other holders may keep the
+// instance running.
+type HoldReleaseObserver interface {
+	OnHoldReleased(instanceID string)
 }
 
 // HoldTracker remembers which instances of a SharedManager this process
@@ -96,6 +107,14 @@ func (h *HoldTracker) observeLocked(m Manager) {
 
 // OnDownloadStateChange implements Observer.
 func (h *HoldTracker) OnDownloadStateChange(DownloadEvent) {}
+
+// OnHoldReleased implements HoldReleaseObserver: this process stopped the
+// instance through the manager, so the next use must take a hold again.
+func (h *HoldTracker) OnHoldReleased(instanceID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.held, instanceID)
+}
 
 // OnInstanceStateChange implements Observer: an instance that stopped,
 // crashed or failed is no longer held.

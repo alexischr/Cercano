@@ -86,13 +86,23 @@ func TestHoldTrackerTakesOneHoldPerInstance(t *testing.T) {
 		t.Fatalf("Start calls after epoch change = %d, want 3", n)
 	}
 
+	// This process releasing its hold (a Stop through the shared manager)
+	// drops the cached hold even though the instance keeps running.
+	h.OnHoldReleased(inst.ID)
+	if _, err := h.Hold(ctx, m, inst); err != nil {
+		t.Fatal(err)
+	}
+	if n := m.startCount(); n != 4 {
+		t.Fatalf("Start calls after this process released its hold = %d, want 4", n)
+	}
+
 	// An instance this process started itself is already held.
 	h.Held(m, "inst-own")
 	if _, err := h.Hold(ctx, m, InstanceRecord{ID: "inst-own", Runtime: "rt", ModelID: "own", State: InstanceRunning}); err != nil {
 		t.Fatal(err)
 	}
-	if n := m.startCount(); n != 3 {
-		t.Fatalf("Start calls for an instance started by this process = %d, want 3", n)
+	if n := m.startCount(); n != 4 {
+		t.Fatalf("Start calls for an instance started by this process = %d, want 4", n)
 	}
 }
 

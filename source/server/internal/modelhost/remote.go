@@ -632,8 +632,31 @@ func (r *Remote) Start(ctx context.Context, req localruntime.StartRequest) (*loc
 	return out, nil
 }
 
+// Stop releases this client's hold on the instance; the host stops it once
+// no client holds it. Before returning, Stop tells every HoldReleaseObserver
+// the hold is gone, even on error (the host may have released it before the
+// call failed), so an engine reusing the instance takes a hold again.
 func (r *Remote) Stop(ctx context.Context, req localruntime.StopRequest) error {
-	return r.call(ctx, "Stop", req, nil)
+	err := r.call(ctx, "Stop", req, nil)
+	r.holdReleased(req.InstanceID)
+	return err
+}
+
+// holdReleased notifies the observers that track holds that this client no
+// longer holds instance id. It runs on the caller's goroutine so the
+// notification lands before Stop returns.
+func (r *Remote) holdReleased(id string) {
+	if id == "" {
+		return
+	}
+	r.obsMu.RLock()
+	obs := append([]localruntime.Observer(nil), r.observers...)
+	r.obsMu.RUnlock()
+	for _, o := range obs {
+		if ho, ok := o.(localruntime.HoldReleaseObserver); ok {
+			ho.OnHoldReleased(id)
+		}
+	}
 }
 
 func (r *Remote) Restart(ctx context.Context, req localruntime.RestartRequest) (*localruntime.InstanceRecord, error) {

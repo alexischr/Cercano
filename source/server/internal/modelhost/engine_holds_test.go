@@ -125,3 +125,99 @@ func TestEngineReuseHoldsSharedInstance(t *testing.T) {
 		})
 	}
 }
+
+// newEngineCompleter returns a function that sends one completion for model
+// m1 through a single runtime engine on m, so its hold cache persists across
+// requests the way an agent's engine does.
+func newEngineCompleter(runtime string, m localruntime.Manager) func() error {
+	var complete func(context.Context) error
+	switch runtime {
+	case "llama_server":
+		e := llamaengine.NewEngine(m)
+		complete = func(ctx context.Context) error {
+			_, err := e.Complete(ctx, "m1", "hi", "", engine.GenOptions{})
+			return err
+		}
+	case "mistralrs":
+		e := mistralengine.NewEngine(m)
+		complete = func(ctx context.Context) error {
+			_, err := e.Complete(ctx, "m1", "hi", "", engine.GenOptions{})
+			return err
+		}
+	}
+	return func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return complete(ctx)
+	}
+}
+
+// TestEngineReuseRetakesHoldAfterOwnStop: A and B both hold the model, B
+// through its engine. B stops the model from its runtime dashboard, which
+// releases only B's hold, so the model keeps running and no stop event
+// arrives. B's engine must still take a new hold on its next request;
+// otherwise A closing would stop the model B is using.
+func TestEngineReuseRetakesHoldAfterOwnStop(t *testing.T) {
+	for _, runtime := range []string{"llama_server", "mistralrs"} {
+		t.Run(runtime, func(t *testing.T) {
+			dir := t.TempDir()
+			host := startRuntimeHost(t, runtime, "tok-"+runtime)
+			host.publish(t, dir)
+			a := newTestRemote(t, remoteOpts(dir, nil))
+			b := newTestRemote(t, remoteOpts(dir, nil))
+			ctx := context.Background()
+			completeB := newEngineCompleter(runtime, b)
+
+			inst, err := a.Start(ctx, localruntime.StartRequest{Runtime: runtime, ModelID: "m1"})
+			if err != nil {
+				t.Fatalf("A Start: %v", err)
+			}
+			if err := completeB(); err != nil {
+				t.Fatalf("B engine request: %v", err)
+			}
+			if got := host.srv.holds.heldBy(b.ClientID()); len(got) != 1 {
+				t.Fatalf("B holds %v after its engine reused the model, want 1 hold", got)
+			}
+
+			// B stops the model through its manager: only B's hold goes.
+			if err := b.Stop(ctx, localruntime.StopRequest{InstanceID: inst.ID}); err != nil {
+				t.Fatalf("B Stop: %v", err)
+			}
+			if n := host.provider.StopCalls(); n != 0 {
+				t.Fatalf("B's Stop stopped the model A holds (stop calls = %d)", n)
+			}
+			if got := host.srv.holds.heldBy(b.ClientID()); len(got) != 0 {
+				t.Fatalf("B holds %v after its Stop, want none", got)
+			}
+
+			// B's engine uses the model again and must hold it again.
+			if err := completeB(); err != nil {
+				t.Fatalf("B engine request after its Stop: %v", err)
+			}
+			if got := host.srv.holds.heldBy(b.ClientID()); len(got) != 1 || got[0] != inst.ID {
+				t.Fatalf("B holds %v after reusing the model again, want [%s]", got, inst.ID)
+			}
+
+			// A closes: B's hold keeps the model running.
+			if err := a.Close(); err != nil {
+				t.Fatal(err)
+			}
+			waitUntil(t, "A's holds released", func() bool { return len(host.srv.holds.heldBy(a.ClientID())) == 0 })
+			if n := host.provider.StopCalls(); n != 0 {
+				t.Fatalf("closing A stopped the model B is using (stop calls = %d)", n)
+			}
+			if err := completeB(); err != nil {
+				t.Fatalf("B engine request after A closed: %v", err)
+			}
+			if n := host.provider.StartCalls(); n != 1 {
+				t.Fatalf("provider start calls = %d, want 1", n)
+			}
+
+			// B closing releases the last hold.
+			if err := b.Close(); err != nil {
+				t.Fatal(err)
+			}
+			waitUntil(t, "model stopped after the last holder closed", func() bool { return host.provider.StopCalls() == 1 })
+		})
+	}
+}
