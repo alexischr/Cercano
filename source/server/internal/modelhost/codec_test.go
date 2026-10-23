@@ -38,3 +38,18 @@ func TestErrorCodecPassthrough(t *testing.T) {
 		t.Fatalf("plain error mis-decoded: %v", got)
 	}
 }
+
+func TestDecodeErrorKeepsStatusCodes(t *testing.T) {
+	for _, c := range []codes.Code{codes.Unavailable, codes.Canceled, codes.DeadlineExceeded} {
+		if got := status.Code(decodeError(status.Error(c, "x"))); got != c {
+			t.Errorf("status code %v became %v", c, got)
+		}
+	}
+	plain := errors.New("plain")
+	if got := decodeError(plain); got != plain {
+		t.Errorf("non-status error changed: %v", got)
+	}
+	if got := status.Code(decodeError(encodeError(errors.New("boom")))); got != codes.Unknown {
+		t.Errorf("plain error code = %v, want Unknown", got)
+	}
+}

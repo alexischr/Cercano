@@ -75,7 +75,9 @@ func decodeError(err error) error {
 			}
 		}
 	}
-	return errors.New(st.Message())
+	// No recognised sentinel: keep the status error so status.Code still works
+	// (Unavailable, Canceled, DeadlineExceeded).
+	return err
 }
 
 type remoteError struct {
