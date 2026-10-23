@@ -699,7 +699,10 @@ func startGRPCServer(cfg config.Config, bindAddr string, events *crashlog.Writer
 	return lis.Addr().String(), cleanup, nil
 }
 
-func buildRuntimeManager(cfg config.Config, events *crashlog.Writer) localruntime.Manager {
+// newLocalRuntimeManager builds the in-process runtime manager: endpoints,
+// stale-partial and orphan sweeps, provider registration and interrupted
+// download resumption. It does not warm any runtime.
+func newLocalRuntimeManager(cfg config.Config, events *crashlog.Writer) *localruntime.InMemoryManager {
 	manager := localruntime.NewManager(
 		localruntime.WithEndpoints(localruntime.EndpointsFromConfig(cfg, openChatModel(cfg), openEmbeddingModel(cfg))),
 		// Re-read config from disk on restart so a runtime relaunch picks up
@@ -739,6 +742,13 @@ func buildRuntimeManager(cfg config.Config, events *crashlog.Writer) localruntim
 	// survives on disk) — recovers from a sleep or process kill that outlived
 	// the in-memory download job. Background so startup isn't blocked.
 	go resumeInterruptedDownloads(cfg, manager, provider)
+	return manager
+}
+
+// buildRuntimeManager is newLocalRuntimeManager plus warming of the active
+// runtime's default model.
+func buildRuntimeManager(cfg config.Config, events *crashlog.Writer) localruntime.Manager {
+	manager := newLocalRuntimeManager(cfg, events)
 
 	// Warm the active runtime's EFFECTIVE chat model (override else catalog
 	// default), not the legacy per-runtime default_model field. Otherwise the
