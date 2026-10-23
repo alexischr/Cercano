@@ -2990,11 +2990,12 @@ func (s *Server) DownloadRuntimeModel(ctx context.Context, req *proto.DownloadRu
 		if err != nil {
 			return &proto.DownloadRuntimeModelResponse{Ok: false, Error: err.Error()}, nil
 		}
-		// Only the concrete InMemoryManager supports enrolment; an
-		// alternative implementation makes this a no-op and DownloadModel
+		// Managers that accept catalog entries (the in-process manager, and
+		// the model-host client, which forwards it) implement
+		// DownloadEnroller; any other makes this a no-op and DownloadModel
 		// fails cleanly with "not found".
-		if imm, ok := rm.(*localruntime.InMemoryManager); ok {
-			imm.EnrollDownload(rec)
+		if enroller, ok := rm.(localruntime.DownloadEnroller); ok {
+			enroller.EnrollDownload(rec)
 		}
 	}
 	model, err := rm.DownloadModel(ctx, localruntime.DownloadRequest{

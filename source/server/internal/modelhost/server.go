@@ -27,6 +27,11 @@ import (
 // tokenHeader is the metadata key carrying the shared secret.
 const tokenHeader = "x-cercano-modelhost-token"
 
+// attachedHeader is sent in Attach's response header once the stream is
+// registered. A client that waits for it cannot miss an event broadcast after
+// its next call.
+const attachedHeader = "x-cercano-modelhost-attached"
+
 // defaultIdleTimeout is how long the host stays up with no attached client.
 const defaultIdleTimeout = 5 * time.Minute
 
@@ -398,6 +403,9 @@ func (s *Server) Attach(req *proto.AttachRequest, srv grpc.ServerStreamingServer
 			s.releaseClient(req.GetClientId())
 		}
 	}()
+	if err := srv.SendHeader(metadata.Pairs(attachedHeader, "1")); err != nil {
+		return err
+	}
 	for {
 		select {
 		case <-ctx.Done():

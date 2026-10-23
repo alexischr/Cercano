@@ -319,6 +319,8 @@ func TestEnsureDoesNotShutDownIncompatibleHostWithoutLauncher(t *testing.T) {
 type impostor struct {
 	proto.UnimplementedModelHostServer
 	tokenSeen atomic.Int32
+	hellos    atomic.Int32
+	calls     atomic.Int32
 }
 
 func (i *impostor) note(ctx context.Context) {
@@ -328,6 +330,7 @@ func (i *impostor) note(ctx context.Context) {
 }
 
 func (i *impostor) Hello(ctx context.Context, req *proto.HelloRequest) (*proto.HelloResponse, error) {
+	i.hellos.Add(1)
 	i.note(ctx)
 	return &proto.HelloResponse{ApiVersion: APIVersion, Pid: 1, Proof: helloProof("not-the-token", req.GetNonce())}, nil
 }
@@ -338,6 +341,7 @@ func (i *impostor) Shutdown(ctx context.Context, _ *proto.ShutdownRequest) (*pro
 }
 
 func (i *impostor) Call(ctx context.Context, _ *proto.CallRequest) (*proto.CallResponse, error) {
+	i.calls.Add(1)
 	i.note(ctx)
 	return &proto.CallResponse{}, nil
 }

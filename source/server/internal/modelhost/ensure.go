@@ -70,7 +70,20 @@ func dialVerified(ctx context.Context, r Record, clientVersion string) (*grpc.Cl
 		}
 		return ctx
 	}
+	// The connection may open exactly one transport. gRPC would otherwise
+	// redial the same address after the host dies, and whatever process bound
+	// the port next would receive token-bearing calls without having proved
+	// anything. Once the transport is lost every call fails Unavailable and
+	// the caller must verify a host afresh.
+	var dialed atomic.Bool
 	conn, err := grpc.NewClient(r.Addr,
+		grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
+			if !dialed.CompareAndSwap(false, true) {
+				return nil, errors.New("model host connection lost; refusing to redial without verification")
+			}
+			var d net.Dialer
+			return d.DialContext(ctx, "tcp", addr)
+		}),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithUnaryInterceptor(func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 			return invoker(withToken(ctx), method, req, reply, cc, opts...)
@@ -104,7 +117,8 @@ func dialVerified(ctx context.Context, r Record, clientVersion string) (*grpc.Cl
 
 // Dial connects to the host named by r over loopback after verifying that it
 // holds the record's token; the returned connection attaches the token to
-// every unary and streaming call.
+// every unary and streaming call. It never reconnects: once its transport is
+// lost, calls fail with Unavailable and the caller must Dial again.
 func Dial(ctx context.Context, r Record) (*grpc.ClientConn, error) {
 	conn, _, err := dialVerified(ctx, r, "")
 	return conn, err

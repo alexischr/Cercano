@@ -800,3 +800,26 @@ func TestIdleCheckAfterShutdownDoesNothing(t *testing.T) {
 		t.Fatalf("StopCalls = %d after idle check, want %d", got, stops)
 	}
 }
+
+// TestAttachConfirmsRegistrationWithHeader: Attach sends its header only once
+// the stream is registered, so a client that waits for the header knows no
+// later event can be missed.
+func TestAttachConfirmsRegistrationWithHeader(t *testing.T) {
+	h := newHarness(t)
+	ctx, cancel := context.WithCancel(authCtx(context.Background()))
+	defer cancel()
+	stream, err := h.client.Attach(ctx, &proto.AttachRequest{ClientId: "hdr"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	md, err := stream.Header()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(md.Get(attachedHeader)) == 0 {
+		t.Fatalf("Attach header lacks %s: %v", attachedHeader, md)
+	}
+	if n := h.srv.attachedClients("hdr"); n != 1 {
+		t.Fatalf("attached streams at header time = %d, want 1", n)
+	}
+}
