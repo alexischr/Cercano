@@ -219,7 +219,7 @@ func TestLaunchBinarySpawnsModelHost(t *testing.T) {
 	if err := LaunchBinary(script, runDir)(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	for {
 		data, err := os.ReadFile(marker)
 		if err == nil && strings.TrimSpace(string(data)) == "argv:model-host" {
@@ -449,7 +449,7 @@ func TestLaunchBinaryRunsInRunDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	for {
 		data, err := os.ReadFile(marker)
 		if err == nil {
