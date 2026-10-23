@@ -1071,6 +1071,18 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "acp":
+			// Explicit ACP stdio mode: speaks the Agent Client Protocol to an
+			// editor on stdin/stdout. Bare `cercano` auto-detects this when
+			// stdin is a pipe; this subcommand forces it for debugging and for
+			// editors that would rather be explicit.
+			cfg, err := config.Load(config.DefaultPath())
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[WARN] Failed to load config: %v (using defaults)\n", err)
+				cfg = config.Defaults()
+			}
+			runACPMode(cfg, nil)
+			return
 		case "worker":
 			// Isolated turn-execution worker: serves the Worker gRPC service on a
 			// unix socket, runs ONE conversation's turns, proxies state to the
@@ -1155,12 +1167,20 @@ func main() {
 	// server over gRPC and auto-launches `cercano agent` if none is running.
 	// The agent server is a singleton; bare `cercano`, `cercano agent`, and
 	// `cercano --server` all run it in the foreground.
+	//
+	// The one exception is an editor spawning us with a pipe on stdin, which
+	// means ACP. `--server` and `cercano agent` skip the check, so the CLI's
+	// auto-launch and manual debugging stay deterministic.
 	switch {
 	case *mcpMode:
 		runMCPMode(cfg, *grpcAddr)
 	case *forceServer:
 		runServerMode(cfg)
 	default:
+		if in, ok := detectACPStdio(); ok {
+			runACPMode(cfg, in)
+			return
+		}
 		runServerMode(cfg)
 	}
 }
