@@ -2,9 +2,13 @@ package main
 
 import (
 	"bytes"
+	"cercano/source/server/internal/localruntime"
 	"context"
 	"errors"
+	"google.golang.org/grpc"
+	"net"
 	"net/netip"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -128,5 +132,65 @@ func TestUpgradeRestartShutsDownModelHostWhenNoAgentRunning(t *testing.T) {
 	var out bytes.Buffer
 	if code := upgradeArgs(t, &out, func(context.Context) error { called++; return nil }, false); code != 0 || called != 1 {
 		t.Fatalf("code=%d called=%d", code, called)
+	}
+}
+
+// wedgedManager lets Hello succeed but blocks Shutdown (StopAll lists
+// instances first) until the caller's context ends.
+type wedgedManager struct{ localruntime.Manager }
+
+func (wedgedManager) Instances(ctx context.Context) ([]localruntime.InstanceRecord, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func TestUpgradeRestartBoundsWedgedModelHostShutdown(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "run")
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := grpc.NewServer()
+	modelhost.NewServer(wedgedManager{localruntime.NewManager()}, modelhost.ServerOptions{Token: "tok"}).Register(g)
+	go g.Serve(lis)
+	t.Cleanup(g.Stop)
+	if err := modelhost.WriteRecord(dir, modelhost.Record{PID: os.Getpid(), Addr: lis.Addr().String(), Token: "tok", APIVersion: modelhost.APIVersion, StartedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	old := modelHostShutdownTimeout
+	modelHostShutdownTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { modelHostShutdownTimeout = old })
+
+	var out bytes.Buffer
+	start := time.Now()
+	code := upgradeArgs(t, &out, shutdownModelHostIn(dir), true)
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Fatalf("shutdown took %s, want it bounded by %s", elapsed, modelHostShutdownTimeout)
+	}
+	if code != 0 || !strings.Contains(out.String(), "Could not shut down the shared model host") {
+		t.Fatalf("code=%d output=%s", code, out.String())
+	}
+}
+
+func TestUpgradeRestartShutdownBudgetIndependentOfRestartDeadline(t *testing.T) {
+	var got time.Duration
+	var out bytes.Buffer
+	upgradeRestartCommand([]string{"--timeout", "1ms"}, &out,
+		func() (string, error) { return "4242", nil },
+		func() (string, error) { return "/fake/bin/cercano", nil },
+		func(ctx context.Context) error {
+			dl, ok := ctx.Deadline()
+			if !ok {
+				t.Fatal("no shutdown deadline")
+			}
+			got = time.Until(dl)
+			return ctx.Err()
+		},
+		func(context.Context, string, netip.AddrPort) (bool, error) {
+			time.Sleep(10 * time.Millisecond)
+			return true, nil
+		})
+	if got < time.Second {
+		t.Fatalf("shutdown budget %s was derived from the spent restart deadline", got)
 	}
 }

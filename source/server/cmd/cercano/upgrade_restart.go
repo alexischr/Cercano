@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/netip"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"time"
 
@@ -16,6 +17,10 @@ import (
 	"cercano/source/server/pkg/config"
 	"cercano/source/server/pkg/proto"
 )
+
+// modelHostShutdownTimeout bounds the model host shutdown, independent of the
+// restart deadline. A variable so tests can shorten it.
+var modelHostShutdownTimeout = 10 * time.Second
 
 func runUpgradeRestart(args []string) int {
 	return upgradeRestartCommand(args, os.Stdout,
@@ -110,7 +115,13 @@ func upgradeRestartCommand(args []string, out io.Writer, configuredPort func() (
 	// The model host is shut down even when no agent was running, so the next
 	// request launches the new binary. A failure here is reported but does not
 	// change the exit code: the agent restart itself succeeded.
-	if err := shutdownModelHost(ctx); err != nil {
+	// It gets its own short budget: the restart may have spent most of ctx, and
+	// a wedged host must not hold up a post-upgrade hook. Ctrl-C still cancels.
+	sctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	sctx, scancel := context.WithTimeout(sctx, modelHostShutdownTimeout)
+	defer scancel()
+	if err := shutdownModelHost(sctx); err != nil {
 		fmt.Fprintf(out, "Could not shut down the shared model host: %v\nIt will exit when idle; the next model request then launches the installed binary.\n", err)
 	}
 	if restarted {
