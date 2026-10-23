@@ -428,3 +428,39 @@ func TestEnsureLeavesNewerHostRunning(t *testing.T) {
 		t.Fatalf("Ensure took %s to report a newer host", time.Since(start))
 	}
 }
+
+// TestLaunchBinaryRunsInRunDir: the host outlives the agent that launched it,
+// so it must not keep that agent's working directory.
+func TestLaunchBinaryRunsInRunDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script launcher")
+	}
+	runDir := filepath.Join(t.TempDir(), "run")
+	marker := filepath.Join(t.TempDir(), "marker")
+	script := filepath.Join(t.TempDir(), "fake-cercano")
+	body := "#!/bin/sh\npwd -P > " + marker + ".tmp && mv " + marker + ".tmp " + marker + "\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := LaunchBinary(script, runDir)(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	want, err := filepath.EvalSymlinks(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		data, err := os.ReadFile(marker)
+		if err == nil {
+			if got := strings.TrimSpace(string(data)); got != want {
+				t.Fatalf("host working directory = %q, want %q", got, want)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("marker not written: %v", err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}

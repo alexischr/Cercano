@@ -288,8 +288,8 @@ func Ensure(ctx context.Context, opts EnsureOptions) (Record, error) {
 }
 
 // LaunchBinary returns a Launch func that spawns "<path> model-host"
-// detached, appending its output to runDir/modelhost.log (RunDir() when
-// runDir is empty).
+// detached, in runDir (RunDir() when runDir is empty), appending its output to
+// runDir/modelhost.log.
 func LaunchBinary(path, runDir string) func(ctx context.Context) error {
 	return func(context.Context) error {
 		dir := runDir
@@ -308,6 +308,9 @@ func LaunchBinary(path, runDir string) func(ctx context.Context) error {
 		}
 		defer logf.Close()
 		cmd := exec.Command(path, "model-host")
+		// The host outlives the launching agent; it must not pin (or depend
+		// on) that agent's working directory.
+		cmd.Dir = dir
 		cmd.Stdout = logf
 		cmd.Stderr = logf
 		cmd.SysProcAttr = detachSysProcAttr()
