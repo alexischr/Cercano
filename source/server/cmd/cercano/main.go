@@ -936,6 +936,28 @@ func main() {
 			}
 			runServerMode(cfg)
 			return
+		case "model-host":
+			// Shared local model host: one process per user owns the local
+			// runtime instances and serves every agent over loopback gRPC.
+			// Normally launched by agents, not by hand.
+			cfg, err := config.Load(config.DefaultPath())
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[WARN] Failed to load config: %v (using defaults)\n", err)
+				cfg = config.Defaults()
+			}
+			crashLogPath := filepath.Join(filepath.Dir(config.DefaultPath()), "crash.log")
+			crashWriter, cwErr := crashlog.NewWriter(crashLogPath, version)
+			if cwErr != nil {
+				fmt.Fprintf(os.Stderr, "[WARN] Failed to open crash log at %s: %v\n", crashLogPath, cwErr)
+			}
+			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			err = runModelHost(ctx, modelHostOptions{Config: cfg, Events: crashWriter})
+			cancel()
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "model-host:", err)
+				os.Exit(1)
+			}
+			return
 		case "worker":
 			// Isolated turn-execution worker: serves the Worker gRPC service on a
 			// unix socket, runs ONE conversation's turns, proxies state to the
