@@ -80,6 +80,14 @@ export async function createSandbox({ seedConfig = true, ollamaUrl } = {}) {
           "open_runtime: ollama",
           `ollama_url: ${ollama}`,
           `port: "${port}"`,
+          // Pin every local tier, not only Everyday (CERCANO_OPEN_MODEL).
+          // Chat defaults to Premium; side calls may select other tiers.
+          "models:",
+          "  open:",
+          "    overrides:",
+          "      ollama:",
+          ...["most_capable", "everyday", "fast_light", "fast_light_text", "embedding", "vision"]
+            .map((tier) => `        ${tier}: fake-model`),
           extra,
         ].join("\n") + "\n",
       );
