@@ -1,7 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { copyFileSync, readFileSync, rmSync } from "node:fs";
-import { stopOwnedListener } from "../helpers/owned-agent.mjs";
 import { join } from "node:path";
 import { withCli, exitCode, ready } from "../helpers/cli.mjs";
 import { waitForPort, portOpen } from "../helpers/agent.mjs";
@@ -23,7 +22,6 @@ test("without a reachable or launchable agent the CLI explains and exits 1", asy
 
 test("the CLI auto-launches its sibling agent, which exits after the last client", async (t) => {
   await withCli(t, { agent: false }, async ({ term, sandbox }) => {
-    t.after(() => stopOwnedListener(sandbox));
     await ready(term);
     assert.equal(await portOpen(sandbox.port), true, "auto-launched agent should be listening");
     const log = readFileSync(join(sandbox.tmp, "cercano-server.log"), "utf8");

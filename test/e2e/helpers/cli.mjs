@@ -4,6 +4,7 @@
 import { join } from "node:path";
 import { TuiTest } from "@microsoft/tui-test";
 import { createSandbox } from "./sandbox.mjs";
+import { stopSandboxProcesses } from "./owned-agent.mjs";
 import { startAgent } from "./agent.mjs";
 import { startFakeOllama } from "./fake-ollama.mjs";
 import { ARTIFACTS_DIR, CLI_BIN } from "./paths.mjs";
@@ -40,8 +41,14 @@ export async function withCli(
     throw err;
   } finally {
     await term.close({ failed }).catch(() => {});
-    await server?.stop();
-    await fake?.close();
+    try {
+      await server?.stop();
+      // A closed listener is not process exit: shutdown can still flush config.
+      // Also stop detached hosts before deleting any sandbox files.
+      await stopSandboxProcesses(sandbox);
+    } finally {
+      await fake?.close();
+    }
     sandbox.cleanup();
   }
 }

@@ -29,7 +29,8 @@ export async function waitForPort(port, { open = true, timeout = 15_000 } = {}) 
 export async function startAgent(sandbox) {
   const logPath = join(sandbox.root, "agent.log");
   const fd = openSync(logPath, "a");
-  // Own process group, so stop() also reaches the `cercano worker` children.
+  // Keep the agent independent of the test runner. Sandbox teardown verifies
+  // and stops workers and detached model hosts separately.
   const child = spawn(AGENT_BIN, ["agent"], {
     env: { ...process.env, ...sandbox.env },
     stdio: ["ignore", fd, fd],
@@ -51,7 +52,11 @@ export async function startAgent(sandbox) {
   try {
     await waitForPort(sandbox.port);
   } catch (err) {
-    stopGroup(child.pid, "SIGKILL");
+    if (!exited) {
+      const done = new Promise((resolve) => child.once("exit", resolve));
+      child.kill("SIGKILL");
+      await done;
+    }
     throw new Error(`agent did not listen on ${sandbox.port} (exit=${JSON.stringify(exited)}):\n${log()}`, { cause: err });
   }
 
@@ -62,18 +67,10 @@ export async function startAgent(sandbox) {
     async stop() {
       if (exited) return;
       const done = new Promise((r) => child.once("exit", r));
-      stopGroup(child.pid, "SIGTERM");
-      const timer = setTimeout(() => stopGroup(child.pid, "SIGKILL"), 5_000);
+      child.kill("SIGTERM");
+      const timer = setTimeout(() => child.kill("SIGKILL"), 5_000);
       await done;
       clearTimeout(timer);
     },
   };
-}
-
-function stopGroup(pid, signal) {
-  try {
-    process.kill(-pid, signal);
-  } catch {
-    // already gone
-  }
 }
