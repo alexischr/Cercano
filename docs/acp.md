@@ -24,7 +24,7 @@ For a source build:
 
 Then use the absolute path to `source/server/bin/cercano`. A development launcher named `cercano` may dispatch to the terminal UI instead of the server executable; configure the real binary, not that wrapper. In the development install this is normally `~/bin/.cercano-libexec/cercano`.
 
-Standard output is reserved for protocol messages. Diagnostics go to standard error. Prefer the explicit `acp` argument rather than relying on stdin detection.
+Standard output is reserved for protocol messages. Diagnostics go to standard error. The explicit `acp` argument is required: bare `cercano` starts the normal server regardless of stdin, without automatic ACP detection.
 
 ## Shared server and permissions
 
