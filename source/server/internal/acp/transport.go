@@ -193,26 +193,32 @@ func (s *server) pump(out io.Writer) {
 }
 
 func (s *server) deliver(encoder *json.Encoder, f outputFrame) bool {
+	if f.session != nil {
+		s.mu.Lock()
+		f.session.delivering = f.done
+		s.mu.Unlock()
+	}
 	defer func() {
 		if f.session != nil {
 			s.mu.Lock()
 			f.session.pending = false
+			f.session.delivering = nil
 			s.outstanding--
 			s.mu.Unlock()
 		}
+		// Admission wakes only after Encode and reservation cleanup finish.
+		close(f.done)
 	}()
 	if s.ctx.Err() != nil {
 		return false
 	}
 	if f.ctx.Err() != nil {
-		close(f.done)
 		return true
 	}
 	err := encoder.Encode(f.value)
 	if err != nil {
 		s.cancel()
 	}
-	close(f.done)
 	return err == nil
 }
 

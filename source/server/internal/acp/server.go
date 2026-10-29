@@ -12,9 +12,10 @@ import (
 )
 
 type session struct {
-	cwd     string
-	cancel  context.CancelFunc
-	pending bool
+	cwd        string
+	cancel     context.CancelFunc
+	pending    bool
+	delivering <-chan struct{} // non-nil only while the pump owns the terminal write
 }
 
 func (s *server) handle(f frame) {
@@ -94,6 +95,23 @@ func (s *server) handle(f frame) {
 			return
 		}
 		if len(f.ID) == 0 {
+			s.mu.Unlock()
+			return
+		}
+		// A final frame may already be visible to the peer before Write returns.
+		// Join only an in-progress terminal write, never a queued completion.
+		// Do not hold mu across IO: cancellation and permission cleanup need it.
+		for session.delivering != nil {
+			done := session.delivering
+			s.mu.Unlock()
+			select {
+			case <-s.ctx.Done():
+				return
+			case <-done:
+			}
+			s.mu.Lock()
+		}
+		if s.ctx.Err() != nil {
 			s.mu.Unlock()
 			return
 		}
