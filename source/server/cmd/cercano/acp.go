@@ -1,49 +1,22 @@
 package main
 
-// ACP (Agent Client Protocol) stdio mode.
-//
-// ACP is the JSON-RPC protocol editors like Zed use to drive a coding agent:
-// the editor is the *client*, this binary is the *agent*. Messages are
-// newline-delimited JSON objects on stdin/stdout, which is why every
-// human-readable line this binary emits must go to stderr — see runServerMode.
-//
-// This file currently implements the transport and the `initialize` handshake
-// only. Session and prompt methods answer with a JSON-RPC "method not found"
-// so a connecting editor gets a clean protocol error instead of a hang.
-
 import (
 	"bufio"
-	"encoding/json"
-	"errors"
+	"context"
 	"fmt"
 	"io"
+	"net"
 	"os"
 
+	"cercano/source/server/internal/acp"
+	"cercano/source/server/internal/acp/v1"
+	"cercano/source/server/pkg/agentclient"
 	"cercano/source/server/pkg/config"
 )
 
-// acpProtocolVersion is the ACP wire version this agent speaks. Compatibility
-// is negotiated on this number during `initialize`, not on any library version.
-const acpProtocolVersion = 1
+const acpProtocolVersion = v1.ProtocolVersion
 
-type acpRequest struct {
-	JSONRPC string           `json:"jsonrpc"`
-	ID      *json.RawMessage `json:"id,omitempty"`
-	Method  string           `json:"method"`
-	Params  json.RawMessage  `json:"params,omitempty"`
-}
-
-type acpResponse struct {
-	JSONRPC string           `json:"jsonrpc"`
-	ID      *json.RawMessage `json:"id,omitempty"`
-	Result  any              `json:"result,omitempty"`
-	Error   *acpError        `json:"error,omitempty"`
-}
-
-type acpError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-}
+type acpResponse = acp.Response
 
 // detectACPStdio reports whether stdin looks like a live ACP peer, returning
 // the buffered reader the session should go on reading from.
@@ -77,55 +50,31 @@ func detectACPStdio() (*bufio.Reader, bool) {
 	return r, true
 }
 
-// runACPMode serves the ACP agent side over stdio until the client hangs up.
-// in may be nil, in which case stdin is read directly — that is the path for
-// the explicit `cercano acp` subcommand, where no detection peek happened.
+// runACPMode connects to (or launches) the shared daemon, never an embedded server.
 func runACPMode(cfg config.Config, in *bufio.Reader) {
-	// Tee diagnostics to a file: an editor's capture of our stderr may close
-	// early, and stdout is unavailable for anything but protocol frames.
 	setupDispatchLogFile()
 	fmt.Fprintf(os.Stderr, "Cercano ACP agent (v%s) on stdio\n", version)
-
 	if in == nil {
 		in = bufio.NewReader(os.Stdin)
 	}
-	dec := json.NewDecoder(in)
-	out := json.NewEncoder(os.Stdout)
-
-	for {
-		var req acpRequest
-		if err := dec.Decode(&req); err != nil {
-			if errors.Is(err, io.EOF) {
-				fmt.Fprintln(os.Stderr, "ACP client disconnected")
-				return
-			}
-			fmt.Fprintf(os.Stderr, "ACP decode error: %v\n", err)
-			return
+	input := struct {
+		io.Reader
+		io.Closer
+	}{in, os.Stdin}
+	output, err := acpOutput(os.Stdout)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ACP output: %v\n", err)
+		return
+	}
+	defer output.Close()
+	err = acp.Serve(context.Background(), input, output, func(ctx context.Context) (acp.Backend, error) {
+		client, err := agentclient.Dial(ctx, net.JoinHostPort("localhost", cfg.Port))
+		if err != nil {
+			return nil, err
 		}
-
-		resp := acpResponse{JSONRPC: "2.0", ID: req.ID}
-		switch req.Method {
-		case "initialize":
-			resp.Result = map[string]any{
-				"protocolVersion": acpProtocolVersion,
-				"agentCapabilities": map[string]any{
-					"loadSession": false,
-				},
-			}
-		default:
-			resp.Error = &acpError{
-				Code:    -32601,
-				Message: fmt.Sprintf("method not implemented: %s", req.Method),
-			}
-		}
-
-		// A request without an id is a notification: no reply allowed.
-		if req.ID == nil {
-			continue
-		}
-		if err := out.Encode(resp); err != nil {
-			fmt.Fprintf(os.Stderr, "ACP write error: %v\n", err)
-			return
-		}
+		return acp.NewAgentBackend(ctx, client), nil
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ACP: %v\n", err)
 	}
 }

@@ -215,14 +215,13 @@ func TestACPInitializeHandshake(t *testing.T) {
 		t.Fatalf("protocolVersion = %v, want %d", result["protocolVersion"], acpProtocolVersion)
 	}
 
-	// Unimplemented methods must answer with JSON-RPC method-not-found
-	// rather than silently hanging the editor.
+	// Malformed prompts must fail validation rather than hang the editor.
 	var promptResp acpResponse
 	if err := dec.Decode(&promptResp); err != nil {
 		t.Fatalf("decode prompt response: %v", err)
 	}
-	if promptResp.Error == nil || promptResp.Error.Code != -32601 {
-		t.Fatalf("session/prompt error = %+v, want code -32601", promptResp.Error)
+	if promptResp.Error == nil || promptResp.Error.Code != -32602 {
+		t.Fatalf("session/prompt error = %+v, want code -32602", promptResp.Error)
 	}
 
 	select {
@@ -254,16 +253,57 @@ func TestACPNotificationGetsNoReply(t *testing.T) {
 		inW.Close()
 	}()
 
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		runACPMode(config.Defaults(), nil)
 		outW.Close()
 	}()
 
 	got, err := io.ReadAll(outR)
+	<-done
 	if err != nil {
 		t.Fatalf("read stdout: %v", err)
 	}
 	if len(got) != 0 {
 		t.Fatalf("notification produced a reply: %q", got)
+	}
+}
+
+func TestACPOutputCloseInterruptsBlockedPipe(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer w.Close()
+	output, err := acpOutput(w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer output.Close()
+	done := make(chan error, 1)
+	go func() { _, err := output.Write(make([]byte, 8<<20)); done <- err }()
+	// A byte proves the writer entered the pipe; leave the remainder unread.
+	if _, err := r.Read(make([]byte, 1)); err != nil {
+		t.Fatal(err)
+	}
+	closed := make(chan error, 1)
+	go func() { closed <- output.Close() }()
+	select {
+	case err := <-closed:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("closing ACP output blocked")
+	}
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("blocked write unexpectedly completed")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("output Close did not interrupt Write")
 	}
 }
