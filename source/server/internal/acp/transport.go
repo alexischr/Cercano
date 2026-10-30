@@ -48,7 +48,7 @@ func Serve(ctx context.Context, in io.Reader, out io.Writer, connect func(contex
 
 func newServer(ctx context.Context, connect func(context.Context) (Backend, error)) *server {
 	ctx, stop := context.WithCancelCause(ctx)
-	return &server{ctx: ctx, stop: stop, cancel: func() { stop(context.Canceled) }, output: make(chan outputFrame, 1), completions: make(chan outputFrame, maxOutstandingPrompts), connect: connect, sessions: make(map[string]*session), waits: make(map[string]chan frame)}
+	return &server{ctx: ctx, stop: stop, cancel: func() { stop(context.Canceled) }, output: make(chan outputFrame, 1), replies: make(chan outputFrame, maxPendingReplies), completions: make(chan outputFrame, maxOutstandingPrompts), connect: connect, sessions: make(map[string]*session), waits: make(map[string]chan frame)}
 }
 
 func (s *server) serve(in io.Reader, out io.Writer) error {
@@ -97,7 +97,7 @@ func (s *server) serve(in io.Reader, out io.Writer) error {
 			}
 		}
 	}()
-	// EOF is a half-close: allow the last synchronous reply to drain first.
+	// EOF is a half-close: allow accepted dispatcher replies to drain first.
 	// Generic io.Writer has no readiness/interrupt API, so an undrainable final
 	// reply has an explicit bounded drain deadline, and is an ERROR, never a
 	// successful EOF. The deadline is not used to decide which frames to accept.
@@ -128,6 +128,16 @@ func (s *server) serve(in io.Reader, out io.Writer) error {
 			if ctx.Err() != nil {
 				return context.Cause(ctx)
 			}
+			if s.lastReply != nil {
+				select {
+				case <-s.lastReply:
+				case <-ctx.Done():
+					return context.Cause(ctx)
+				}
+			}
+			if ctx.Err() != nil {
+				return context.Cause(ctx)
+			}
 			if errors.Is(readErr, io.EOF) {
 				return nil
 			}
@@ -146,6 +156,12 @@ func (s *server) serve(in io.Reader, out io.Writer) error {
 	}
 }
 
+// Dispatcher responses never wait for output. A peer that exhausts this
+// bounded mailbox is disconnected, cancelling workers and denying permissions.
+const maxPendingReplies = 64
+
+var errReplyQueueFull = errors.New("ACP reply queue full")
+
 const inputDrainDeadline = 250 * time.Millisecond
 
 var errOutputDrain = errors.New("ACP connection did not drain after input closed")
@@ -155,6 +171,8 @@ type server struct {
 	cancel      context.CancelFunc
 	stop        context.CancelCauseFunc
 	output      chan outputFrame
+	replies     chan outputFrame
+	lastReply   <-chan struct{} // dispatcher-owned EOF drain watermark
 	completions chan outputFrame
 	outstanding int
 	mu          sync.Mutex
@@ -181,6 +199,10 @@ func (s *server) pump(out io.Writer) {
 		case <-s.ctx.Done():
 			return
 		case f := <-s.output:
+			if !s.deliver(encoder, f) {
+				return
+			}
+		case f := <-s.replies:
 			if !s.deliver(encoder, f) {
 				return
 			}
@@ -222,8 +244,6 @@ func (s *server) deliver(encoder *json.Encoder, f outputFrame) bool {
 	return err == nil
 }
 
-func (s *server) write(v any) { s.writeContext(s.ctx, v) }
-
 func (s *server) writeContext(ctx context.Context, v any) {
 	if ctx.Err() != nil {
 		return
@@ -243,7 +263,14 @@ func (s *server) reply(id json.RawMessage, result any, err *Error) {
 	if len(id) == 0 || string(id) == "null" {
 		return
 	}
-	s.write(Response{JSONRPC: "2.0", ID: id, Result: result, Error: err})
+	f := outputFrame{ctx: s.ctx, value: Response{JSONRPC: "2.0", ID: id, Result: result, Error: err}, done: make(chan struct{})}
+	select {
+	case <-s.ctx.Done():
+	case s.replies <- f:
+		s.lastReply = f.done
+	default:
+		s.stop(errReplyQueueFull)
+	}
 }
 func (s *server) resolve(f frame) {
 	var id string

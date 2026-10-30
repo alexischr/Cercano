@@ -70,7 +70,7 @@ func TestCompletionAdmissionLimitAndRelease(t *testing.T) {
 		t.Helper()
 		done := make(chan struct{})
 		go func() { s.handle(completionPrompt(sid)); close(done) }()
-		f := recv(t, s.output)
+		f := recv(t, s.replies)
 		r := f.value.(Response)
 		if r.Error == nil || !strings.Contains(r.Error.Message, message) {
 			t.Fatalf("unexpected rejection: %+v", r)
