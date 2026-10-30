@@ -1165,7 +1165,6 @@ func main() {
 	// server over gRPC and auto-launches `cercano agent` if none is running.
 	// The agent server is a singleton; bare `cercano`, `cercano agent`, and
 	// `cercano --server` all run it in the foreground.
-	// ACP stdio mode requires the explicit `cercano acp` subcommand.
 	switch {
 	case *mcpMode:
 		runMCPMode(cfg, *grpcAddr)
